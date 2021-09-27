@@ -16,6 +16,7 @@ from tensorflow.keras.models import Model
 #from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 #from keras import backend as keras
 
+LOSS_FUNCTION = 'MeanAbsoluteError'
 
 def unet(pretrained_weights = None,input_size = (256,256,1)):
     inputs = Input(input_size)
@@ -62,12 +63,54 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
     model = Model(inputs = [inputs], outputs = [conv10])
 
 #    model.compile(optimizer = 'SGD', loss = 'MeanSquaredError', metrics = ['RootMeanSquaredError'])
-     model.compile(optimizer = 'SGD', loss = 'MeanAbsoluteError', metrics = ['RootMeanSquaredError','MeanAbsoluteError'])
+    model.compile(optimizer = 'SGD', loss = LOSS_FUNCTION, metrics = ['RootMeanSquaredError','MeanAbsoluteError'])
    
 #    model.summary()
 
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
+
+    return model
+
+
+
+def convlstm(input_size = (256,256,1)):
+
+    # Construct the input layer with no definite frame size.
+    inp = layers.Input(shape=(None, * input_size))
+
+    # We will construct 3 `ConvLSTM2D` layers with batch normalization,
+    # followed by a `Conv3D` layer for the spatiotemporal outputs.
+    x = layers.ConvLSTM2D(
+        filters=64,
+        kernel_size=(5, 5),
+        padding="same",
+        return_sequences=True,
+        activation="relu",
+    )(inp)
+    x = layers.BatchNormalization()(x)
+    x = layers.ConvLSTM2D(
+        filters=64,
+        kernel_size=(3, 3),
+        padding="same",
+        return_sequences=True,
+        activation="relu",
+    )(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ConvLSTM2D(
+        filters=64,
+        kernel_size=(1, 1),
+        padding="same",
+        return_sequences=True,
+        activation="relu",
+    )(x)
+    x = layers.Conv3D(
+        filters=1, kernel_size=(3, 3, 3), activation="sigmoid", padding="same"
+    )(x)
+
+    # Next, we will build the complete model and compile it.
+    model = keras.models.Model(inp, x)
+    model.compile(loss=keras.losses.binary_crossentropy, optimizer=keras.optimizers.Adam(),)
 
     return model
 
