@@ -6,6 +6,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+from sklearn.metrics import mean_absolute_error
 
 MODEL="convlstm"
 #IMG_SIZE=(928,928)
@@ -13,7 +14,7 @@ MODEL="convlstm"
 #IMG_SIZE=(256,256)
 IMG_SIZE=(128,128)
 TRAIN_SERIES_LENGTH = 6
-CONVLSTM = False
+CONVLSTM = True
 
 model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
 print(f"Loading {model_file}")
@@ -27,7 +28,7 @@ else:
 
 
 def sharpen(data, factor):
-    assert(data.shape == (1, 128, 128, 1))
+    assert(data.shape == (1,) + IMG_SIZE + (1,))
     im = Image.fromarray(np.squeeze(data) * 255)
     im = im.convert('L')
 
@@ -60,6 +61,22 @@ def infer(img):
     return pred
 
 
+def read_images(times, series):
+    keys = series.keys()
+    union = list(set().union(times, keys))
+    union.sort()
+
+    new_series = {}
+    for u in union:
+        if u in keys:
+            new_series[u] = series[u]
+        else:
+            new_series[u] = read_img_from_file(u)
+#    for time in times:
+#        series.append(read_img_from_file(time))
+    return new_series
+
+
 def read_image_series(start_date, num):
     series = []
     for _ in range(num):
@@ -74,7 +91,7 @@ def predict_from_series(image_series, num):
         pred = m.predict(np.expand_dims(image_series, axis=0))
         pred = np.squeeze(pred, axis=0)
         predicted_frame = np.expand_dims(pred[-1, ...], axis=0)
-        predicted_frame = sharpen(predicted_frame, 3)
+        predicted_frame = sharpen(predicted_frame, 2)
 
         image_series = np.concatenate((image_series, predicted_frame), axis=0)
 
@@ -82,7 +99,7 @@ def predict_from_series(image_series, num):
 
 
 def plot_convlstm(ground_truth, predictions):
-    fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(14, 8), constrained_layout=True)
+    fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(16, 8), constrained_layout=True)
 
     for idx, ax in enumerate(axes[0]):
         ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray')
@@ -177,7 +194,6 @@ def plot_unet(start_date):
 
         diff = (ground_truth - pred).numpy() / 255
 
-        print(diff.min(), diff.max(), diff.mean())
         row[0].imshow(ground_truth, cmap='gray')
         row[1].imshow(pred, cmap='gray')
         r2 = row[2].imshow(diff, cmap='RdYlBu_r')
@@ -199,19 +215,80 @@ def plot_unet(start_date):
     plt.show()
 
 
-start_date=datetime.strptime('20210101T0045', '%Y%m%dT%H%M')
+# datetime ring buffer
+
+class timeseries_generator:
+    def __init__(self, start_date, frames_prev, frames_next, step):
+        self.date = start_date
+        self.frames_prev = frames_prev
+        self.frames_next = frames_next
+        self.step = step
+        self.times = [start_date]
+        self.create()
+    def __iter__(self):
+        while True:
+            yield self.times
+            self.create()
+    def __next__(self):
+        return_value = self.times
+        self.create()
+        return return_value
+    def create(self):
+        if len(self.times) > 1:
+            self.times.pop(0)
+        while len(self.times) < 1 + -1 * self.frames_prev + self.frames_next:
+            self.times.append(self.times[-1] + self.step)
+
+
+
+start_date=datetime.strptime('20200101T0045', '%Y%m%dT%H%M')
 
 if CONVLSTM:
 
-    image_series = read_image_series(start_date, 8)
+    history_len = 3
+    prediction_len = 12
+    gen = timeseries_generator(start_date, -history_len, prediction_len, timedelta(minutes=15))
 
-    predictions = predict_from_series(image_series[:4], 4)
+    mae_prediction = []
+    mae_persistence = []
+    image_series = {}
 
+    for i in range(prediction_len+1):
+        mae_prediction.append([])
+        mae_persistence.append([])
 
-    plot_convlstm(image_series[3:], predictions[3:])
+    break_date = '20200101T0600' # '20200201T0000'
+    for t in gen:
+        times = list(map(lambda x: datetime.strftime(x, '%Y%m%dT%H%M'), t))
+        if times[-1] == break_date:
+            break
 
-    for d in predictions[4:]:
-        save_to_file()
+        image_series = read_images(times, image_series)
+        assert(len(image_series) == (1 + history_len + prediction_len))
+
+        predictions = predict_from_series(image_series[:history_len+1], prediction_len)
+        assert(len(image_series) == len(predictions))
+        #plot_convlstm(image_series[history_len:], predictions[history_len:])
+        for i in range(history_len, len(predictions)):
+            mae_prediction[i - history_len].append(mean_absolute_error(image_series[i].flatten(), predictions[i].flatten()))
+            mae_persistence[i - history_len].append(mean_absolute_error(image_series[i].flatten(), image_series[history_len].flatten()))
+
+    num_predictions = len(mae_persistence[0])
+    for i in range(len(mae_persistence)):
+        mae_persistence[i] = np.mean(mae_persistence[i])
+        mae_prediction[i] = np.mean(mae_prediction[i])
+
+    fig = plt.figure()
+    ax = plt.axes()
+
+    x = range(len(mae_prediction))
+    ax.plot(x, mae_prediction, label='convnet')
+    ax.plot(x, mae_persistence, label='persistence')
+    plt.legend()
+    plt.title(f'mae over {num_predictions} predictions')
+    plt.show()
+#    for d in predictions[4:]:
+#        save_to_file()
 else:
-   plot_unet(start_date)
+    plot_unet(start_date)
 
