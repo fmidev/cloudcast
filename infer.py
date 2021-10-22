@@ -7,16 +7,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
+from preprocess import *
 
-MODEL="convlstm"
+#MODEL="convlstm"
+MODEL="unet"
 #IMG_SIZE=(928,928)
 #IMG_SIZE=(768,768)
-#IMG_SIZE=(256,256)
-IMG_SIZE=(128,128)
-TRAIN_SERIES_LENGTH = 6
-CONVLSTM = True
+IMG_SIZE=(256,256)
+#IMG_SIZE=(128,128)
+TRAIN_SERIES_LENGTH = 8
+CONVLSTM = False
 
-model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
+model_file = 'models/{}_{}_{}x{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1])
+
+if MODEL == "convlstm":
+    CONVLSTM=True
+    model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
 print(f"Loading {model_file}")
 
 m = None
@@ -37,17 +43,17 @@ def sharpen(data, factor):
     return np.expand_dims(sharp, [0,3])
 
 
-def process_img(img):
-    img = tf.image.decode_jpeg(img, channels=1)
-    img = tf.image.convert_image_dtype(img, tf.float32)
-    img = tf.image.resize(img, size=IMG_SIZE)
-    return img
+#def process_img(img):
+#    img = tf.image.decode_jpeg(img, channels=1)
+#    img = tf.image.convert_image_dtype(img, tf.float32)
+#    img = tf.image.resize(img, size=IMG_SIZE)
+#    return img
 
 
-def read_img_from_file(filename):
-    print(f"reading {filename}")
-    img = tf.io.read_file('{}/{}.jpg'.format('/home/partio/tmp/cloudnwc-jpeg/eval', filename))
-    return process_img(img)
+#def read_img_from_file(filename):
+#    print(f"reading {filename}")
+#    img = tf.io.read_file('{}/{}.jpg'.format('/home/partio/tmp/cloudnwc-jpeg/eval', filename))
+#    return process_img(img)
 
 
 def read_img_from_memory(mem):
@@ -57,12 +63,21 @@ def read_img_from_memory(mem):
 def infer(img):
     img = tf.expand_dims(img, axis=0)
     prediction = m.predict(img)
-    pred = np.squeeze(prediction, axis=0) * 255
+    pred = np.squeeze(prediction, axis=0)
     return pred
 
 
 def read_images(times, series):
-    keys = series.keys()
+    datakeys = series.keys()
+
+    new_series = {}
+    for t in times:
+        if t in datakeys:
+            new_series[t] = series[t]
+        else:
+            new_series[t] = read_img_from_file(t)
+
+    return new_series
     union = list(set().union(times, keys))
     union.sort()
 
@@ -168,34 +183,47 @@ def save_to_file(data, outfile, datetime):
 
 def plot_unet(start_date):
 
-    fig, axes = plt.subplots(4, 3, figsize=(14, 10))
+    fig, axes = plt.subplots(5, 3, figsize=(14, 8))
 
     pred = None
+    initial = None
 
     for idx, row in enumerate(axes):
 
         if idx == 0:
-            ground_truth = read_img_from_file(start_date.strftime('%Y%m%dT%H%M'))
+            ground_truth = preprocess_single(read_time(start_date), img_size=IMG_SIZE)
+            initial = np.copy(ground_truth)
 
             row[0].imshow(ground_truth, cmap='gray')
             row[0].axis("off")
-            row[0].set_title(f"Ground truth {idx*15} min")
+            row[0].set_title(f"Ground truth 0 min")
             row[1].axis("off")
             row[2].axis("off")
+            start_date = start_date + timedelta(minutes=15)
 
             continue
 
         if pred is None:
             pred = infer(ground_truth)
         else:
-            pred = infer(pred/255)
+            pred = infer(pred)
 
-        ground_truth = read_img_from_file(start_date.strftime('%Y%m%dT%H%M'))
+        ground_truth = preprocess_single(read_time(start_date), img_size=IMG_SIZE)
+#        pred = pred / 255
+        print(np.mean(ground_truth), np.mean(pred))
 
-        diff = (ground_truth - pred).numpy() / 255
+        print("mae persistence: {}".format(mean_absolute_error(ground_truth.flatten(), initial.flatten())))
+        print("mae prediction:  {}".format(mean_absolute_error(ground_truth.flatten(), pred.flatten())))
 
-        row[0].imshow(ground_truth, cmap='gray')
-        row[1].imshow(pred, cmap='gray')
+        #mae_prediction[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), predictions[i].flatten()))
+        #mae_persistence[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), images[history_len].numpy().flatten()))
+
+#        print(np.histogram(pred))
+#        print(np.histogram(ground_truth))
+        diff = (ground_truth - pred) #/ 255
+
+        row[0].imshow(ground_truth*255, cmap='gray')
+        row[1].imshow(pred*255, cmap='gray')
         r2 = row[2].imshow(diff, cmap='RdYlBu_r')
         plt.colorbar(r2, ax=row[2])
 
@@ -210,7 +238,7 @@ def plot_unet(start_date):
 
         start_date = start_date + timedelta(minutes=15)
 
-    fig.subplots_adjust(wspace=0.1, hspace=0.1)
+#    fig.subplots_adjust(wspace=0.1, hspace=0.1)
 
     plt.show()
 
@@ -241,11 +269,11 @@ class timeseries_generator:
 
 
 
-start_date=datetime.strptime('20200101T0045', '%Y%m%dT%H%M')
+start_date=datetime.datetime.strptime('20200101T0045', '%Y%m%dT%H%M')
 
 if CONVLSTM:
 
-    history_len = 3
+    history_len = 5
     prediction_len = 12
     gen = timeseries_generator(start_date, -history_len, prediction_len, timedelta(minutes=15))
 
@@ -257,7 +285,7 @@ if CONVLSTM:
         mae_prediction.append([])
         mae_persistence.append([])
 
-    break_date = '20200101T0600' # '20200201T0000'
+    break_date = '20200101T0800' # '20200201T0000'
     for t in gen:
         times = list(map(lambda x: datetime.strftime(x, '%Y%m%dT%H%M'), t))
         if times[-1] == break_date:
@@ -266,12 +294,15 @@ if CONVLSTM:
         image_series = read_images(times, image_series)
         assert(len(image_series) == (1 + history_len + prediction_len))
 
-        predictions = predict_from_series(image_series[:history_len+1], prediction_len)
+        images = list(image_series.values()) #[:history_len+1]
+        predictions = predict_from_series(images[:history_len+1], prediction_len)
         assert(len(image_series) == len(predictions))
         #plot_convlstm(image_series[history_len:], predictions[history_len:])
         for i in range(history_len, len(predictions)):
-            mae_prediction[i - history_len].append(mean_absolute_error(image_series[i].flatten(), predictions[i].flatten()))
-            mae_persistence[i - history_len].append(mean_absolute_error(image_series[i].flatten(), image_series[history_len].flatten()))
+            #mae_prediction[i - history_len].append(mean_absolute_error(image_series[i].flatten(), predictions[i].flatten()))
+            mae_prediction[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), predictions[i].flatten()))
+            #mae_persistence[i - history_len].append(mean_absolute_error(image_series[i].flatten(), image_series[history_len].flatten()))
+            mae_persistence[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), images[history_len].numpy().flatten()))
 
     num_predictions = len(mae_persistence[0])
     for i in range(len(mae_persistence)):

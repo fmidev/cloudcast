@@ -11,8 +11,8 @@ from tensorflow.keras.layers import Input, Conv2D, Dropout, MaxPooling2D, UpSamp
 from tensorflow.keras.models import Model
 
 #LOSS_FUNCTION = 'MeanAbsoluteError'
-#LOSS_FUNCTION = 'MeanSquaredError'
-LOSS_FUNCTION = 'binary_crossentropy'
+LOSS_FUNCTION = 'MeanSquaredError'
+#LOSS_FUNCTION = 'binary_crossentropy'
 #LOSS_FUNCTION = 'ssim'
 
 def unet(pretrained_weights = None,input_size = (256,256,1)):

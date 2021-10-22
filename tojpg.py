@@ -50,5 +50,4 @@ def convert(year,month):
         convert_to_jpeg(f)
 
 
-convert(2021,1)
-
+convert(2020,10)
