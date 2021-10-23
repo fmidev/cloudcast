@@ -75,6 +75,50 @@ def read_grib(file_path, message_no = 0):
         return data
 
 
+
+def save_grib(data, filepath, datetime):
+    assert(filepath[-5:] == 'grib2')
+
+    try:
+        os.makedirs(os.path.dirname(outfile))
+    except FileExistsError as e:
+        pass
+
+    data = np.flipud(data)
+
+    with open(outfile) as fp:
+        h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+        ecc.codes_set(h, "grid_type", "lambert")
+        ecc.codes_set(h, 'shapeOfTheEarth', 5)
+        ecc.codes_set(h, 'Nx', 949)
+        ecc.codes_set(h, 'Ny', 1069)
+        ecc.codes_set(h, 'DxInMeters', 2500)
+        ecc.codes_set(h, 'DyInMeters', 2500)
+        ecc.codes_set(h, 'jScansPositive', 1)
+        ecc.codes_set(h, "latitudeOfFirstPointInDegrees", 50.3196)
+        ecc.codes_set(h, "longitudeOfFirstPointDegrees", 0.27828)
+        ecc.codes_set(h, "latin1InDegrees", 63.3)
+        ecc.codes_set(h, "latin2InDegrees", 63.3)
+        ecc.codes_set(h, "LoVInDegrees", 15)
+        ecc.codes_set(h, "latitudeOfSouthernPoleInDegrees", -90)
+        ecc.codes_set(h, "longitudeOfSouthernPoleInDegrees", 0)
+        ecc.codes_set(h, "dataDate", int(datetime.strftime('%Y%m%d')))
+        ecc.codes_set(h, "dataTime", int(int(datetime.strftime('%H%M')/100)))
+        ecc.codes_set(h, "centre", 86)
+        ecc.codes_set(h, "generatingProcessIdentifier", 255)
+        ecc.codes_set(h, "discipline", 192)
+        ecc.codes_set(h, "parameterCategory", 128)
+        ecc.codes_set(h, "parameterNumber", 164)
+        ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
+        ecc.codes_set(h, "packingType", "grid_ccsds")
+
+        with open(outfile, 'wb') as fpout:
+            ecc.codes_write(h, fpout)
+            print(f'Wrote file {outfile}')
+
+        ecc.codes_release(h)
+
+
 def read_filenames(start_time, stop_time):
     print(f'Input directory: {INPUT_DIR}')
 
@@ -215,8 +259,10 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         self.n_channels = n_channels
         self.batch_size = batch_size
         self.img_size = img_size
+        self.initial = True
 
         print(f"Number of files: {len(self.filenames)}")
+
     def __len__(self):
         return (np.floor(len(self.filenames) / float(self.batch_size))).astype(np.int)
 
@@ -234,5 +280,10 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
         x = preprocess_many(read_gribs(batch_x), self.img_size)
         y = preprocess_many(read_gribs(batch_y), self.img_size)
+
+        if self.initial:
+            print(f'Training batch shapes: x {x.shape} y {y.shape}')
+            self.initial = False
+
         return x, y
 
