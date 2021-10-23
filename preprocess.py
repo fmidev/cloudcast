@@ -7,6 +7,7 @@ import datetime
 import cv2
 from scipy import ndimage
 from PIL import Image
+from tensorflow import keras
 
 
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/grib2'
@@ -49,7 +50,6 @@ def preprocess_single(img, img_size, kernel_size = (3,3), num_classes = 10):
 
     if img_size is not None:
         conv = np.expand_dims(cv2.resize(conv, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
-#       conv = tf.image.resize(conv, size=img_size)
 
  
     return conv #.astype(np.float16)
@@ -75,34 +75,37 @@ def read_grib(file_path, message_no = 0):
         return data
 
 
-def read_input_grib(start_time, stop_time):
+def read_filenames(start_time, stop_time):
     print(f'Input directory: {INPUT_DIR}')
 
     files = sorted(glob.glob(f'{INPUT_DIR}/**/*.grib2', recursive=True))
 
-    print("Total number of files: {}".format(len(files)))
+    start_date = start_time.strftime("%Y%m%d")
+    stop_date = stop_time.strftime("%Y%m%d")
+
+    filenames = []
+
+    for f in files:
+        datetime = f.split('/')[-1][0:14]
+        if datetime >= start_date and datetime < stop_date:
+            filenames.append(f)
+
+    return filenames
+
+def read_gribs(filenames):
 
     def process_grib(file_path):
         img = read_grib(file_path)
-#        img = tf.image.convert_image_dtype(img, tf.float32)
         return img
 
     files_ds = []
 
-    start_date = start_time.strftime("%Y%m%d")
-    stop_date = stop_time.strftime("%Y%m%d")
-
     i = 0
-    for f in files:
-        datetime = f.split('/')[-1][0:14]
-        if datetime >= start_date and datetime < stop_date:
-            i = i + 1
-            if i % 1000 == 0:
-                print(f'Read {i}')
+    for f in filenames:
+        i = i + 1
 
-            files_ds.append(process_grib(f))
+        files_ds.append(process_grib(f))
 
-    print(f'Read {i}')
     if len(files_ds) == 0:
         print("No files found")
 
@@ -162,7 +165,6 @@ def create_train_val_split(dataset, train_history_len=1):
     n_split = dataset.shape[0] / (train_history_len + 1)
     dataset = np.asarray(np.split(dataset, n_split))
 
-    print(dataset.shape)
     # Split into train and validation sets using indexing to optimize memory.
     indexes = np.arange(dataset.shape[0])
     np.random.shuffle(indexes)
@@ -191,7 +193,9 @@ def create_train_val_split(dataset, train_history_len=1):
 
 def create_dataset(start_time, stop_time, img_size=None, preprocess=False):
     print(f"Creating dataset with time range {start_time} to {stop_time}")
-    ds = read_input_grib(start_time, stop_time)
+
+    filenames = read_filenames(start_date, stop_date)
+    ds = read_gribs(filenames)
 
     print(f"Dataset shape: {ds.shape}")
 
@@ -201,4 +205,34 @@ def create_dataset(start_time, stop_time, img_size=None, preprocess=False):
 
     return ds
 
+
+
+
+class EffectiveCloudinessGenerator(keras.utils.Sequence):
+
+    def __init__(self, start_date, stop_date, n_channels=1, batch_size=32, img_size=(256,256)):
+        self.filenames = read_filenames(start_date, stop_date)
+        self.n_channels = n_channels
+        self.batch_size = batch_size
+        self.img_size = img_size
+
+        print(f"Number of files: {len(self.filenames)}")
+    def __len__(self):
+        return (np.floor(len(self.filenames) / float(self.batch_size))).astype(np.int)
+
+    def __getitem__(self, idx):
+        batch_x = []
+        batch_y = []
+        i = -1
+
+        while i < self.batch_size:
+            for j in range(self.n_channels):
+                batch_x.append(self.filenames[idx * self.batch_size + i + 1])
+                i += 1
+            batch_y.append(self.filenames[idx * self.batch_size + i + 1])
+            i += 1
+
+        x = preprocess_many(read_gribs(batch_x), self.img_size)
+        y = preprocess_many(read_gribs(batch_y), self.img_size)
+        return x, y
 
