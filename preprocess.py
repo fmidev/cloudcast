@@ -72,6 +72,8 @@ def read_grib(file_path, message_no = 0):
         if ecc.codes_get(gh, "jScansPositively"):
             data = np.flipud(data) # image data is +x-y
         data = np.expand_dims(data, axis=2)
+
+        ecc.codes_release(gh)
         return data
 
 
@@ -261,21 +263,20 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         self.img_size = img_size
         self.initial = True
 
-        print(f"Number of files: {len(self.filenames)}")
-
     def __len__(self):
-        return (np.floor(len(self.filenames) / float(self.batch_size))).astype(np.int)
+        return (np.floor((len(self.filenames) / (self.n_channels + 1)) / float(self.batch_size))).astype(np.int)
 
     def __getitem__(self, idx):
         batch_x = []
         batch_y = []
-        i = -1
 
-        while i < self.batch_size:
+        i = 0
+        while i < (self.batch_size - 1) * (self.n_channels + 1):
             for j in range(self.n_channels):
-                batch_x.append(self.filenames[idx * self.batch_size + i + 1])
+                batch_x.append(self.filenames[idx * self.batch_size + i])
                 i += 1
-            batch_y.append(self.filenames[idx * self.batch_size + i + 1])
+#            print(f"idx={idx}/{len(self)} bs={self.batch_size} i={i} files={len(self.filenames)}")
+            batch_y.append(self.filenames[idx * self.batch_size + i])
             i += 1
 
         x = preprocess_many(read_gribs(batch_x), self.img_size)
@@ -286,4 +287,29 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
             self.initial = False
 
         return x, y
+
+
+# datetime ring buffer
+
+class TimeseriesGenerator:
+    def __init__(self, start_date, frames_prev, frames_next, step):
+        self.date = start_date
+        self.frames_prev = frames_prev
+        self.frames_next = frames_next
+        self.step = step
+        self.times = [start_date]
+        self.create()
+    def __iter__(self):
+        while True:
+            yield self.times
+            self.create()
+    def __next__(self):
+        return_value = self.times
+        self.create()
+        return return_value
+    def create(self):
+        if len(self.times) > 1:
+            self.times.pop(0)
+        while len(self.times) < 1 + -1 * self.frames_prev + self.frames_next:
+            self.times.append(self.times[-1] + self.step)
 

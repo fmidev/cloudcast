@@ -14,19 +14,22 @@ MODEL="unet"
 #IMG_SIZE=(928,928)
 #IMG_SIZE=(768,768)
 IMG_SIZE=(256,256)
-#IMG_SIZE=(128,128)
+IMG_SIZE=(128,128)
 TRAIN_SERIES_LENGTH = 8
 CONVLSTM = False
+#LOSS = "MeanAbsoluteError"
+LOSS = "MeanSquaredError"
 
-model_file = 'models/{}_{}_{}x{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1])
+model_file = 'models/{}_{}_{}x{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1])
 
 if MODEL == "convlstm":
     CONVLSTM=True
-    model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
+    model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
+
 print(f"Loading {model_file}")
 
 m = None
-if LOSS_FUNCTION == "ssim":
+if LOSS == "ssim":
     m = load_model(model_file, compile=False)
 else:
     m = load_model(model_file)
@@ -42,18 +45,6 @@ def sharpen(data, factor):
     sharp = np.array(enhancer.enhance(factor)) / 255.0
     return np.expand_dims(sharp, [0,3])
 
-
-#def process_img(img):
-#    img = tf.image.decode_jpeg(img, channels=1)
-#    img = tf.image.convert_image_dtype(img, tf.float32)
-#    img = tf.image.resize(img, size=IMG_SIZE)
-#    return img
-
-
-#def read_img_from_file(filename):
-#    print(f"reading {filename}")
-#    img = tf.io.read_file('{}/{}.jpg'.format('/home/partio/tmp/cloudnwc-jpeg/eval', filename))
-#    return process_img(img)
 
 
 def read_img_from_memory(mem):
@@ -180,6 +171,23 @@ def save_to_file(data, outfile, datetime):
 
         ecc.codes_release(h)
 
+def plot_mae(persistence, prediction):
+
+#    for i in range(len(mae_persistence)):
+#        mae_persistence[i] = np.mean(persistence[i])
+#        mae_prediction[i] = np.mean(prediction[i])
+    assert(len(persistence) == len(prediction))
+    print(prediction)
+    fig = plt.figure()
+    ax = plt.axes()
+
+    x = range(len(prediction))
+    ax.plot(x, prediction, label='model')
+    ax.plot(x, persistence, label='persistence')
+    plt.legend()
+    plt.title(f'mae over {len(prediction)} predictions')
+    plt.show()
+
 
 def plot_unet(start_date):
 
@@ -187,6 +195,9 @@ def plot_unet(start_date):
 
     pred = None
     initial = None
+
+    mae_persistence = []
+    mae_prediction = []
 
     for idx, row in enumerate(axes):
 
@@ -209,17 +220,16 @@ def plot_unet(start_date):
             pred = infer(pred)
 
         ground_truth = preprocess_single(read_time(start_date), img_size=IMG_SIZE)
-#        pred = pred / 255
         print(np.mean(ground_truth), np.mean(pred))
 
-        print("mae persistence: {}".format(mean_absolute_error(ground_truth.flatten(), initial.flatten())))
-        print("mae prediction:  {}".format(mean_absolute_error(ground_truth.flatten(), pred.flatten())))
+        mae_persistence.append(mean_absolute_error(ground_truth.flatten(), initial.flatten()))
+        mae_prediction.append(mean_absolute_error(ground_truth.flatten(), pred.flatten()))
 
-        #mae_prediction[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), predictions[i].flatten()))
-        #mae_persistence[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), images[history_len].numpy().flatten()))
+        print("mae persistence: {}".format(mae_persistence[:-1]))
+        print("mae prediction:  {}".format(mae_prediction[:-1]))
 
-#        print(np.histogram(pred))
-#        print(np.histogram(ground_truth))
+        print(np.histogram(pred))
+        print(np.histogram(ground_truth))
         diff = (ground_truth - pred) #/ 255
 
         row[0].imshow(ground_truth*255, cmap='gray')
@@ -238,34 +248,10 @@ def plot_unet(start_date):
 
         start_date = start_date + timedelta(minutes=15)
 
-#    fig.subplots_adjust(wspace=0.1, hspace=0.1)
 
     plt.show()
 
-
-# datetime ring buffer
-
-class timeseries_generator:
-    def __init__(self, start_date, frames_prev, frames_next, step):
-        self.date = start_date
-        self.frames_prev = frames_prev
-        self.frames_next = frames_next
-        self.step = step
-        self.times = [start_date]
-        self.create()
-    def __iter__(self):
-        while True:
-            yield self.times
-            self.create()
-    def __next__(self):
-        return_value = self.times
-        self.create()
-        return return_value
-    def create(self):
-        if len(self.times) > 1:
-            self.times.pop(0)
-        while len(self.times) < 1 + -1 * self.frames_prev + self.frames_next:
-            self.times.append(self.times[-1] + self.step)
+    plot_mae(mae_persistence, mae_prediction)
 
 
 
@@ -275,7 +261,7 @@ if CONVLSTM:
 
     history_len = 5
     prediction_len = 12
-    gen = timeseries_generator(start_date, -history_len, prediction_len, timedelta(minutes=15))
+    gen = TimeseriesGenerator(start_date, -history_len, prediction_len, timedelta(minutes=15))
 
     mae_prediction = []
     mae_persistence = []
