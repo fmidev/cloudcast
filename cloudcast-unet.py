@@ -12,11 +12,14 @@ N_CHANNELS = 1
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("img_size", type=int, nargs='+')
+    parser.add_argument("--img_size", action='store', type=str, required=True)
 
     args = parser.parse_args()
 
+    args.img_size = tuple(map(int, args.img_size.split('x')))
+
     return args
+
 
 def with_full_dataset(m, args):
     start_time = datetime.datetime.strptime('2021-05-01', '%Y-%m-%d')
@@ -30,9 +33,9 @@ def with_full_dataset(m, args):
     return hist
 
 def with_generator(m, args):
-    batch_size = 16
+    batch_size = 64
 
-    start_time = datetime.datetime.strptime('2020-04-01', '%Y-%m-%d')
+    start_time = datetime.datetime.strptime('2020-12-01', '%Y-%m-%d')
     stop_time = datetime.datetime.strptime('2021-05-01', '%Y-%m-%d')
 
     train_gen = EffectiveCloudinessGenerator(start_time, stop_time, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
@@ -44,7 +47,7 @@ def with_generator(m, args):
     val_gen = EffectiveCloudinessGenerator(start_time, stop_time, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
     print("Number of validation files: {}".format(len(val_gen.filenames)))
 
-    hist = m.fit(train_gen, epochs = EPOCHS, validation_data = val_gen, callbacks=callbacks)
+    hist = m.fit(train_gen, epochs = EPOCHS, validation_data = val_gen, callbacks=callbacks(args))
 
     return hist
 
@@ -81,7 +84,7 @@ def run_model(args):
 
     start = datetime.datetime.now()
 
-    hist = with_generator(m, callbacks())
+    hist = with_generator(m, args)
 
     duration = datetime.datetime.now() - start
 
