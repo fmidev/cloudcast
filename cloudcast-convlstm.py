@@ -1,9 +1,8 @@
 import numpy as np
 import glob
 import matplotlib.pyplot as plt
-import tensorflow_datasets as tfds
 import sys
-import eccodes as ecc
+import argparser
 
 from tensorflow.keras.models import save_model # import datasets, models, layers
 from PIL import Image
@@ -19,112 +18,14 @@ STOP_DATE = '20210331T2345'
 
 PREPROCESS = True
 
-#def read_input_disk():
-#    input_dir = f'/home/partio/tmp/cloudnwc-jpeg/'
-#    print(input_dir)
+def parse_command_line():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("img_size", type=int, nargs='+')
 
-#    files = sorted(glob.glob(f'{input_dir}/lstm/*.jpg'))
+    args = parser.parse_args()
 
-#    files_ds = tf.data.Dataset.from_tensor_slices(files)
+    return args
 
-#    def process_img(file_path):
-#        img = tf.io.read_file(file_path)
-#        img = tf.image.decode_jpeg(img, channels=1)
-#        img = tf.image.convert_image_dtype(img, tf.float32)
-#        img = tf.image.resize(img, size=IMG_SIZE)
-
-#        if PREPROCESS:
-#            img = None
-#        return img
-
-#    files_ds = files_ds.map(lambda x: (process_img(x))).batch(1)
-
-#    return files_ds
-
-def read_grib(file_path, message_no = 0):
-    with open(file_path) as fp:
-        gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
-        #year = ecc.codes_get(gh, "year")
-        #month = ecc.codes_get(gh, "month")
-        #day = ecc.codes_get(gh, "day")
-        #hour = ecc.codes_get(gh, "hour")
-        #minute = ecc.codes_get(gh, "minute")
-
-        ni = ecc.codes_get_long(gh, "Ni")
-        nj = ecc.codes_get_long(gh, "Nj")
-
-        data = np.asarray(ecc.codes_get_double_array(gh, "values")).reshape(nj, ni)
-        data = data / 100.0 * 255 # to mimick an image with one (gray) channel
-
-        if ecc.codes_get(gh, "jScansPositively"):
-            data = np.flipud(data)
-        data = np.expand_dims(data, axis=2)
-        return data
-
-
-def read_input_grib():
-    input_dir = '/home/partio/cloudnwc/effective_cloudiness/data/grib2'
-    print(input_dir)
-
-    files = sorted(glob.glob(f'{input_dir}/**/*.grib2', recursive=True))
-
-    def process_grib(file_path):
-        img = read_grib(file_path)
-        img = tf.image.convert_image_dtype(img, tf.float32)
-        img = tf.image.resize(img, size=IMG_SIZE)
-        return img
-
-    files_ds = []
-
-    for f in files:
-        datetime = f.split('/')[-1][0:14]
-        if datetime >= START_DATE and datetime < STOP_DATE:
-            files_ds.append(process_grib(f))
-
-    assert(len(files_ds) > 0)
-    n_split = len(files_ds) / TRAIN_SERIES_LENGTH
-    files_ds = np.asarray(np.split(np.asarray(files_ds), n_split))
-
-    return files_ds
-
-
-#def read_input_np():
-#    input_dir = f'/home/partio/tmp/cloudnwc-jpeg/'
-#    print(input_dir)
-
-#    files = sorted(glob.glob(f'{input_dir}/lstm/*.jpg'))
-
-#    files_ds = tf.data.Dataset.from_tensor_slices(files)
-
-#    def process_img(file_path):
-#        img = tf.io.read_file(file_path)
-#        img = tf.image.decode_jpeg(img, channels=1)
-#        img = tf.image.convert_image_dtype(img, tf.float32)
-#        img = tf.image.resize(img, size=IMG_SIZE)
-#        return img
-
-#    files_ds = []
-
-#    for f in files:
-#        files_ds.append(process_img(f))
-
-#    n_split = len(files_ds) / TRAIN_SERIES_LENGTH
-#    files_ds = np.asarray(np.split(np.asarray(files_ds), n_split))
-
-#    return files_ds
-
-def create_dataset():
-
-#    train_ds = read_input_disk()
-#    train_np = np.stack(list(train_ds))
-#    train_np = np.asarray(np.split(train_np, 6)).squeeze(axis=2)
-
-    train_np = read_input_grib()
-    print(train_np.shape)
-
-    print("Original Dataset Shape: " + str(train_np.shape))
-
-    return train_np
 
 
 def create_train_val_split(dataset):
