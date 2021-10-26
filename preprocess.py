@@ -5,12 +5,13 @@ import eccodes as ecc
 import datetime
 #import tensorflow as tf
 import cv2
+import os
 from scipy import ndimage
 from PIL import Image
 from tensorflow import keras
 
 
-INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/grib2'
+INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
 
 def preprocess_many(imgs, img_size):
@@ -121,10 +122,10 @@ def save_grib(data, filepath, datetime):
         ecc.codes_release(h)
 
 
-def read_filenames(start_time, stop_time):
-    print(f'Input directory: {INPUT_DIR}')
+def read_filenames(start_time, stop_time, producer='nwcsaf'):
+    print(f'Input directory: {INPUT_DIR}/{producer}')
 
-    files = sorted(glob.glob(f'{INPUT_DIR}/**/*.grib2', recursive=True))
+    files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*.grib2', recursive=True))
 
     start_date = start_time.strftime("%Y%m%d")
     stop_date = stop_time.strftime("%Y%m%d")
@@ -168,8 +169,22 @@ def sharpen(data, factor):
     return np.expand_dims(sharp, [0,3])
 
 
-def read_time(time):
-    return read_grib('{}/{}_nwcsaf_effective-cloudiness.grib2'.format(INPUT_DIR, time.strftime('%Y/%m/%d/%Y%m%dT%H%M%S')))
+def get_filename(time, producer = 'nwcsaf'):
+    if producer == 'nwcsaf':
+        return '{}/nwcsaf/{}_nwcsaf_effective-cloudiness.grib2'.format(INPUT_DIR, time.strftime('%Y/%m/%d/%Y%m%dT%H%M%S'))
+    if producer == 'mnwc':
+        return '{}/mnwc/{}.grib2'.format(INPUT_DIR, time.strftime('%Y%m%d%H00+000h%Mm'))
+
+
+def read_time(time, producer='nwcsaf'):
+    return read_grib(get_filename(time, producer))
+
+def read_times(times, producer='nwcsaf'):
+    data = []
+    for time in times:
+        data.append(read_grib(get_filename(time, producer)))
+
+    return data
 
 
 def create_train_val_split_timeseries(dataset):
@@ -252,16 +267,25 @@ def create_dataset(start_time, stop_time, img_size=None, preprocess=False):
     return ds
 
 
+def time_of_year_and_day(datetime):
+    day = 24*60*60
+    year = 365.2425 * day
+
+    tod = np.sin(datetime.timestamp() * (2 * np.pi / day))
+    toy = np.cos(datetime.timestamp() * (2 * np.pi / year))
+
+    return tod, toy
 
 
 class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
-    def __init__(self, start_date, stop_date, n_channels=1, batch_size=32, img_size=(256,256)):
+    def __init__(self, start_date, stop_date, n_channels=1, batch_size=32, img_size=(256,256), include_time=False):
         self.filenames = read_filenames(start_date, stop_date)
         self.n_channels = n_channels
         self.batch_size = batch_size
         self.img_size = img_size
         self.initial = True
+        self.include_time = include_time
 
     def __len__(self):
         return (np.floor((len(self.filenames) / (self.n_channels + 1)) / float(self.batch_size))).astype(np.int)
@@ -281,6 +305,15 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
         x = preprocess_many(read_gribs(batch_x), self.img_size)
         y = preprocess_many(read_gribs(batch_y), self.img_size)
+
+        if self.include_time:
+            for i,f in enumerate(batch_x):
+                datetime_str = os.path.filename(f).split('_')[0]
+
+                tod, toy = time_of_year_and_day(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'))
+
+                np.append(x[i], np.full(self.img_size, tod, dtype=np.float32), axis=3)
+                np.append(x[i], np.full(self.img_size, toy, dtype=np.float32), axis=3)
 
         if self.initial:
             print(f'Training batch shapes: x {x.shape} y {y.shape}')

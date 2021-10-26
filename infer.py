@@ -5,6 +5,7 @@ import glob
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
 from preprocess import *
@@ -14,17 +15,16 @@ MODEL="unet"
 #IMG_SIZE=(928,928)
 #IMG_SIZE=(768,768)
 IMG_SIZE=(256,256)
-IMG_SIZE=(128,128)
-TRAIN_SERIES_LENGTH = 8
+#IMG_SIZE=(128,128)
+TRAIN_SERIES_LENGTH = 1
 CONVLSTM = False
 #LOSS = "MeanAbsoluteError"
 LOSS = "MeanSquaredError"
 
-model_file = 'models/{}_{}_{}x{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1])
+model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
 
 if MODEL == "convlstm":
     CONVLSTM=True
-    model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
 
 print(f"Loading {model_file}")
 
@@ -49,6 +49,19 @@ def sharpen(data, factor):
 
 def read_img_from_memory(mem):
     return process_img(mem)
+
+
+def infer_many(seed, num_predictions):
+    predictions = []
+
+    for i in range(num_predictions):
+        if len(predictions) > 0:
+            predictions.append(infer(predictions[-1]))
+        else:
+            predictions.append(infer(seed))
+
+    return predictions
+
 
 
 def infer(img):
@@ -171,21 +184,22 @@ def save_to_file(data, outfile, datetime):
 
         ecc.codes_release(h)
 
-def plot_mae(persistence, prediction):
-
+def plot_mae(data, labels):
+    print(data)
+    print(labels)
 #    for i in range(len(mae_persistence)):
 #        mae_persistence[i] = np.mean(persistence[i])
 #        mae_prediction[i] = np.mean(prediction[i])
-    assert(len(persistence) == len(prediction))
-    print(prediction)
+    assert(len(data) == len(labels))
     fig = plt.figure()
     ax = plt.axes()
 
-    x = range(len(prediction))
-    ax.plot(x, prediction, label='model')
-    ax.plot(x, persistence, label='persistence')
+    x = range(len(data[0]))
+    for i,mae in enumerate(data):
+        ax.plot(x, mae, label=labels[i])
+
     plt.legend()
-    plt.title(f'mae over {len(prediction)} predictions')
+    plt.title(f'mae over {len(data[0])} predictions')
     plt.show()
 
 
@@ -199,41 +213,49 @@ def plot_unet(start_date):
     mae_persistence = []
     mae_prediction = []
 
-    for idx, row in enumerate(axes):
+    time_gen = TimeseriesGenerator(start_date, 0, 5, timedelta(minutes=15))
 
-        if idx == 0:
-            ground_truth = preprocess_single(read_time(start_date), img_size=IMG_SIZE)
-            initial = np.copy(ground_truth)
+    times = next(time_gen)
+    print(times)
+    gt = preprocess_many(read_times(times, producer='nwcsaf'), img_size=IMG_SIZE)
+    mnwc = preprocess_many(read_times(times, producer='mnwc'), img_size=IMG_SIZE)
+    cloudcast = infer_many(gt[0], len(times))
+    initial = np.copy(gt[0])
 
-            row[0].imshow(ground_truth, cmap='gray')
+#    initial = np.asarray([np.copy(gt[0])] * len(gt))
+
+#    print(type(gt), type(initial))
+#    print(len(gt), len(initial))
+#    print(gt[0].shape, initial[0].shape)
+
+    mae_persistence = []
+    mae_cloudcast = []
+    mae_mnwc = []
+
+    for i,t in enumerate(gt):
+        mae_persistence.append(mean_absolute_error(t.flatten(), initial.flatten()))
+        mae_cloudcast.append(mean_absolute_error(t.flatten(), cloudcast[i].flatten()))
+        mae_mnwc.append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
+
+    plot_mae([mae_persistence, mae_cloudcast, mae_mnwc],['persistence', 'cloudcast', 'mnwc'])
+
+
+    for i, row in enumerate(axes):
+        time = times[i]
+
+        if i == 0:
+            row[0].imshow(gt[0], cmap='gray')
             row[0].axis("off")
             row[0].set_title(f"Ground truth 0 min")
             row[1].axis("off")
             row[2].axis("off")
-            start_date = start_date + timedelta(minutes=15)
 
             continue
 
-        if pred is None:
-            pred = infer(ground_truth)
-        else:
-            pred = infer(pred)
+        diff = (gt[i] - cloudcast[i])
 
-        ground_truth = preprocess_single(read_time(start_date), img_size=IMG_SIZE)
-        print(np.mean(ground_truth), np.mean(pred))
-
-        mae_persistence.append(mean_absolute_error(ground_truth.flatten(), initial.flatten()))
-        mae_prediction.append(mean_absolute_error(ground_truth.flatten(), pred.flatten()))
-
-        print("mae persistence: {}".format(mae_persistence[:-1]))
-        print("mae prediction:  {}".format(mae_prediction[:-1]))
-
-        print(np.histogram(pred))
-        print(np.histogram(ground_truth))
-        diff = (ground_truth - pred) #/ 255
-
-        row[0].imshow(ground_truth*255, cmap='gray')
-        row[1].imshow(pred*255, cmap='gray')
+        row[0].imshow(gt[i]*255, cmap='gray')
+        row[1].imshow(cloudcast[i]*255, cmap='gray')
         r2 = row[2].imshow(diff, cmap='RdYlBu_r')
         plt.colorbar(r2, ax=row[2])
 
@@ -241,21 +263,18 @@ def plot_unet(start_date):
         row[1].axis("off")
         row[2].axis("off")
 
-        row[0].set_title(f"Ground truth {idx*15} min")
-        row[1].set_title(f"Predicted {idx*15} min")
-        row[2].set_title(f"observed - predicted {idx*15} min")
+        row[0].set_title(f"Ground truth {i*15} min")
+        row[1].set_title(f"Predicted {i*15} min")
+        row[2].set_title(f"observed - predicted {i*15} min")
 
-
-        start_date = start_date + timedelta(minutes=15)
 
 
     plt.show()
 
-    plot_mae(mae_persistence, mae_prediction)
 
 
 
-start_date=datetime.datetime.strptime('20200101T0045', '%Y%m%dT%H%M')
+start_date=dateparser.parse('2021-10-16T06:00:00Z')
 
 if CONVLSTM:
 
