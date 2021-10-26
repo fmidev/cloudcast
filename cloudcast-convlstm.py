@@ -8,9 +8,6 @@ from tensorflow.keras.models import save_model # import datasets, models, layers
 from PIL import Image
 from model import *
 
-#IMG_SIZE = (768,768)
-IMG_SIZE = (128,128)
-#IMG_SIZE = (256,256)
 TRAIN_SERIES_LENGTH = 10
 
 START_DATE = '20201001T0000'
@@ -19,13 +16,13 @@ STOP_DATE = '20210331T2345'
 PREPROCESS = True
 
 def parse_command_line():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("img_size", type=int, nargs='+')
+    parser = argparser.ArgumentParser()
+    parser.add_argument("--img_size", action='store', type=str, required=True)
 
-    args = parser.parse_args()
+    args.img_size = tuple(map(int, args.img_size.split('x')))
+
 
     return args
-
 
 
 def create_train_val_split(dataset):
@@ -73,6 +70,8 @@ def show_examples():
     print(f"Displaying frames for example {data_choice}.")
     plt.show()
 
+args = parse_command_line()
+
 dataset = create_dataset()
 
 # show_examples(dataset)
@@ -81,9 +80,9 @@ x_train, y_train, x_val, y_val = create_train_val_split(dataset)
 
 print("train dataset size: {str(x_train)}")
 
-m = convlstm(input_size=IMG_SIZE + (1,))
+m = convlstm(input_size=args.img_size + (1,))
 
-cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH),
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], TRAIN_SERIES_LENGTH),
                                                  save_weights_only=True,
                                                  verbose=1)
 
@@ -95,5 +94,5 @@ hist = m.fit(x_train, y_train, epochs=20, batch_size=3, validation_data=(x_val, 
 
 print(hist)
 
-save_model(m, 'models/convlstm_{}_{}x{}_{}/'.format(LOSS_FUNCTION, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH))
+save_model(m, 'models/convlstm_{}_{}x{}_{}/'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], TRAIN_SERIES_LENGTH))
 
