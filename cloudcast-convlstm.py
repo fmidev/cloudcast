@@ -14,6 +14,8 @@ def parse_command_line():
     parser.add_argument("--img_size", action='store', type=str, required=True)
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--cont", action='store_true')
+    parser.add_argument("--loss_function", action='store', type=str, default='binary_crossentropy')
 
     args = parser.parse_args()
 
@@ -23,34 +25,6 @@ def parse_command_line():
 
     return args
 
-
-def create_train_val_split(dataset):
-
-    # Split into train and validation sets using indexing to optimize memory.
-    indexes = np.arange(dataset.shape[0])
-    np.random.shuffle(indexes)
-    train_index = indexes[: int(0.9 * dataset.shape[0])]
-    val_index = indexes[int(0.9 * dataset.shape[0]) :]
-    train_dataset = dataset[train_index]
-    val_dataset = dataset[val_index]
-
-    # We'll define a helper function to shift the frames, where
-    # `x` is frames 0 to n - 1, and `y` is frames 1 to n.
-    def create_shifted_frames(data):
-        x = data[:, 0 : data.shape[1] - 1, :, :]
-        y = data[:, 1 : data.shape[1], :, :]
-        return x, y
-
-
-    # Apply the processing function to the datasets.
-    x_train, y_train = create_shifted_frames(train_dataset)
-    x_val, y_val = create_shifted_frames(val_dataset)
-
-    # Inspect the dataset.
-    print("Training Dataset Shapes: " + str(x_train.shape) + ", " + str(y_train.shape))
-    print("Validation Dataset Shapes: " + str(x_val.shape) + ", " + str(y_val.shape))
-
-    return (x_train, y_train, x_val, y_val)
 
 def show_examples():
 
@@ -78,7 +52,7 @@ def fit(m, args):
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
 
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH),
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH),
                                                  save_weights_only=True,
                                                  verbose=1)
 
@@ -93,9 +67,9 @@ def fit(m, args):
 
 
 def run_model(args):
-    model_dir = 'models/convlstm_{}_{}x{}_{}'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH)
+    model_dir = 'models/convlstm_{}_{}x{}_{}'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH)
 
-    m = convlstm(input_size=args.img_size + (1,))
+    m = convlstm(input_size=args.img_size + (1,), args.loss_function)
 
     start = datetime.datetime.now()
 

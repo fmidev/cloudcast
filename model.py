@@ -10,15 +10,10 @@ from tensorflow import keras
 from tensorflow.keras.layers import Input, Conv2D, Dropout, MaxPooling2D, UpSampling2D, Cropping2D, concatenate, ConvLSTM2D, BatchNormalization, Conv3D
 from tensorflow.keras.models import Model
 
-#LOSS_FUNCTION = 'MeanAbsoluteError'
-LOSS_FUNCTION = 'MeanSquaredError'
 #LOSS_FUNCTION = 'binary_crossentropy'
 #LOSS_FUNCTION = 'ssim'
 
-def unet(pretrained_weights = None,input_size = (256,256,1)):
-    global LOSS_FUNCTION
-
-    LOSS_FUNCTION = 'MeanSquaredError'
+def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError'):
 
     inputs = Input(input_size)
     conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(inputs)
@@ -63,7 +58,7 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
 
     model = Model(inputs = [inputs], outputs = [conv10])
 
-    model.compile(optimizer = 'SGD', loss = LOSS_FUNCTION, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
+    model.compile(optimizer = 'SGD', loss = loss_function, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
    
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
@@ -72,12 +67,8 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
 
 
 
-def convlstm(input_size = (256,256,1)):
-    global LOSS_FUNCTION
+def convlstm(pretrained_weights=None, input_size = (256,256,1), loss_function='binary_crossentropy'):
 
-    LOSS_FUNCTION = 'binary_crossentropy'
-
-    # Construct the input layer with no definite frame size.
     inp = Input(shape=(None, * input_size))
 
     # We will construct 3 `ConvLSTM2D` layers with batch normalization,
@@ -109,13 +100,12 @@ def convlstm(input_size = (256,256,1)):
         filters=1, kernel_size=(3, 3, 3), activation="sigmoid", padding="same"
     )(x)
 
-    # Next, we will build the complete model and compile it.
-    model = keras.models.Model(inp, x)
+    model = kModel(inp, x)
 
-    if LOSS_FUNCTION == "ssim":
+    if loss_function == "ssim":
         model.compile(loss=ssim_loss, optimizer=keras.optimizers.Adam(), metrics=[ssim_loss, 'accuracy', 'MeanAbsoluteError'])
     else:
-        model.compile(loss=LOSS_FUNCTION, optimizer=keras.optimizers.Adam(), metrics=['accuracy', 'MeanAbsoluteError'])
+        model.compile(loss=loss_function, optimizer=keras.optimizers.Adam(), metrics=['accuracy', 'MeanAbsoluteError'])
     return model
 
 

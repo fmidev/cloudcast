@@ -14,6 +14,7 @@ def parse_command_line():
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
     parser.add_argument("--cont", action='store_true')
+    parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
 
     args = parser.parse_args()
 
@@ -37,7 +38,7 @@ def with_generator(m, args):
     return hist
 
 def callbacks(args):
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS),
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], N_CHANNELS),
                                                  save_weights_only=True)
     early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=7, min_delta=0.001, verbose=1)
     reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
@@ -65,10 +66,10 @@ def plot_hist(hist, model_dir):
 
 
 def run_model(args):
-    model_dir = 'models/unet_{}_{}x{}_{}'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS)
+    model_dir = 'models/unet_{}_{}x{}_{}'.format(args.loss_function, args.img_size[0], args.img_size[1], N_CHANNELS)
 
-    pretrained_weights = 'checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS) if args.cont else None
-    m = unet(pretrained_weights, input_size=args.img_size + (1,))
+    pretrained_weights = 'checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], N_CHANNELS) if args.cont else None
+    m = unet(pretrained_weights, input_size=args.img_size + (1,), args.loss_function)
 
     start = datetime.datetime.now()
 
