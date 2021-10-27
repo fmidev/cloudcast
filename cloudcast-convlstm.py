@@ -56,7 +56,7 @@ def fit(m, args):
                                                  save_weights_only=True,
                                                  verbose=1)
 
-    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=10)
+    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=7, min_delta=0.001)
     reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
 
 #    hist = m.fit(x_train, y_train, epochs=20, batch_size=3, validation_data=(x_val, y_val), callbacks=[cp_callback, early_stopping_callback, reduce_lr_callback])
@@ -69,7 +69,8 @@ def fit(m, args):
 def run_model(args):
     model_dir = 'models/convlstm_{}_{}x{}_{}'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH)
 
-    m = convlstm(input_size=args.img_size + (1,), args.loss_function)
+    pretrained_weights = 'checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH) if args.cont else None
+    m = convlstm(pretrained_weights=pretrained_weights, input_size=args.img_size + (1,), loss_function=args.loss_function)
 
     start = datetime.datetime.now()
 

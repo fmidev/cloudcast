@@ -67,7 +67,7 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
 
 
 
-def convlstm(pretrained_weights=None, input_size = (256,256,1), loss_function='binary_crossentropy'):
+def convlstm(pretrained_weights=None, input_size=(256,256,1), loss_function='binary_crossentropy'):
 
     inp = Input(shape=(None, * input_size))
 
@@ -100,12 +100,16 @@ def convlstm(pretrained_weights=None, input_size = (256,256,1), loss_function='b
         filters=1, kernel_size=(3, 3, 3), activation="sigmoid", padding="same"
     )(x)
 
-    model = kModel(inp, x)
+    model = Model(inp, x)
 
     if loss_function == "ssim":
         model.compile(loss=ssim_loss, optimizer=keras.optimizers.Adam(), metrics=[ssim_loss, 'accuracy', 'MeanAbsoluteError'])
     else:
         model.compile(loss=loss_function, optimizer=keras.optimizers.Adam(), metrics=['accuracy', 'MeanAbsoluteError'])
+
+    if pretrained_weights is not None:
+        model.load_weights(pretrained_weights)
+
     return model
 
 

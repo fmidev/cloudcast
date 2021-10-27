@@ -6,7 +6,7 @@ import datetime
 import cv2
 import os
 from scipy import ndimage
-from PIL import Image
+from PIL import Image, ImageEnhance
 from tensorflow import keras
 from gributils import *
 
@@ -74,7 +74,7 @@ def read_filenames(start_time, stop_time, producer='nwcsaf'):
 
 
 def sharpen(data, factor):
-    assert(data.shape == (1,) + IMG_SIZE + (1,))
+#    assert(data.shape == (1,) + IMG_SIZE + (1,))
     im = Image.fromarray(np.squeeze(data) * 255)
     im = im.convert('L')
 
@@ -96,7 +96,10 @@ def read_time(time, producer='nwcsaf'):
 def read_times(times, producer='nwcsaf'):
     data = []
     for time in times:
-        data.append(read_grib(get_filename(time, producer)))
+        try:
+            data.append(read_grib(get_filename(time, producer)))
+        except FileNotFoundError as e:
+            pass
 
     return data
 
@@ -165,20 +168,6 @@ def create_train_val_split(dataset, train_history_len=1):
 
     return (x_train, y_train, x_val, y_val)
 
-
-def create_dataset(start_time, stop_time, img_size=None, preprocess=False):
-    print(f"Creating dataset with time range {start_time} to {stop_time}")
-
-    filenames = read_filenames(start_date, stop_date)
-    ds = read_gribs(filenames)
-
-    print(f"Dataset shape: {ds.shape}")
-
-    if preprocess:
-        ds = preprocess_many(ds, img_size)
-        print(f'Dataset shape: {ds.shape}')
-
-    return ds
 
 
 def time_of_year_and_day(datetime):
