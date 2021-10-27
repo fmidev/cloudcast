@@ -16,6 +16,10 @@ LOSS_FUNCTION = 'MeanSquaredError'
 #LOSS_FUNCTION = 'ssim'
 
 def unet(pretrained_weights = None,input_size = (256,256,1)):
+    global LOSS_FUNCTION
+
+    LOSS_FUNCTION = 'MeanSquaredError'
+
     inputs = Input(input_size)
     conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(inputs)
     conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv1)
@@ -59,7 +63,7 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
 
     model = Model(inputs = [inputs], outputs = [conv10])
 
-    model.compile(optimizer = 'SGD', loss = LOSS_FUNCTION, metrics = ['RootMeanSquaredError','MeanAbsoluteError'])
+    model.compile(optimizer = 'SGD', loss = LOSS_FUNCTION, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
    
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
@@ -69,6 +73,9 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
 
 
 def convlstm(input_size = (256,256,1)):
+    global LOSS_FUNCTION
+
+    LOSS_FUNCTION = 'binary_crossentropy'
 
     # Construct the input layer with no definite frame size.
     inp = Input(shape=(None, * input_size))
@@ -108,7 +115,7 @@ def convlstm(input_size = (256,256,1)):
     if LOSS_FUNCTION == "ssim":
         model.compile(loss=ssim_loss, optimizer=keras.optimizers.Adam(), metrics=[ssim_loss, 'accuracy', 'MeanAbsoluteError'])
     else:
-        model.compile(loss=LOSS_FUNCTION, optimizer=keras.optimizers.Adam(), metrics=['MeanAbsoluteError'])
+        model.compile(loss=LOSS_FUNCTION, optimizer=keras.optimizers.Adam(), metrics=['accuracy', 'MeanAbsoluteError'])
     return model
 
 
