@@ -30,24 +30,25 @@ def preprocess_single(img, img_size, kernel_size = (3,3), num_classes = 10):
 
 #    print(f"Preprocessing with {kernel_size} kernel and rounding to {num_classes} classes")
 
-    ds = []
-
     conv = ndimage.convolve(img, kernel1, mode='constant', cval=0.0)
-    conv = (np.around((100 * conv) / num_classes, decimals=0)*num_classes)/100
+    #conv = (np.around((100 * conv) / num_classes, decimals=0)*num_classes)/100
 
-#        im = Image.fromarray(img.squeeze() * 255)
-#        im = im.convert('L')
-#        im.save("original.jpg")
+    conv[conv < 0.1] = 0.0
+    conv[conv > 0] = 1.0
 
-#        im = Image.fromarray(conv.squeeze() * 255)
-#        im = im.convert('L')
-#        im.save("convoluted.jpg")
+#    im = Image.fromarray(img.squeeze() * 255)
+#    im = im.convert('L')
+#    im.save("original.jpg")
 
-#        print(img)
-#        print(conv)
-#        print(np.histogram(img))
-#        print(np.histogram(conv))
-#        break
+#    im = Image.fromarray(conv.squeeze() * 255)
+#    im = im.convert('L')
+#    im.save("convoluted.jpg")
+
+#    print(img)
+#    print(conv)
+#    print(np.histogram(img))
+#    print(np.histogram(conv))
+#    sys.exit(1)
 
     if img_size is not None:
         conv = np.expand_dims(cv2.resize(conv, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
@@ -127,13 +128,12 @@ def read_filenames(start_time, stop_time, producer='nwcsaf'):
 
     files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*.grib2', recursive=True))
 
-    start_date = start_time.strftime("%Y%m%d")
-    stop_date = stop_time.strftime("%Y%m%d")
-
+    start_date = int(start_time.strftime("%Y%m%d"))
+    stop_date = int(stop_time.strftime("%Y%m%d"))
     filenames = []
 
     for f in files:
-        datetime = f.split('/')[-1][0:14]
+        datetime = int(f.split('/')[-1][0:8])
         if datetime >= start_date and datetime < stop_date:
             filenames.append(f)
 
@@ -276,35 +276,54 @@ def time_of_year_and_day(datetime):
 
     return tod, toy
 
+def create_generators(start_date, stop_date, **kwargs):
+    filenames = read_filenames(start_date, stop_date)
+    assert(len(filenames) > 0)
+
+    datasets = []
+
+    i = 0
+
+    while i < len(filenames) - 1:
+        datasets.append([filenames[i], filenames[i+1]])
+        i += 2
+
+    np.random.shuffle(datasets)
+
+    test_val_split = (np.floor(len(datasets) * 0.9)).astype(np.int)
+    train = EffectiveCloudinessGenerator(datasets[0:test_val_split], **kwargs)
+    val = EffectiveCloudinessGenerator(datasets[test_val_split:-1], **kwargs)
+
+    return train, val
+
 
 class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
-    def __init__(self, start_date, stop_date, n_channels=1, batch_size=32, img_size=(256,256), include_time=False):
-        self.filenames = read_filenames(start_date, stop_date)
-        self.n_channels = n_channels
-        self.batch_size = batch_size
-        self.img_size = img_size
+    def __init__(self, dataset, **kwargs):
+        self.dataset = dataset
+        self.n_channels = kwargs.get('n_channels', 1)
+        self.batch_size = kwargs.get('batch_size', 32)
+        self.img_size = kwargs.get('img_size', (256,256))
         self.initial = True
-        self.include_time = include_time
+        self.include_time = kwargs.get('include_time', False)
+        assert(self.n_channels == 1)
+
 
     def __len__(self):
-        return (np.floor((len(self.filenames) / (self.n_channels + 1)) / float(self.batch_size))).astype(np.int)
+        return (np.floor(len(self.dataset) / self.batch_size)).astype(np.int)
 
-    def __getitem__(self, idx):
-        batch_x = []
-        batch_y = []
+    def __getitem__(self, i):
+        ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
 
-        i = 0
-        while i < (self.batch_size - 1) * (self.n_channels + 1):
-            for j in range(self.n_channels):
-                batch_x.append(self.filenames[idx * self.batch_size + i])
-                i += 1
-#            print(f"idx={idx}/{len(self)} bs={self.batch_size} i={i} files={len(self.filenames)}")
-            batch_y.append(self.filenames[idx * self.batch_size + i])
-            i += 1
+        x = []
+        y = []
 
-        x = preprocess_many(read_gribs(batch_x), self.img_size)
-        y = preprocess_many(read_gribs(batch_y), self.img_size)
+        for d in ds:
+            x.append(preprocess_single(read_grib(d[0]), self.img_size))
+            y.append(preprocess_single(read_grib(d[1]), self.img_size))
+
+        x = np.asarray(x)
+        y = np.asarray(y)
 
         if self.include_time:
             for i,f in enumerate(batch_x):
