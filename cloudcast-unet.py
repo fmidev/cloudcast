@@ -5,47 +5,31 @@ from preprocess import *
 import argparse
 import matplotlib.pyplot as plt
 
-#IMG_SIZE = (256,256)
-#IMG_SIZE = (128,128)
 EPOCHS = 500
 N_CHANNELS = 1
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("--img_size", action='store', type=str, required=True)
+    parser.add_argument("--start_date", action='store', type=str, required=True)
+    parser.add_argument("--stop_date", action='store', type=str, required=True)
 
     args = parser.parse_args()
 
     args.img_size = tuple(map(int, args.img_size.split('x')))
+    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
+    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     return args
 
 
-def with_full_dataset(m, args):
-    start_time = datetime.datetime.strptime('2021-05-01', '%Y-%m-%d')
-    stop_time = datetime.datetime.strptime('2021-07-10', '%Y-%m-%d')
-
-    ds = create_dataset(start_time, stop_time, img_size=args.img_size, preprocess=True)
-    (x_train, y_train, x_val, y_val) = create_train_val_split(ds, train_history_len=N_CHANNELS)
-
-    hist = m.fit(x_train, y_train, epochs=EPOCHS, batch_size=8, validation_data=(x_val, y_val), callbacks=callbacks(args))
-
-    return hist
-
 def with_generator(m, args):
     batch_size = 64
 
-    start_time = datetime.datetime.strptime('2020-12-01', '%Y-%m-%d')
-    stop_time = datetime.datetime.strptime('2021-05-01', '%Y-%m-%d')
+    train_gen, val_gen = create_generators(args.start_date, args.stop_date, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
 
-    train_gen = EffectiveCloudinessGenerator(start_time, stop_time, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
-    print("Number of train files: {}".format(len(train_gen.filenames)))
-
-    start_time = datetime.datetime.strptime('2021-08-01', '%Y-%m-%d')
-    stop_time = datetime.datetime.strptime('2021-10-01', '%Y-%m-%d')
-
-    val_gen = EffectiveCloudinessGenerator(start_time, stop_time, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
-    print("Number of validation files: {}".format(len(val_gen.filenames)))
+    print("Number of train files: {}".format(len(train_gen.dataset)))
+    print("Number of validation files: {}".format(len(val_gen.dataset)))
 
     hist = m.fit(train_gen, epochs = EPOCHS, validation_data = val_gen, callbacks=callbacks(args))
 
@@ -79,6 +63,7 @@ def plot_hist(hist, model_dir):
 
 
 def run_model(args):
+    model_dir = 'models/unet_{}_{}x{}_{}'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS)
 
     m = unet(input_size=args.img_size + (1,))
 
@@ -88,7 +73,6 @@ def run_model(args):
 
     duration = datetime.datetime.now() - start
 
-    model_dir = 'models/unet_{}_{}x{}_{}'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS)
     save_model(m, model_dir)
     plot_hist(hist, model_dir)
 
