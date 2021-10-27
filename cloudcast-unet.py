@@ -39,8 +39,8 @@ def with_generator(m, args):
 def callbacks(args):
     cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS),
                                                  save_weights_only=True)
-    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=1, min_delta=0.001, verbose=1)
-    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=1)
+    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=7, min_delta=0.001, verbose=1)
+    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
 
     return [cp_cb, early_stopping_cb, reduce_lr_cb]
 
