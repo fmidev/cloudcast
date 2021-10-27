@@ -187,33 +187,33 @@ def read_times(times, producer='nwcsaf'):
     return data
 
 
-def create_train_val_split_timeseries(dataset):
-
-    # Split into train and validation sets using indexing to optimize memory.
-    indexes = np.arange(dataset.shape[0])
-    np.random.shuffle(indexes)
-    train_index = indexes[: int(0.9 * dataset.shape[0])]
-    val_index = indexes[int(0.9 * dataset.shape[0]) :]
-    train_dataset = dataset[train_index]
-    val_dataset = dataset[val_index]
-
-    # We'll define a helper function to shift the frames, where
-    # `x` is frames 0 to n - 1, and `y` is frames 1 to n.
-    def create_shifted_frames(data):
-        x = data[:, 0 : data.shape[1] - 1, :, :]
-        y = data[:, 1 : data.shape[1], :, :]
-        return x, y
-
-
-    # Apply the processing function to the datasets.
-    x_train, y_train = create_shifted_frames(train_dataset)
-    x_val, y_val = create_shifted_frames(val_dataset)
-
-    # Inspect the dataset.
-    print("Training Dataset Shapes: " + str(x_train.shape) + ", " + str(y_train.shape))
-    print("Validation Dataset Shapes: " + str(x_val.shape) + ", " + str(y_val.shape))
-
-    return (x_train, y_train, x_val, y_val)
+#def create_train_val_split_timeseries(dataset):
+#
+#    # Split into train and validation sets using indexing to optimize memory.
+#    indexes = np.arange(dataset.shape[0])
+#    np.random.shuffle(indexes)
+#    train_index = indexes[: int(0.9 * dataset.shape[0])]
+#    val_index = indexes[int(0.9 * dataset.shape[0]) :]
+#    train_dataset = dataset[train_index]
+#    val_dataset = dataset[val_index]
+#
+#    # We'll define a helper function to shift the frames, where
+#    # `x` is frames 0 to n - 1, and `y` is frames 1 to n.
+#    def create_shifted_frames(data):
+#        x = data[:, 0 : data.shape[1] - 1, :, :]
+#        y = data[:, 1 : data.shape[1], :, :]
+#        return x, y
+#
+#
+#    # Apply the processing function to the datasets.
+#    x_train, y_train = create_shifted_frames(train_dataset)
+#    x_val, y_val = create_shifted_frames(val_dataset)
+#
+#    # Inspect the dataset.
+#    print("Training Dataset Shapes: " + str(x_train.shape) + ", " + str(y_train.shape))
+#    print("Validation Dataset Shapes: " + str(x_val.shape) + ", " + str(y_val.shape))
+#
+#    return (x_train, y_train, x_val, y_val)
 
 
 def create_train_val_split(dataset, train_history_len=1):
@@ -279,14 +279,26 @@ def time_of_year_and_day(datetime):
 def create_generators(start_date, stop_date, **kwargs):
     filenames = read_filenames(start_date, stop_date)
     assert(len(filenames) > 0)
+    n_channels = kwargs.get('n_channels', 1)
+    out = kwargs.get('output_is_timeseries', False)
 
     datasets = []
 
-    i = 0
+    if not out:
+        i = 0
 
-    while i < len(filenames) - 1:
-        datasets.append([filenames[i], filenames[i+1]])
-        i += 2
+        while i < len(filenames) - 1:
+            datasets.append([filenames[i], filenames[i+1]])
+            i += 2
+    else:
+        i = 0
+
+        while i < (len(filenames) - (n_channels + 1)):
+            ds_files = []
+            for j in range(n_channels + 1):
+                ds_files.append(filenames[i + j])
+            datasets.append(ds_files)
+            i += (n_channels + 1)
 
     np.random.shuffle(datasets)
 
@@ -306,13 +318,48 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         self.img_size = kwargs.get('img_size', (256,256))
         self.initial = True
         self.include_time = kwargs.get('include_time', False)
-        assert(self.n_channels == 1)
+        self.output_is_timeseries = kwargs.get('output_is_timeseries', False)
+        assert(self.n_channels > 0)
 
 
     def __len__(self):
         return (np.floor(len(self.dataset) / self.batch_size)).astype(np.int)
 
     def __getitem__(self, i):
+        if not self.output_is_timeseries:
+            return self.create_single_output_series(i)
+        else:
+            return self.create_timeseries_output(i)
+
+    def create_timeseries_output(self, i):
+        ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
+
+        x = []
+        y = []
+
+        for d in ds:
+            x.append(preprocess_many(read_gribs(d[0:self.n_channels]), self.img_size))
+            y.append(preprocess_many(read_gribs(d[1:self.n_channels+1]), self.img_size))
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+
+        if self.include_time:
+            for i,f in enumerate(batch_x):
+                datetime_str = os.path.filename(f).split('_')[0]
+
+                tod, toy = time_of_year_and_day(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'))
+
+                np.append(x[i], np.full(self.img_size, tod, dtype=np.float32), axis=3)
+                np.append(x[i], np.full(self.img_size, toy, dtype=np.float32), axis=3)
+
+        if self.initial:
+            print(f'Batch shapes: x {x.shape} y {y.shape}')
+            self.initial = False
+
+        return x, y
+
+    def create_single_output_series(self, i):
         ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
 
         x = []
@@ -335,10 +382,11 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
                 np.append(x[i], np.full(self.img_size, toy, dtype=np.float32), axis=3)
 
         if self.initial:
-            print(f'Training batch shapes: x {x.shape} y {y.shape}')
+            print(f'Batch shapes: x {x.shape} y {y.shape}')
             self.initial = False
 
         return x, y
+
 
 
 # datetime ring buffer
