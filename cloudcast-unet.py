@@ -13,6 +13,7 @@ def parse_command_line():
     parser.add_argument("--img_size", action='store', type=str, required=True)
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--cont", action='store_true')
 
     args = parser.parse_args()
 
@@ -28,23 +29,24 @@ def with_generator(m, args):
 
     train_gen, val_gen = create_generators(args.start_date, args.stop_date, n_channels=N_CHANNELS, batch_size=batch_size, img_size=args.img_size)
 
-    print("Number of train files: {}".format(len(train_gen.dataset)))
-    print("Number of validation files: {}".format(len(val_gen.dataset)))
+    print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
+    print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
 
     hist = m.fit(train_gen, epochs = EPOCHS, validation_data = val_gen, callbacks=callbacks(args))
 
     return hist
 
 def callbacks(args):
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/unet_{}_{}x{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1]),
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS),
                                                  save_weights_only=True)
-    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=10)
-    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
+    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=1, min_delta=0.001, verbose=1)
+    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=1)
 
     return [cp_cb, early_stopping_cb, reduce_lr_cb]
 
 
 def plot_hist(hist, model_dir):
+    print(hist.history)
     plt.plot(hist.history['accuracy'])
     plt.plot(hist.history['val_accuracy'])
     plt.title('model accuracy')
@@ -65,7 +67,8 @@ def plot_hist(hist, model_dir):
 def run_model(args):
     model_dir = 'models/unet_{}_{}x{}_{}'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS)
 
-    m = unet(input_size=args.img_size + (1,))
+    pretrained_weights = 'checkpoints/unet_{}_{}x{}_{}/cp.ckpt'.format(LOSS_FUNCTION, args.img_size[0], args.img_size[1], N_CHANNELS) if args.cont else None
+    m = unet(pretrained_weights, input_size=args.img_size + (1,))
 
     start = datetime.datetime.now()
 
