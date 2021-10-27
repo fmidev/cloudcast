@@ -216,7 +216,6 @@ def plot_unet(start_date):
     time_gen = TimeseriesGenerator(start_date, 0, 5, timedelta(minutes=15))
 
     times = next(time_gen)
-    print(times)
     gt = preprocess_many(read_times(times, producer='nwcsaf'), img_size=IMG_SIZE)
     mnwc = preprocess_many(read_times(times, producer='mnwc'), img_size=IMG_SIZE)
     cloudcast = infer_many(gt[0], len(times))
