@@ -26,7 +26,10 @@ def read_grib(file_path, message_no = 0):
         nj = ecc.codes_get_long(gh, "Nj")
 
         data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
-        data = data / 100.0 #* 255 # to mimick an image with one (gray) channel
+
+        if np.max(data) > 1.1:
+            data = data / 100.0
+
         if ecc.codes_get(gh, "jScansPositively"):
             data = np.flipud(data) # image data is +x-y
         data = np.expand_dims(data, axis=2)
