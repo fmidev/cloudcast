@@ -1,54 +1,48 @@
 from tensorflow.keras.models import load_model
-from PIL import Image, ImageEnhance
 from model import *
 import glob
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
 from preprocess import *
 
-#MODEL="convlstm"
-MODEL="unet"
-#IMG_SIZE=(928,928)
-#IMG_SIZE=(768,768)
-IMG_SIZE=(256,256)
-#IMG_SIZE=(128,128)
-TRAIN_SERIES_LENGTH = 1
 CONVLSTM = False
 #LOSS = "MeanAbsoluteError"
-LOSS = "MeanSquaredError"
+#LOSS = "MeanSquaredError"
 
-model_file = 'models/{}_{}_{}x{}_{}'.format(MODEL, LOSS, IMG_SIZE[0], IMG_SIZE[1], TRAIN_SERIES_LENGTH)
+def parse_command_line():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--img_size", action='store', type=str, required=True)
+    parser.add_argument("--start_date", action='store', type=str, required=True)
+    parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
+    parser.add_argument("--model", action='store', type=str, default='unet')
+    parser.add_argument("--n_channels", action='store', type=int, default=1)
 
-if MODEL == "convlstm":
-    CONVLSTM=True
+    args = parser.parse_args()
 
-print(f"Loading {model_file}")
+    args.img_size = tuple(map(int, args.img_size.split('x')))
+    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
+    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
-m = None
-if LOSS == "ssim":
+    return args
+
+if __name__ == "__main__":
+    args = parse_command_line()
+
+    model_file = 'models/{}_{}_{}x{}_{}'.format(args.model, args.loss_function, args.img_size[0], args.img_size[1], args.n_channels)
+
+    if args.model == "convlstm":
+        CONVLSTM=True
+
+    print(f"Loading {model_file}")
+
     m = load_model(model_file, compile=False)
-else:
-    m = load_model(model_file)
 
-
-
-def sharpen(data, factor):
-    assert(data.shape == (1,) + IMG_SIZE + (1,))
-    im = Image.fromarray(np.squeeze(data) * 255)
-    im = im.convert('L')
-
-    enhancer = ImageEnhance.Sharpness(im)
-    sharp = np.array(enhancer.enhance(factor)) / 255.0
-    return np.expand_dims(sharp, [0,3])
-
-
-
-def read_img_from_memory(mem):
-    return process_img(mem)
 
 
 def infer_many(seed, num_predictions):
@@ -71,7 +65,7 @@ def infer(img):
     return pred
 
 
-def read_images(times, series):
+def read_images(times, series, img_size):
     datakeys = series.keys()
 
     new_series = {}
@@ -79,46 +73,50 @@ def read_images(times, series):
         if t in datakeys:
             new_series[t] = series[t]
         else:
-            new_series[t] = read_img_from_file(t)
+            new_series[t] = preprocess_single(read_time(t, producer="nwcsaf"), img_size)
 
     return new_series
-    union = list(set().union(times, keys))
-    union.sort()
+#    union = list(set().union(times, keys))
+#    union.sort()
 
-    new_series = {}
-    for u in union:
-        if u in keys:
-            new_series[u] = series[u]
-        else:
-            new_series[u] = read_img_from_file(u)
+#    new_series = {}
+#    for u in union:
+#        if u in keys:
+#            new_series[u] = series[u]
+#        else:
+#            new_series[u] = read_grib(u)
 #    for time in times:
 #        series.append(read_img_from_file(time))
-    return new_series
+
+#    return new_series
 
 
-def read_image_series(start_date, num):
-    series = []
+#def read_image_series(start_date, num):
+#    series = []
+#    for _ in range(num):
+#        series.append(read_grib(get_filename(start_date.strftime('%Y%m%dT%H%M')), producer="nwcsaf"))
+#        start_date = start_date + timedelta(minutes=15)
+#
+#    return np.asarray(series)
+
+
+def predict_from_series(dataseries, num):
+    ret = []
     for _ in range(num):
-        series.append(read_img_from_file(start_date.strftime('%Y%m%dT%H%M')))
-        start_date = start_date + timedelta(minutes=15)
-
-    return np.asarray(series)
-
-
-def predict_from_series(image_series, num):
-    for _ in range(num):
-        pred = m.predict(np.expand_dims(image_series, axis=0))
+        pred = m.predict(np.expand_dims(dataseries, axis=0))
         pred = np.squeeze(pred, axis=0)
-        predicted_frame = np.expand_dims(pred[-1, ...], axis=0)
-        predicted_frame = sharpen(predicted_frame, 2)
+        predicted_frame = to_binary_mask(np.expand_dims(pred[-1, ...], axis=0))
 
-        image_series = np.concatenate((image_series, predicted_frame), axis=0)
+#        predicted_frame = sharpen(predicted_frame, 2)
+        print(np.min(predicted_frame), np.mean(predicted_frame), np.max(predicted_frame))
+        print(np.histogram(predicted_frame))
+        dataseries = np.concatenate((dataseries, predicted_frame), axis=0)
 
-    return image_series
+    return dataseries[-num:]
 
 
-def plot_convlstm(ground_truth, predictions):
-    fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(16, 8), constrained_layout=True)
+def plot_convlstm(ground_truth, predictions, mnwc):
+    fig, axes = plt.subplots(4, ground_truth.shape[0], figsize=(16, 8), constrained_layout=True)
 
     for idx, ax in enumerate(axes[0]):
         ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray')
@@ -131,70 +129,31 @@ def plot_convlstm(ground_truth, predictions):
         ax.axis('off')
 
     for idx, ax in enumerate(axes[2]):
+        ax.imshow(np.squeeze(mnwc[idx]), cmap='gray')
+        ax.set_title(f'mnwc frame {idx}')
+        ax.axis('off')
+
+    for idx, ax in enumerate(axes[3]):
         r = ax.imshow(np.squeeze(ground_truth[idx] - predictions[idx]), cmap='bwr')
 
         if idx == 0:
-            plt.colorbar(r, ax=axes[2])
+            plt.colorbar(r, ax=axes[3])
         ax.set_title(f'diff frame {idx}')
         ax.axis('off')
 
     plt.show()
 
 
-def save_to_file(data, outfile, datetime):
-    assert(outfile[-5:] == 'grib2')
-
-    outfile = f'predicted/{outfile}'
-    try:
-        os.makedirs(os.path.dirname(outfile))
-    except FileExistsError as e:
-        pass
-
-    with open(outfile) as fp:
-        h = ecc.codes_grib_new_from_samples("redular_ll_sfc_grib2")
-        ecc.codes_set(h, "grid_type", "lambert")
-        ecc.codes_set(h, 'shapeOfTheEarth', 5)
-        ecc.codes_set(h, 'Nx', 928)
-        ecc.codes_set(h, 'Ny', 1024)
-        ecc.codes_set(h, 'DxInMeters', 3000.4)
-        ecc.codes_set(h, 'DyInMeters', 3000.4)
-        ecc.codes_set(h, 'jScansPositive', 0)
-        ecc.codes_set(h, "latitudeOfFirstPointInDegrees", 47.86)
-        ecc.codes_set(h, "longitudeOfFirstPointDegrees", 358.542)
-        ecc.codes_set(h, "latin1InDegrees", 63.3)
-        ecc.codes_set(h, "latin2InDegrees", 63.3)
-        ecc.codes_set(h, "LoVInDegrees", 15)
-        ecc.codes_set(h, "latitudeOfSouthernPoleInDegrees", -90)
-        ecc.codes_set(h, "longitudeOfSouthernPoleInDegrees", 0)
-        ecc.codes_set(h, "dataDate", int(datetime.strftime('%Y%m%d')))
-        ecc.codes_set(h, "dataTime", int(int(datetime.strftime('%H%M')/100)))
-        ecc.codes_set(h, "centre", 86)
-        ecc.codes_set(h, "generatingProcessIdentifier", 255)
-        ecc.codes_set(h, "discipline", 192)
-        ecc.codes_set(h, "parameterCategory", 128)
-        ecc.codes_set(h, "parameterNumber", 164)
-        ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
-        ecc.codes_set(h, "packingType", "grid_ccsds")
-        #ecc.codes_set(h, "missingValue", MISSING)
-        #ecc.codes_set(h, "bitmapPresent", 1)
-
-        with open(outfile, 'wb') as fpout:
-            ecc.codes_write(h, fpout)
-            print(f'Wrote file {outfile}')
-
-        ecc.codes_release(h)
-
-def plot_mae(data, labels):
+def plot_mae(data, labels, step=timedelta(minutes=15)):
     print(data)
     print(labels)
-#    for i in range(len(mae_persistence)):
-#        mae_persistence[i] = np.mean(persistence[i])
-#        mae_prediction[i] = np.mean(prediction[i])
     assert(len(data) == len(labels))
     fig = plt.figure()
     ax = plt.axes()
 
-    x = range(len(data[0]))
+    x = list(map(lambda x: step * x, range(len(data[0]))))
+    x = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), x))
+
     for i,mae in enumerate(data):
         ax.plot(x, mae, label=labels[i])
 
@@ -203,7 +162,7 @@ def plot_mae(data, labels):
     plt.show()
 
 
-def plot_unet(start_date):
+def plot_unet(args):
 
     fig, axes = plt.subplots(5, 3, figsize=(14, 8))
 
@@ -213,19 +172,13 @@ def plot_unet(start_date):
     mae_persistence = []
     mae_prediction = []
 
-    time_gen = TimeseriesGenerator(start_date, 0, 5, timedelta(minutes=15))
+    time_gen = TimeseriesGenerator(args.start_date, 0, 5, timedelta(minutes=15))
 
     times = next(time_gen)
-    gt = preprocess_many(read_times(times, producer='nwcsaf'), img_size=IMG_SIZE)
-    mnwc = preprocess_many(read_times(times, producer='mnwc'), img_size=IMG_SIZE)
+    gt = preprocess_many(read_times(times, producer='nwcsaf'), img_size=args.img_size)
+    mnwc = preprocess_many(read_times(times, producer='mnwc'), img_size=args.img_size)
     cloudcast = infer_many(gt[0], len(times))
     initial = np.copy(gt[0])
-
-#    initial = np.asarray([np.copy(gt[0])] * len(gt))
-
-#    print(type(gt), type(initial))
-#    print(len(gt), len(initial))
-#    print(gt[0].shape, initial[0].shape)
 
     mae_persistence = []
     mae_cloudcast = []
@@ -237,7 +190,6 @@ def plot_unet(start_date):
         mae_mnwc.append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
 
     plot_mae([mae_persistence, mae_cloudcast, mae_mnwc],['persistence', 'cloudcast', 'mnwc'])
-
 
     for i, row in enumerate(axes):
         time = times[i]
@@ -267,63 +219,73 @@ def plot_unet(start_date):
         row[2].set_title(f"observed - predicted {i*15} min")
 
 
-
     plt.show()
 
 
 
-
-start_date=dateparser.parse('2021-10-16T06:00:00Z')
-
 if CONVLSTM:
 
-    history_len = 5
-    prediction_len = 12
-    gen = TimeseriesGenerator(start_date, -history_len, prediction_len, timedelta(minutes=15))
+    step = timedelta(minutes=15)
+    history_len=5
+    prediction_len=6
+    gen = TimeseriesGenerator(args.start_date, -history_len, prediction_len, step)
 
     mae_prediction = []
     mae_persistence = []
+    mae_mnwc = []
     image_series = {}
 
     for i in range(prediction_len+1):
         mae_prediction.append([])
         mae_persistence.append([])
+        mae_mnwc.append([])
 
-    break_date = '20200101T0800' # '20200201T0000'
-    for t in gen:
-        times = list(map(lambda x: datetime.strftime(x, '%Y%m%dT%H%M'), t))
-        if times[-1] == break_date:
+    for times in gen:
+        if times[-1] == args.stop_date:
             break
 
-        image_series = read_images(times, image_series)
-        assert(len(image_series) == (1 + history_len + prediction_len))
+        print("Reading data between {} and {}...".format(times[0], times[-1]))
 
-        images = list(image_series.values()) #[:history_len+1]
-        predictions = predict_from_series(images[:history_len+1], prediction_len)
-        assert(len(image_series) == len(predictions))
-        #plot_convlstm(image_series[history_len:], predictions[history_len:])
-        for i in range(history_len, len(predictions)):
-            #mae_prediction[i - history_len].append(mean_absolute_error(image_series[i].flatten(), predictions[i].flatten()))
-            mae_prediction[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), predictions[i].flatten()))
-            #mae_persistence[i - history_len].append(mean_absolute_error(image_series[i].flatten(), image_series[history_len].flatten()))
-            mae_persistence[i - history_len].append(mean_absolute_error(images[i].numpy().flatten(), images[history_len].numpy().flatten()))
+        # create a timeseries that consists of history, present, and future
+        # first two are used to create a prediction, and the latter one is
+        # used to verify the prediction
 
+        dataseries = read_images(times, image_series, args.img_size)
+        assert(len(dataseries) == (1 + history_len + prediction_len))
+
+        # the actual data is in values
+        datas = list(dataseries.values())
+        history = datas[:history_len+1]
+        future = np.asarray(datas[history_len+1:])
+
+        # contains the predicted frames *only*
+        predictions = predict_from_series(history, prediction_len)
+        assert(predictions.shape[0] == prediction_len)
+        assert(predictions.shape[0] == len(future))
+
+        analysis_time = times[history_len+1]
+
+        mnwc = preprocess_many(read_times(times[history_len+1:], producer='mnwc', analysis_time=analysis_time.replace(minute=0)), img_size=args.img_size)
+#        assert(mnwc.shape[0] > 0)
+
+        print(future.shape, predictions.shape, mnwc.shape)
+        plot_convlstm(future, predictions, mnwc)
+
+        persistence = history[-1]
+        for i,(o,p,mn) in enumerate(zip(future, predictions, mnwc)):
+            mae_prediction[i].append(mean_absolute_error(o.flatten(), p.flatten()))
+            mae_persistence[i].append(mean_absolute_error(o.flatten(), persistence.flatten()))
+            mae_mnwc[i].append(mean_absolute_error(o.flatten(), mn.flatten()))
+
+        break
     num_predictions = len(mae_persistence[0])
     for i in range(len(mae_persistence)):
         mae_persistence[i] = np.mean(mae_persistence[i])
         mae_prediction[i] = np.mean(mae_prediction[i])
+        mae_mnwc[i] = np.mean(mae_mnwc[i])
 
-    fig = plt.figure()
-    ax = plt.axes()
+    plot_mae([mae_persistence, mae_prediction, mae_mnwc],['persistence', 'cloudcast', 'mnwc'], step)
 
-    x = range(len(mae_prediction))
-    ax.plot(x, mae_prediction, label='convnet')
-    ax.plot(x, mae_persistence, label='persistence')
-    plt.legend()
-    plt.title(f'mae over {num_predictions} predictions')
-    plt.show()
-#    for d in predictions[4:]:
-#        save_to_file()
 else:
-    plot_unet(start_date)
+    plot_unet(args)
 
