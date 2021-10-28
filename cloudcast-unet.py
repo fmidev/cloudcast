@@ -46,25 +46,6 @@ def callbacks(args):
     return [cp_cb, early_stopping_cb, reduce_lr_cb]
 
 
-def plot_hist(hist, model_dir):
-    print(hist.history)
-    plt.plot(hist.history['accuracy'])
-    plt.plot(hist.history['val_accuracy'])
-    plt.title('model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/accuracy.png'.format(model_dir))
-
-    plt.plot(hist.history['loss'])
-    plt.plot(hist.history['val_loss'])
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/loss.png'.format(model_dir))
-
-
 def run_model(args):
     model_dir = 'models/unet_{}_{}x{}_{}'.format(args.loss_function, args.img_size[0], args.img_size[1], N_CHANNELS)
 
