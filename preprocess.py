@@ -13,6 +13,12 @@ from gributils import *
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
 
+def to_binary_mask(arr):
+    arr[arr < 0.1] = 0.0
+    arr[arr > 0] = 1.0
+
+    return arr
+
 def preprocess_many(imgs, img_size):
     ds = []
 
@@ -32,8 +38,8 @@ def preprocess_single(img, img_size, kernel_size = (3,3), num_classes = 10):
     conv = ndimage.convolve(img, kernel1, mode='constant', cval=0.0)
     #conv = (np.around((100 * conv) / num_classes, decimals=0)*num_classes)/100
 
-    conv[conv < 0.1] = 0.0
-    conv[conv > 0] = 1.0
+    conv = to_binary_mask(conv)
+
 
 #    im = Image.fromarray(img.squeeze() * 255)
 #    im = im.convert('L')
@@ -83,25 +89,51 @@ def sharpen(data, factor):
     return np.expand_dims(sharp, [0,3])
 
 
-def get_filename(time, producer = 'nwcsaf'):
+def get_filename(time, producer = 'nwcsaf', analysis_time=None):
     if producer == 'nwcsaf':
         return '{}/nwcsaf/{}_nwcsaf_effective-cloudiness.grib2'.format(INPUT_DIR, time.strftime('%Y/%m/%d/%Y%m%dT%H%M%S'))
     if producer == 'mnwc':
-        return '{}/mnwc/{}.grib2'.format(INPUT_DIR, time.strftime('%Y%m%d%H00+000h%Mm'))
+        if analysis_time is None:
+            # return newest possible
+            return '{}/mnwc/{}.grib2'.format(INPUT_DIR, time.strftime('%Y%m%d%H00+000h%Mm'))
+        else:
+            lt = (time - analysis_time)
+            lt_h = int(lt.total_seconds() // 3600)
+            lt_m = int(lt.total_seconds() // 60 % 60)
+            return '{}/mnwc/{}00+{:03d}h{:02d}m.grib2'.format(INPUT_DIR, analysis_time.strftime('%Y%m%d%H'), lt_h, lt_m)
 
+def read_time(time, producer='nwcsaf', analysis_time=None):
+    return read_grib(get_filename(time, producer, analysis_time))
 
-def read_time(time, producer='nwcsaf'):
-    return read_grib(get_filename(time, producer))
-
-def read_times(times, producer='nwcsaf'):
+def read_times(times, producer='nwcsaf', analysis_time=None):
     data = []
     for time in times:
         try:
-            data.append(read_grib(get_filename(time, producer)))
+            data.append(read_grib(get_filename(time, producer, analysis_time)))
         except FileNotFoundError as e:
             pass
 
     return data
+
+
+
+def plot_hist(hist, model_dir):
+    print(hist.history)
+    plt.plot(hist.history['accuracy'])
+    plt.plot(hist.history['val_accuracy'])
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'val'], loc='upper left')
+    plt.savefig('{}/accuracy.png'.format(model_dir))
+
+    plt.plot(hist.history['loss'])
+    plt.plot(hist.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'val'], loc='upper left')
+    plt.savefig('{}/loss.png'.format(model_dir))
 
 
 #def create_train_val_split_timeseries(dataset):
