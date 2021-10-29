@@ -11,17 +11,24 @@ TIMESERIES_LENGTH = 10
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--img_size", action='store', type=str, required=True)
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--n_channels", action='store', type=int)
     parser.add_argument("--cont", action='store_true')
     parser.add_argument("--loss_function", action='store', type=str, default='binary_crossentropy')
+    parser.add_argument("--preprocess", action='store', type=str, default='area=Scandinavia,conv=3,classes=100,img_size=128x128')
+    parser.add_argument("--label", action='store', type=str)
 
     args = parser.parse_args()
 
-    args.img_size = tuple(map(int, args.img_size.split('x')))
+    if args.label is not None:
+        args.model, args.loss_function, args.n_channels, args.preprocess = args.label.split('-')
+
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+
+    if args.n_channels is None:
+        n_channels = TIMESERIES_LENGTH
 
     return args
 
@@ -47,12 +54,12 @@ def show_examples():
 def fit(m, args):
     batch_size = 8
 
-    train_gen, val_gen = create_generators(args.start_date, args.stop_date, n_channels=TIMESERIES_LENGTH, batch_size=batch_size, img_size=args.img_size, output_is_timeseries=True)
+    train_gen, val_gen = create_generators(args.start_date, args.stop_date, preprocess=args.preprocess, batch_size=batch_size, output_is_timeseries=True)
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
 
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH),
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(model_name(args)),
                                                  save_weights_only=True,
                                                  verbose=1)
 
@@ -67,10 +74,18 @@ def fit(m, args):
 
 
 def run_model(args):
-    model_dir = 'models/convlstm_{}_{}x{}_{}'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH)
+    model_dir = 'models/{}'.format(model_name(args))
 
-    pretrained_weights = 'checkpoints/convlstm_{}_{}x{}_{}/cp.ckpt'.format(args.loss_function, args.img_size[0], args.img_size[1], TIMESERIES_LENGTH) if args.cont else None
-    m = convlstm(pretrained_weights=pretrained_weights, input_size=args.img_size + (1,), loss_function=args.loss_function)
+    pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(model_name(args)) if args.cont else None
+
+    img_size = None
+    for x in args.preprocess.split(','):
+        k,v = x.split('=')
+        if k == 'img_size':
+            img_size = tuple(map(int, v.split('x')))
+            break
+
+    m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (1,), loss_function=args.loss_function)
 
     start = datetime.datetime.now()
 

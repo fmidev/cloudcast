@@ -11,21 +11,24 @@ from sklearn.metrics import mean_absolute_error
 from preprocess import *
 
 CONVLSTM = False
-#LOSS = "MeanAbsoluteError"
-#LOSS = "MeanSquaredError"
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--img_size", action='store', type=str, required=True)
+    #parser.add_argument("--img_size", action='store', type=str, default='256x256')
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
     parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
     parser.add_argument("--model", action='store', type=str, default='unet')
     parser.add_argument("--n_channels", action='store', type=int, default=1)
+    parser.add_argument("--preprocess", action='store', type=str, default='conv=3,classes=10')
+    parser.add_argument("--label", action='store', type=str)
+    parser.add_argument("--area", action='store', type=str, default='Scandinavia')
 
     args = parser.parse_args()
 
-    args.img_size = tuple(map(int, args.img_size.split('x')))
+    if args.label is not None:
+        args.model, args.loss_function, args.n_channels, args.preprocess = args.label.split('-')
+
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
@@ -34,7 +37,7 @@ def parse_command_line():
 if __name__ == "__main__":
     args = parse_command_line()
 
-    model_file = 'models/{}_{}_{}x{}_{}'.format(args.model, args.loss_function, args.img_size[0], args.img_size[1], args.n_channels)
+    model_file = 'models/{}'.format(model_name(args))
 
     if args.model == "convlstm":
         CONVLSTM=True
@@ -65,7 +68,7 @@ def infer(img):
     return pred
 
 
-def read_images(times, series, img_size):
+def read_images(times, series, preprocess_label):
     datakeys = series.keys()
 
     new_series = {}
@@ -73,7 +76,7 @@ def read_images(times, series, img_size):
         if t in datakeys:
             new_series[t] = series[t]
         else:
-            new_series[t] = preprocess_single(read_time(t, producer="nwcsaf"), img_size)
+            new_series[t] = preprocess_single(read_time(t, producer="nwcsaf"), preprocess_label)
 
     return new_series
 #    union = list(set().union(times, keys))
@@ -175,8 +178,8 @@ def plot_unet(args):
     time_gen = TimeseriesGenerator(args.start_date, 0, 5, timedelta(minutes=15))
 
     times = next(time_gen)
-    gt = preprocess_many(read_times(times, producer='nwcsaf'), img_size=args.img_size)
-    mnwc = preprocess_many(read_times(times, producer='mnwc'), img_size=args.img_size)
+    gt = preprocess_many(read_times(times, producer='nwcsaf'), args.preprocess)
+    mnwc = preprocess_many(read_times(times, producer='mnwc'), args.preprocess)
     cloudcast = infer_many(gt[0], len(times))
     initial = np.copy(gt[0])
 
@@ -250,7 +253,7 @@ if CONVLSTM:
         # first two are used to create a prediction, and the latter one is
         # used to verify the prediction
 
-        dataseries = read_images(times, image_series, args.img_size)
+        dataseries = read_images(times, image_series, args.preprocess)
         assert(len(dataseries) == (1 + history_len + prediction_len))
 
         # the actual data is in values
@@ -265,7 +268,7 @@ if CONVLSTM:
 
         analysis_time = times[history_len+1]
 
-        mnwc = preprocess_many(read_times(times[history_len+1:], producer='mnwc', analysis_time=analysis_time.replace(minute=0)), img_size=args.img_size)
+        mnwc = preprocess_many(read_times(times[history_len+1:], producer='mnwc', analysis_time=analysis_time.replace(minute=0)), args.preprocess)
 #        assert(mnwc.shape[0] > 0)
 
         print(future.shape, predictions.shape, mnwc.shape)
