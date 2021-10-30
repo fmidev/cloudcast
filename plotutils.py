@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from datetime import timedelta
 
 def plot_convlstm(ground_truth, predictions, mnwc):
-    fig, axes = plt.subplots(4, ground_truth.shape[0], figsize=(16, 8), constrained_layout=True)
+    fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(16, 7), constrained_layout=True)
 
     for idx, ax in enumerate(axes[0]):
         ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray_r')
@@ -18,14 +18,6 @@ def plot_convlstm(ground_truth, predictions, mnwc):
     for idx, ax in enumerate(axes[2]):
         ax.imshow(np.squeeze(mnwc[idx]), cmap='gray_r')
         ax.set_title(f'mnwc frame {idx}')
-        ax.axis('off')
-
-    for idx, ax in enumerate(axes[3]):
-        r = ax.imshow(np.squeeze(ground_truth[idx] - predictions[idx]), cmap='bwr')
-
-        if idx == 0:
-            plt.colorbar(r, ax=axes[3])
-        ax.set_title(f'diff frame {idx}')
         ax.axis('off')
 
     plt.show()
@@ -53,15 +45,29 @@ def plot_timeseries(datas, labels, title=None):
     assert(len(datas) == len(labels))
     nrows = len(datas)
     ncols = datas[0].shape[0]
-    fig = plt.figure(figsize=((ncols*1.5),3), constrained_layout=True)
+    print(f'nrows={nrows},ncols={ncols}')
+    #fig = plt.figure(figsize=((ncols*1.5),nrows*1.5), constrained_layout=True)
+    fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False)
     fig.suptitle(title)
+
+    for i, bigax in enumerate(bigaxes, start=0):
+        bigax[i].set_title(labels[i])
+        bigax[i].tick_params(labelcolor=(1.,1.,1., 0.0), top='off', bottom='off', left='off', right='off')
+        bigax[i]._frameon = False
+        bigax[i].axis('off')
+
+    num=1
     for i in range(len(datas)):
         for j in range(datas[i].shape[0]):
-            ax = fig.add_subplot(nrows, ncols, 1+i+j)
+            ax = fig.add_subplot(nrows, ncols, num)
+            num += 1
             ax.imshow(np.squeeze(datas[i][j]), cmap='gray_r')
             ax.axis('off')
-            ax.set_title(f'{j*15}m')
+            if i == (nrows - 1):
+                ax.set_title(f'{(j+1)*15}m', y=0, pad=-25)
 
+    fig.set_facecolor('w')
+    plt.tight_layout()
     plt.show()
 
 
