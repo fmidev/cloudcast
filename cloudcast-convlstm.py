@@ -1,13 +1,13 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
 import argparse
 import datetime
 from tensorflow.keras.models import save_model # import datasets, models, layers
 from model import *
 from preprocess import *
+from fileutils import *
+from plotutils import *
 
-TIMESERIES_LENGTH = 10
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
@@ -28,45 +28,35 @@ def parse_command_line():
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     if args.n_channels is None:
-        n_channels = TIMESERIES_LENGTH
+        args.n_channels = 10
 
     return args
 
 
-def show_examples():
-
-    # Construct a figure on which we will visualize the images.
-    fig, axes = plt.subplots(2, 3, figsize=(10, 8))
-
-    # Plot each of the sequential images for one random data example.
-    data_choice = np.random.choice(range(len(dataset)), size=1)[0]
-
-    for idx, ax in enumerate(axes.flat):
-        ax.imshow(np.squeeze(dataset[data_choice][idx]), cmap="gray")
-        ax.set_title(f"Frame {idx + 1}")
-        ax.axis("off")
-
-    # Print information and display the figure.
-    print(f"Displaying frames for example {data_choice}.")
-    plt.show()
-
-
 def fit(m, args):
-    batch_size = 8
+    batch_size = 2
 
-    train_gen, val_gen = create_generators(args.start_date, args.stop_date, preprocess=args.preprocess, batch_size=batch_size, output_is_timeseries=True)
+    train_gen, val_gen = create_generators(args.start_date,
+                                           args.stop_date,
+                                           preprocess=args.preprocess,
+                                           batch_size=batch_size,
+                                           n_channels=args.n_channels,
+                                           output_is_timeseries=True)
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
 
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(model_name(args)),
+    try:
+        plot_timeseries([train_gen[0][0][0]], ['train_gen'], 'Training data example')
+    except Exception as e:
+        print("Unable to show example data series")
+
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(get_model_name(args)),
                                                  save_weights_only=True,
                                                  verbose=1)
 
     early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=7, min_delta=0.001)
     reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
-
-#    hist = m.fit(x_train, y_train, epochs=20, batch_size=3, validation_data=(x_val, y_val), callbacks=[cp_callback, early_stopping_callback, reduce_lr_callback])
 
     hist = m.fit(train_gen, epochs = 500, validation_data = val_gen, callbacks=[cp_cb, early_stopping_cb, reduce_lr_cb])
 
@@ -74,16 +64,11 @@ def fit(m, args):
 
 
 def run_model(args):
-    model_dir = 'models/{}'.format(model_name(args))
+    model_dir = 'models/{}'.format(get_model_name(args))
 
-    pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(model_name(args)) if args.cont else None
+    pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(get_model_name(args)) if args.cont else None
 
-    img_size = None
-    for x in args.preprocess.split(','):
-        k,v = x.split('=')
-        if k == 'img_size':
-            img_size = tuple(map(int, v.split('x')))
-            break
+    img_size = get_img_size(args)
 
     m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (1,), loss_function=args.loss_function)
 
