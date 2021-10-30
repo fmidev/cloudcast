@@ -2,20 +2,19 @@ import numpy as np
 import glob
 import sys
 import datetime
-#import tensorflow as tf
 import cv2
 import os
-import matplotlib.pyplot as plt
 from scipy import ndimage
 from PIL import Image, ImageEnhance
 from tensorflow import keras
 from gributils import *
 from osgeo import gdal,osr
+from preprocess import *
 
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
 
-def model_name(args):
+def get_model_name(args):
     return '{}-{}-{}-{}'.format(args.model, 
                                 args.loss_function,
                                 args.n_channels,
@@ -76,16 +75,8 @@ def create_generators(start_date, stop_date, **kwargs):
     filenames = read_filenames(start_date, stop_date)
     assert(len(filenames) > 0)
 
-    preproc = kwargs.get('preprocess', '')
-
-    n_channels = 1
-    for x in preproc.split(','):
-        k,v = x.split('=')
-        if k == 'n_channels':
-            n_channels = int(v)
-
+    n_channels = int(kwargs.get('n_channels', 1))
     out = kwargs.get('output_is_timeseries', False)
-
     datasets = []
 
     if not out:
@@ -105,7 +96,6 @@ def create_generators(start_date, stop_date, **kwargs):
             i += (n_channels + 1)
 
     np.random.shuffle(datasets)
-
     test_val_split = (np.floor(len(datasets) * 0.9)).astype(np.int)
     train = EffectiveCloudinessGenerator(datasets[0:test_val_split], **kwargs)
     val = EffectiveCloudinessGenerator(datasets[test_val_split:-1], **kwargs)
@@ -117,8 +107,8 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
     def __init__(self, dataset, **kwargs):
         self.dataset = dataset
-        self.n_channels = kwargs.get('n_channels', 1)
-        self.batch_size = kwargs.get('batch_size', 32)
+        self.n_channels = int(kwargs.get('n_channels', 1))
+        self.batch_size = int(kwargs.get('batch_size', 32))
         self.preprocess = kwargs.get('preprocess', '')
         self.initial = True
         self.include_time = kwargs.get('include_time', False)
@@ -171,8 +161,8 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         y = []
 
         for d in ds:
-            x.append(preprocess_single(read_grib(d[0]), self.img_size))
-            y.append(preprocess_single(read_grib(d[1]), self.img_size))
+            x.append(preprocess_single(read_grib(d[0]), self.preprocess))
+            y.append(preprocess_single(read_grib(d[1]), self.preprocess))
 
         x = np.asarray(x)
         y = np.asarray(y)
