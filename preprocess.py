@@ -1,17 +1,19 @@
 import numpy as np
-import glob
 import sys
 import datetime
-#import tensorflow as tf
 import cv2
 import os
-import matplotlib.pyplot as plt
 from scipy import ndimage
 from PIL import Image, ImageEnhance
-from tensorflow import keras
-from gributils import *
-from fileutils import *
 from osgeo import gdal,osr
+
+
+def get_img_size(args):
+    for x in args.preprocess.split(','):
+        k,v = x.split('=')
+        if k == 'img_size':
+            return tuple(map(int, v.split('x')))
+    return None
 
 
 def reproject(arr, area):
@@ -64,7 +66,6 @@ PROJCRS["unknown",
                 ID["EPSG",9001]]]]
     """
     NEW_EXTENT = [220000, 220000, 860000, -420000] if area == 'SouthernFinland' else None
-#    NEW_EXTENT = [220000, 220000, 260000, 420000] if area == 'SouthernFinland' else None
 
     driver = gdal.GetDriverByName('MEM')
     arr_ds = driver.Create('', xsize=arr.shape[1], ysize=arr.shape[0], bands=1, eType=gdal.GDT_Float32)
@@ -76,10 +77,7 @@ PROJCRS["unknown",
 
     band = arr_ds.GetRasterBand(1).WriteArray(np.squeeze(arr))
 
-#    band = arr_ds.GetRasterBand(1).WriteArray(np.flipud(np.squeeze(arr)))
-#    ds = gdal.Translate('original.tif', arr_ds)
     ds = gdal.Translate('/vsimem/q', arr_ds, projWin = NEW_EXTENT)
-#    ds = gdal.Translate('out.tif', arr_ds, projWin = NEW_EXTENT)
 
     assert(ds != None)
     arr = ds.ReadAsArray()
@@ -97,12 +95,7 @@ def to_classes(arr, num_classes):
     return (np.around((100.0 * arr) / num_classes, decimals=0) * num_classes) / 100.0
 
 def preprocess_many(imgs, process_label):
-    ds = []
-
-    for img in imgs:
-        ds.append(preprocess_single(img, process_label))
-
-    return np.asarray(ds)
+    return np.asarray(list(map(lambda x: preprocess_single(x, process_label), imgs)))
 
 
 def preprocess_single(arr, process_label):
@@ -134,25 +127,6 @@ def sharpen(data, factor):
     enhancer = ImageEnhance.Sharpness(im)
     sharp = np.array(enhancer.enhance(factor)) / 255.0
     return np.expand_dims(sharp, [0,3])
-
-
-def plot_hist(hist, model_dir):
-    print(hist.history)
-    plt.plot(hist.history['accuracy'])
-    plt.plot(hist.history['val_accuracy'])
-    plt.title('model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/accuracy.png'.format(model_dir))
-
-    plt.plot(hist.history['loss'])
-    plt.plot(hist.history['val_loss'])
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/loss.png'.format(model_dir))
 
 
 def time_of_year_and_day(datetime):

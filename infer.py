@@ -8,13 +8,13 @@ import argparse
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
+from fileutils import *
 from preprocess import *
 
 CONVLSTM = False
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    #parser.add_argument("--img_size", action='store', type=str, default='256x256')
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
     parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
@@ -37,7 +37,7 @@ def parse_command_line():
 if __name__ == "__main__":
     args = parse_command_line()
 
-    model_file = 'models/{}'.format(model_name(args))
+    model_file = 'models/{}'.format(get_model_name(args))
 
     if args.model == "convlstm":
         CONVLSTM=True
@@ -79,28 +79,6 @@ def read_images(times, series, preprocess_label):
             new_series[t] = preprocess_single(read_time(t, producer="nwcsaf"), preprocess_label)
 
     return new_series
-#    union = list(set().union(times, keys))
-#    union.sort()
-
-#    new_series = {}
-#    for u in union:
-#        if u in keys:
-#            new_series[u] = series[u]
-#        else:
-#            new_series[u] = read_grib(u)
-#    for time in times:
-#        series.append(read_img_from_file(time))
-
-#    return new_series
-
-
-#def read_image_series(start_date, num):
-#    series = []
-#    for _ in range(num):
-#        series.append(read_grib(get_filename(start_date.strftime('%Y%m%dT%H%M')), producer="nwcsaf"))
-#        start_date = start_date + timedelta(minutes=15)
-#
-#    return np.asarray(series)
 
 
 def predict_from_series(dataseries, num):
@@ -111,8 +89,8 @@ def predict_from_series(dataseries, num):
         predicted_frame = to_binary_mask(np.expand_dims(pred[-1, ...], axis=0))
 
 #        predicted_frame = sharpen(predicted_frame, 2)
-        print(np.min(predicted_frame), np.mean(predicted_frame), np.max(predicted_frame))
-        print(np.histogram(predicted_frame))
+#        print(np.min(predicted_frame), np.mean(predicted_frame), np.max(predicted_frame))
+#        print(np.histogram(predicted_frame))
         dataseries = np.concatenate((dataseries, predicted_frame), axis=0)
 
     return dataseries[-num:]
@@ -122,17 +100,17 @@ def plot_convlstm(ground_truth, predictions, mnwc):
     fig, axes = plt.subplots(4, ground_truth.shape[0], figsize=(16, 8), constrained_layout=True)
 
     for idx, ax in enumerate(axes[0]):
-        ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray')
+        ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray_r')
         ax.set_title(f'ground truth frame {idx}')
         ax.axis('off')
 
     for idx, ax in enumerate(axes[1]):
-        ax.imshow(np.squeeze(predictions[idx]), cmap='gray')
+        ax.imshow(np.squeeze(predictions[idx]), cmap='gray_r')
         ax.set_title(f'prediction frame {idx}')
         ax.axis('off')
 
     for idx, ax in enumerate(axes[2]):
-        ax.imshow(np.squeeze(mnwc[idx]), cmap='gray')
+        ax.imshow(np.squeeze(mnwc[idx]), cmap='gray_r')
         ax.set_title(f'mnwc frame {idx}')
         ax.axis('off')
 
@@ -165,9 +143,51 @@ def plot_mae(data, labels, step=timedelta(minutes=15)):
     plt.show()
 
 
-def plot_unet(args):
+def plot_timeseries(datas, labels):
+    assert(len(datas) == len(labels))
+    fig, axes = plt.subplots(datas[0].shape[0], len(datas), figsize=(14, 8))
 
-    fig, axes = plt.subplots(5, 3, figsize=(14, 8))
+    for i, row in enumerate(axes):
+        for j in range(len(datas)):
+            row[j].imshow(datas[j][i]*255, cmap='gray_r')
+#            r2 = row[2].imshow(diff, cmap='RdYlBu_r')
+#            plt.colorbar(r2, ax=row[2])
+
+            row[j].axis("off")
+
+            row[j].set_title(f"{labels[j]} {i*15} min")
+
+#        time = times[i]
+
+#        if i == 0:
+#            row[0].imshow(gt[0], cmap='gray_r')
+#            row[0].axis("off")
+#            row[0].set_title(f"Ground truth 0 min")
+#            row[1].axis("off")
+#            row[2].axis("off")
+
+#            continue
+
+#        diff = (gt[i] - cloudcast[i])
+
+#        row[0].imshow(gt[i]*255, cmap='gray_r')
+#        row[1].imshow(cloudcast[i]*255, cmap='gray')
+#        r2 = row[2].imshow(diff, cmap='RdYlBu_r')
+#        plt.colorbar(r2, ax=row[2])
+
+#        row[0].axis("off")
+#        row[1].axis("off")
+#        row[2].axis("off")
+
+#        row[0].set_title(f"Ground truth {i*15} min")
+#        row[1].set_title(f"Predicted {i*15} min")
+#        row[2].set_title(f"observed - predicted {i*15} min")
+
+
+    plt.show()
+
+
+def plot_unet(args):
 
     pred = None
     initial = None
@@ -183,6 +203,8 @@ def plot_unet(args):
     cloudcast = infer_many(gt[0], len(times))
     initial = np.copy(gt[0])
 
+    plot_timeseries([gt, cloudcast, mnwc], ['ground truth', 'cloudcast', 'mnwc'])
+
     mae_persistence = []
     mae_cloudcast = []
     mae_mnwc = []
@@ -193,37 +215,6 @@ def plot_unet(args):
         mae_mnwc.append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
 
     plot_mae([mae_persistence, mae_cloudcast, mae_mnwc],['persistence', 'cloudcast', 'mnwc'])
-
-    for i, row in enumerate(axes):
-        time = times[i]
-
-        if i == 0:
-            row[0].imshow(gt[0], cmap='gray')
-            row[0].axis("off")
-            row[0].set_title(f"Ground truth 0 min")
-            row[1].axis("off")
-            row[2].axis("off")
-
-            continue
-
-        diff = (gt[i] - cloudcast[i])
-
-        row[0].imshow(gt[i]*255, cmap='gray')
-        row[1].imshow(cloudcast[i]*255, cmap='gray')
-        r2 = row[2].imshow(diff, cmap='RdYlBu_r')
-        plt.colorbar(r2, ax=row[2])
-
-        row[0].axis("off")
-        row[1].axis("off")
-        row[2].axis("off")
-
-        row[0].set_title(f"Ground truth {i*15} min")
-        row[1].set_title(f"Predicted {i*15} min")
-        row[2].set_title(f"observed - predicted {i*15} min")
-
-
-    plt.show()
-
 
 
 if CONVLSTM:
@@ -243,6 +234,8 @@ if CONVLSTM:
         mae_persistence.append([])
         mae_mnwc.append([])
 
+    initial=True
+
     for times in gen:
         if times[-1] == args.stop_date:
             break
@@ -253,6 +246,7 @@ if CONVLSTM:
         # first two are used to create a prediction, and the latter one is
         # used to verify the prediction
 
+        print("Read ground truth")
         dataseries = read_images(times, image_series, args.preprocess)
         assert(len(dataseries) == (1 + history_len + prediction_len))
 
@@ -262,17 +256,20 @@ if CONVLSTM:
         future = np.asarray(datas[history_len+1:])
 
         # contains the predicted frames *only*
+        print("predict")
         predictions = predict_from_series(history, prediction_len)
         assert(predictions.shape[0] == prediction_len)
         assert(predictions.shape[0] == len(future))
 
         analysis_time = times[history_len+1]
 
+        print("read mnwc")
         mnwc = preprocess_many(read_times(times[history_len+1:], producer='mnwc', analysis_time=analysis_time.replace(minute=0)), args.preprocess)
-#        assert(mnwc.shape[0] > 0)
 
         print(future.shape, predictions.shape, mnwc.shape)
-        plot_convlstm(future, predictions, mnwc)
+        if initial:
+            plot_convlstm(future, predictions, mnwc)
+            initial=False
 
         persistence = history[-1]
         for i,(o,p,mn) in enumerate(zip(future, predictions, mnwc)):
@@ -280,7 +277,7 @@ if CONVLSTM:
             mae_persistence[i].append(mean_absolute_error(o.flatten(), persistence.flatten()))
             mae_mnwc[i].append(mean_absolute_error(o.flatten(), mn.flatten()))
 
-        break
+
     num_predictions = len(mae_persistence[0])
     for i in range(len(mae_persistence)):
         mae_persistence[i] = np.mean(mae_persistence[i])
