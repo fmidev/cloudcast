@@ -14,29 +14,26 @@ from tensorflow import keras
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
 def read_grib(file_path, message_no = 0):
-    with open(file_path) as fp:
-        gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
-        #year = ecc.codes_get(gh, "year")
-        #month = ecc.codes_get(gh, "month")
-        #day = ecc.codes_get(gh, "day")
-        #hour = ecc.codes_get(gh, "hour")
-        #minute = ecc.codes_get(gh, "minute")
+    try:
+        with open(file_path) as fp:
+            gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
 
-        ni = ecc.codes_get_long(gh, "Ni")
-        nj = ecc.codes_get_long(gh, "Nj")
+            ni = ecc.codes_get_long(gh, "Ni")
+            nj = ecc.codes_get_long(gh, "Nj")
 
-        data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
+            data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
 
-        if np.max(data) > 1.1:
-            data = data / 100.0
+            if np.max(data) > 1.1:
+                data = data / 100.0
 
-        if ecc.codes_get(gh, "jScansPositively"):
-            data = np.flipud(data) # image data is +x-y
-        data = np.expand_dims(data, axis=2)
+            if ecc.codes_get(gh, "jScansPositively"):
+                data = np.flipud(data) # image data is +x-y
+            data = np.expand_dims(data, axis=2)
 
-        ecc.codes_release(gh)
-        return data
-
+            ecc.codes_release(gh)
+            return data
+    except FileNotFoundError as e:
+        return np.full((1069, 949), np.NAN)
 
 def save_grib(data, filepath, datetime):
     assert(filepath[-5:] == 'grib2')
