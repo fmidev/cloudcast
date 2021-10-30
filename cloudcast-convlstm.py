@@ -49,7 +49,7 @@ def fit(m, args):
     try:
         plot_timeseries([train_gen[0][0][0]], ['train_gen'], 'Training data example')
     except Exception as e:
-        print("Unable to show example data series")
+        print(f"Unable to show example data series: {e}")
 
     cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(get_model_name(args)),
                                                  save_weights_only=True,
