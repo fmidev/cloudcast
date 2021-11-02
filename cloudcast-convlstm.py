@@ -68,7 +68,7 @@ def run_model(args):
 
     pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(get_model_name(args)) if args.cont else None
 
-    img_size = get_img_size(args)
+    img_size = get_img_size(args.preprocess)
 
     m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (1,), loss_function=args.loss_function)
 
