@@ -33,6 +33,7 @@ def read_grib(file_path, message_no = 0):
             ecc.codes_release(gh)
             return data
     except FileNotFoundError as e:
+        print(e)
         return np.full((1069, 949), np.NAN)
 
 def save_grib(data, filepath, datetime):
