@@ -24,11 +24,13 @@ def parse_command_line():
     parser.add_argument("--preprocess", action='store', type=str, default='conv=3,classes=10')
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--area", action='store', type=str, default='Scandinavia')
+    parser.add_argument("--include_datetime", action='store_true', default=False)
+    parser.add_argument("--include_environment_data", action='store_true', default=False)
 
     args = parser.parse_args()
 
     if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.preprocess = args.label.split('-')
+        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
@@ -49,14 +51,29 @@ if __name__ == "__main__":
 
 
 
-def infer_many(seed, num_predictions):
+def infer_many(orig, num_predictions, datetime_weights=None, environment_weights=None):
     predictions = []
 
     for i in range(num_predictions):
+        seed = None
         if len(predictions) > 0:
-            predictions.append(infer(predictions[-1]))
+            seed = predictions[-1]
         else:
-            predictions.append(infer(seed))
+            seed = orig
+
+        data = [seed]
+
+        if datetime_weights is not None:
+            data.extend(datetime_weights[i])
+
+        if environment_weights is not None:
+            data.extend(environment_weights)
+
+        data = np.stack(data, axis=-1)
+        data = np.squeeze(data, axis=-2)
+
+        pred = infer(data)
+        predictions.append(pred)
 
     return np.asarray(predictions)
 
@@ -107,9 +124,18 @@ def plot_unet(args):
     time_gen = TimeseriesGenerator(args.start_date, 0, 5, timedelta(minutes=15))
 
     times = next(time_gen)
+
     gt = preprocess_many(read_times(times, producer='nwcsaf'), args.preprocess)
     mnwc = preprocess_many(read_times(times, producer='mnwc'), args.preprocess)
-    cloudcast = infer_many(gt[0], len(times))
+    datetime_weights = None
+    environment_weights = None
+
+    if args.include_datetime:
+        datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), times))
+    if args.include_environment_data:
+        environment_weights = create_environment_data(args.preprocess)
+
+    cloudcast = infer_many(gt[0], len(times), datetime_weights, environment_weights)
     initial = np.copy(gt[0])
     plot_timeseries([gt, cloudcast, mnwc], ['ground truth', 'cloudcast', 'mnwc'])
 

@@ -12,12 +12,15 @@ from osgeo import gdal,osr
 from preprocess import *
 
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
-
+DEM = None
+LSM = None
 
 def get_model_name(args):
-    return '{}-{}-{}-{}'.format(args.model, 
+    return '{}-{}-{}-{}-{}-{}'.format(args.model,
                                 args.loss_function,
                                 args.n_channels,
+                                args.include_datetime,
+                                args.include_environment_data,
                                 args.preprocess)
 
 
@@ -103,6 +106,52 @@ def create_generators(start_date, stop_date, **kwargs):
     return train, val
 
 
+def create_datetime(datetime, img_size):
+    tod, toy = time_of_year_and_day(datetime)
+    tod = np.expand_dims(np.full(img_size, tod, dtype=np.float32), axis=-1)
+    toy = np.expand_dims(np.full(img_size, toy, dtype=np.float32), axis=-1)
+
+    return tod, toy
+
+
+def create_environment_data(preprocess_label):
+    global LSM, DEM
+
+    if LSM is not None and DEM is not None:
+        return LSM, DEM
+
+    tokens = preprocess_label.split(',')
+
+    proc=['standardize=true']
+
+    for t in tokens:
+        k,v = t.split('=')
+
+        if k in ('img_size',):
+            proc.append(t)
+
+    proc = ','.join(proc)
+    lsm_file = '{}/static/LSM-cloudcast.tif'.format(INPUT_DIR)
+    dem_file = '{}/static/DEM-cloudcast.tif'.format(INPUT_DIR)
+
+    print (f"Reading {lsm_file}")
+    raster = gdal.Open(lsm_file)
+    LSM = raster.GetRasterBand(1).ReadAsArray()
+
+    LSM[LSM != 210] = 0
+    LSM[LSM == 210] = 1
+
+    LSM = preprocess_single(LSM, proc)
+
+    print (f"Reading {dem_file}")
+    raster = gdal.Open(dem_file)
+    DEM = raster.GetRasterBand(1).ReadAsArray()
+    DEM = preprocess_single(DEM, proc)
+
+    raster = None
+
+    return LSM, DEM
+
 class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
     def __init__(self, dataset, **kwargs):
@@ -111,7 +160,8 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         self.batch_size = int(kwargs.get('batch_size', 32))
         self.preprocess = kwargs.get('preprocess', '')
         self.initial = True
-        self.include_time = kwargs.get('include_time', False)
+        self.include_datetime = kwargs.get('include_datetime', False)
+        self.include_environment_data = kwargs.get('include_environment_data', False)
         self.output_is_timeseries = kwargs.get('output_is_timeseries', False)
 
         assert(self.n_channels > 0)
@@ -126,6 +176,10 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         else:
             return self.create_timeseries_output(i)
 
+#    def create_datetime(self, filename, img_size):
+#        datetime_str = os.path.basename(filename).split('_')[0]
+#        return create_datetime(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'), img_size)
+
     def create_timeseries_output(self, i):
         ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
 
@@ -139,15 +193,6 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         x = np.asarray(x)
         y = np.asarray(y)
 
-        if self.include_time:
-            for i,f in enumerate(batch_x):
-                datetime_str = os.path.filename(f).split('_')[0]
-
-                tod, toy = time_of_year_and_day(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'))
-
-                np.append(x[i], np.full(self.img_size, tod, dtype=np.float32), axis=3)
-                np.append(x[i], np.full(self.img_size, toy, dtype=np.float32), axis=3)
-
         if self.initial:
             print(f'Batch shapes: x {x.shape} y {y.shape}')
             self.initial = False
@@ -155,26 +200,25 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         return x, y
 
     def create_single_output_series(self, i):
-        ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
+        batch_ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
 
         x = []
         y = []
 
-        for d in ds:
-            x.append(preprocess_single(read_grib(d[0]), self.preprocess))
-            y.append(preprocess_single(read_grib(d[1]), self.preprocess))
+        for ds in batch_ds:
+            x.append([preprocess_single(read_grib(ds[0]), self.preprocess)])
+            y.append(preprocess_single(read_grib(ds[1]), self.preprocess))
+            dt = datetime.datetime.strptime(os.path.basename(ds[0]).split('_')[0], '%Y%m%dT%H%M%S')
 
-        x = np.asarray(x)
+            if self.include_datetime:
+                x[-1].extend(create_datetime(dt, get_img_size(self.preprocess)))
+
+            if self.include_environment_data:
+                x[-1].extend(create_environment_data(self.preprocess))
+            x[-1] = np.stack(x[-1], axis=-1)
+
+        x = np.squeeze(np.asarray(x), axis=-2)
         y = np.asarray(y)
-
-        if self.include_time:
-            for i,f in enumerate(batch_x):
-                datetime_str = os.path.filename(f).split('_')[0]
-
-                tod, toy = time_of_year_and_day(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'))
-
-                np.append(x[i], np.full(self.img_size, tod, dtype=np.float32), axis=3)
-                np.append(x[i], np.full(self.img_size, toy, dtype=np.float32), axis=3)
 
         if self.initial:
             print(f'Batch shapes: x {x.shape} y {y.shape}')
