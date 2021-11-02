@@ -8,8 +8,8 @@ from PIL import Image, ImageEnhance
 from osgeo import gdal,osr
 
 
-def get_img_size(args):
-    for x in args.preprocess.split(','):
+def get_img_size(preprocess):
+    for x in preprocess.split(','):
         k,v = x.split('=')
         if k == 'img_size':
             return tuple(map(int, v.split('x')))
@@ -106,10 +106,12 @@ def preprocess_single(arr, process_label):
             kern = np.ones((v,v), np.float32) / (v * v)
             kern = np.expand_dims(kern, axis=2)
             arr = ndimage.convolve(arr, kern, mode='constant', cval=0.0)
-        elif k == 'to_binary_mask':
+        elif k == 'to_binary_mask' and v == 'true':
             arr = to_binary_mask(arr)
         elif k == 'classes':
             arr = to_classes(arr, int(v))
+        elif k == 'standardize' and v == 'true':
+            arr = (arr - arr.mean()) / arr.std()
         elif k == 'img_size':
             img_size = tuple(map(int, v.split('x')))
             arr = np.expand_dims(cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
