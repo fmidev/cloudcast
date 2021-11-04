@@ -23,21 +23,21 @@ def plot_convlstm(ground_truth, predictions, mnwc):
     plt.show()
 
 
-def plot_mae(data, labels, step=timedelta(minutes=15)):
+def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
     print(data)
     print(labels)
     assert(len(data) == len(labels))
     fig = plt.figure()
     ax = plt.axes()
 
-    x = list(map(lambda x: step * x, range(len(data[0]))))
+    x = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
     x = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), x))
 
     for i,mae in enumerate(data):
         ax.plot(x, mae, label=labels[i])
 
     plt.legend()
-    plt.title(f'mae over {len(data[0])} predictions')
+    plt.title(title)
     plt.show()
 
 
@@ -49,12 +49,11 @@ def plot_timeseries(datas, labels, title=None):
     #fig = plt.figure(figsize=((ncols*1.5),nrows*1.5), constrained_layout=True)
     fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False)
     fig.suptitle(title)
-
-    for i, bigax in enumerate(bigaxes, start=0):
-        bigax[i].set_title(labels[i])
-        bigax[i].tick_params(labelcolor=(1.,1.,1., 0.0), top='off', bottom='off', left='off', right='off')
-        bigax[i]._frameon = False
-        bigax[i].axis('off')
+    for i, bigax in enumerate(bigaxes.flatten(), start=0):
+        bigax.set_title(labels[i])
+        bigax.tick_params(labelcolor=(1.,1.,1., 0.0), top='off', bottom='off', left='off', right='off')
+        bigax._frameon = False
+        bigax.axis('off')
 
     num=1
     for i in range(len(datas)):
