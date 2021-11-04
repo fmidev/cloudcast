@@ -15,6 +15,7 @@ INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
 def read_grib(file_path, message_no = 0):
     try:
+        print(f"Reading {file_path}")
         with open(file_path) as fp:
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
 
@@ -22,6 +23,10 @@ def read_grib(file_path, message_no = 0):
             nj = ecc.codes_get_long(gh, "Nj")
 
             data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
+
+            if np.max(data) == 9999.0 and np.min(data) == 9999.0:
+                data[data == 9999.0] = np.NAN
+                return data
 
             if np.max(data) > 1.1:
                 data = data / 100.0
