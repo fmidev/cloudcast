@@ -115,40 +115,75 @@ def predict_from_series(dataseries, num):
 
 def plot_unet(args):
 
-    pred = None
     initial = None
 
-    mae_persistence = []
-    mae_prediction = []
+    PRED_LEN = 9 # includes "current time"
+    PRED_STEP = timedelta(minutes=15)
 
-    time_gen = TimeseriesGenerator(args.start_date, 0, 5, timedelta(minutes=15))
+    pred_gt = []
+    pred_cc = []
+    pred_mnwc = []
 
-    times = next(time_gen)
-
-    gt = preprocess_many(read_times(times, producer='nwcsaf'), args.preprocess)
-    mnwc = preprocess_many(read_times(times, producer='mnwc'), args.preprocess)
-    datetime_weights = None
-    environment_weights = None
-
-    if args.include_datetime:
-        datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), times))
-    if args.include_environment_data:
-        environment_weights = create_environment_data(args.preprocess)
-
-    cloudcast = infer_many(gt[0], len(times), datetime_weights, environment_weights)
-    initial = np.copy(gt[0])
-    plot_timeseries([gt, cloudcast, mnwc], ['ground truth', 'cloudcast', 'mnwc'])
-
-    mae_persistence = []
-    mae_cloudcast = []
+    mae_prst = []
+    mae_cc = []
     mae_mnwc = []
 
-    for i,t in enumerate(gt):
-        mae_persistence.append(mean_absolute_error(t.flatten(), initial.flatten()))
-        mae_cloudcast.append(mean_absolute_error(t.flatten(), cloudcast[i].flatten()))
-        mae_mnwc.append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
+    for i in range(PRED_LEN-1):
+        mae_prst.append([])
+        mae_cc.append([])
+        mae_mnwc.append([])
 
-    plot_mae([mae_persistence, mae_cloudcast, mae_mnwc],['persistence', 'cloudcast', 'mnwc'])
+    time_gen = TimeseriesGenerator2(args.start_date, PRED_LEN, step=PRED_STEP, stop_date=args.stop_date)
+
+    environment_weights = None
+
+    gt_ds = DataSeries("nwcsaf", args.preprocess)
+    mnwc_ds = DataSeries("mnwc", args.preprocess)
+
+    idx=0
+    for times in time_gen:
+        # first element is our seed
+        leadtimes = times[1:]
+
+        print("Predicting for time range {} .. {}...".format(leadtimes[0], leadtimes[-1]))
+
+        gt = gt_ds.read_data(times)
+        mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
+
+        seed = np.copy(gt[0])
+        gt = gt[1:]
+
+        datetime_weights = None
+
+        if args.include_datetime:
+            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
+        if args.include_environment_data and environment_weights is None:
+            environment_weights = create_environment_data(args.preprocess)
+
+        cc = infer_many(seed, len(leadtimes), datetime_weights, environment_weights)
+
+        pred_gt.append(gt)
+        pred_cc.append(cc)
+        pred_mnwc.append(mnwc)
+
+        for i,t in enumerate(gt):
+            if np.isnan(t).any():
+                continue
+            mae_prst[i].append(mean_absolute_error(t.flatten(), seed.flatten()))
+            mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
+            mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
+        idx += 1
+        if idx == 30:
+            break
+    idx = np.random.randint(len(pred_gt))
+    plot_timeseries([pred_gt[idx], pred_cc[idx], pred_mnwc[idx]], ['ground truth', 'cloudcast', 'mnwc'], title='Prediction for t0={}'.format(idx * PRED_STEP + args.start_date))
+
+    for i,lt in enumerate(mae_prst):
+        mae_prst[i] = np.mean(mae_prst[i])
+        mae_cc[i] = np.mean(mae_cc[i])
+        mae_mnwc[i] = np.mean(mae_mnwc[i])
+
+    plot_mae([mae_prst, mae_cc, mae_mnwc],['persistence', 'cloudcast', 'mnwc'], title='MAE over {} predictions'.format(len(pred_gt)))
 
 
 if CONVLSTM:
@@ -197,7 +232,6 @@ if CONVLSTM:
 
         mnwc = preprocess_many(read_times(times[history_len+1:], producer='mnwc', analysis_time=analysis_time.replace(minute=0)), args.preprocess)
 
-        print(future.shape, predictions.shape, mnwc.shape)
         if initial:
             plot_convlstm(future, predictions, mnwc)
             initial=False
