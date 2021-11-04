@@ -268,6 +268,8 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
             x[-1] = np.stack(x[-1], axis=-1)
 
         x = np.squeeze(np.asarray(x), axis=-2)
+#        x = np.expand_dims(x, axis=1)
+#        x = np.repeat(x, 4, axis=1)
         y = np.asarray(y)
 
         if self.initial:
@@ -301,3 +303,50 @@ class TimeseriesGenerator:
         while len(self.times) < 1 + -1 * self.frames_prev + self.frames_next:
             self.times.append(self.times[-1] + self.step)
 
+class TimeseriesGenerator2:
+    def __init__(self, start_date, ts_length, step=datetime.timedelta(minutes=15), stop_date=None):
+        self.date = start_date
+        self.stop_date = stop_date
+        self.ts_length = ts_length
+        self.step = step
+        self.times = [start_date]
+        self.create()
+    def __iter__(self):
+        while self.times[-1] != self.stop_date:
+            yield self.times
+            self.create()
+    def create(self):
+        if len(self.times) > 1:
+            self.times.pop(0)
+        while len(self.times) < self.ts_length: # and (self.stop_date is None or self.times[-1] != self.stop_date):
+            self.times.append(self.times[-1] + self.step)
+
+
+class DataSeries:
+    def __init__(self, producer, preprocess = None, single_analysis_time = True):
+        self.data_series = {}
+        self.producer = producer
+        self.preprocess = preprocess
+        self.analysis_time = None
+        self.single_analysis_time = single_analysis_time
+
+    def read_data():
+        return np.asarray(list(self.data_series.values()))
+
+    def read_data(self, times, analysis_time=None):
+        datakeys = self.data_series.keys()
+
+        if analysis_time != self.analysis_time and self.single_analysis_time:
+            datakeys = []
+
+        new_series = {}
+        for t in times:
+            if t in datakeys:
+                new_series[t] = self.data_series[t]
+            else:
+                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time), self.preprocess)
+
+        self.data_series = new_series
+        self.analysis_time = analysis_time
+
+        return np.asarray(list(self.data_series.values()))
