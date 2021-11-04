@@ -114,6 +114,58 @@ def create_datetime(datetime, img_size):
     return tod, toy
 
 
+def process_lsm(LSM):
+
+    # Value	Label
+    # 11	Post-flooding or irrigated croplands (or aquatic)
+    # 14	Rainfed croplands
+    # 20	Mosaic cropland (50-70%) / vegetation (grassland/shrubland/forest) (20-50%)
+    # 30	Mosaic vegetation (grassland/shrubland/forest) (50-70%) / cropland (20-50%)
+    # 40	Closed to open (>15%) broadleaved evergreen or semi-deciduous forest (>5m)
+    # 50	Closed (>40%) broadleaved deciduous forest (>5m)
+    # 60	Open (15-40%) broadleaved deciduous forest/woodland (>5m)
+    # 70	Closed (>40%) needleleaved evergreen forest (>5m)
+    # 90	Open (15-40%) needleleaved deciduous or evergreen forest (>5m)
+    # 100	Closed to open (>15%) mixed broadleaved and needleleaved forest (>5m)
+    # 110	Mosaic forest or shrubland (50-70%) / grassland (20-50%)
+    # 120	Mosaic grassland (50-70%) / forest or shrubland (20-50%)
+    # 130	Closed to open (>15%) (broadleaved or needleleaved, evergreen or deciduous) shrubland (<5m)
+    # 140	Closed to open (>15%) herbaceous vegetation (grassland, savannas or lichens/mosses)
+    # 150	Sparse (<15%) vegetation
+    # 160	Closed to open (>15%) broadleaved forest regularly flooded (semi-permanently or temporarily) - Fresh or brackish water
+    # 170	Closed (>40%) broadleaved forest or shrubland permanently flooded - Saline or brackish water
+    # 180	Closed to open (>15%) grassland or woody vegetation on regularly flooded or waterlogged soil - Fresh, brackish or saline water
+    # 190	Artificial surfaces and associated areas (Urban areas >50%)
+    # 200	Bare areas
+    # 210	Water bodies
+    # 220	Permanent snow and ice
+    # 230	No data (burnt areas, clouds,)
+
+    # forest
+    LSM[np.logical_and(LSM >= 40, LSM >= 100)] = 0
+
+    # urban
+    LSM[LSM == 190] = 1
+
+    # sparse / bare
+    LSM[np.logical_or(LSM == 150, LSM == 200)] = 2
+
+    # permanent snow
+    LSM[LSM == 220] = 3
+
+    # water
+    LSM[LSM == 210] = 4
+
+    # agriculture
+    LSM[np.logical_or(LSM <= 14, LSM == 20)] = 5
+
+    # rest
+    LSM[LSM > 5] = 6
+
+    return LSM
+
+
+
 def create_environment_data(preprocess_label):
     global LSM, DEM
 
@@ -137,9 +189,7 @@ def create_environment_data(preprocess_label):
     print (f"Reading {lsm_file}")
     raster = gdal.Open(lsm_file)
     LSM = raster.GetRasterBand(1).ReadAsArray()
-
-    LSM[LSM != 210] = 0
-    LSM[LSM == 210] = 1
+    LSM = process_lsm(LSM)
 
     LSM = preprocess_single(LSM, proc)
 
