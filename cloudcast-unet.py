@@ -54,11 +54,13 @@ def callbacks(args):
     return [cp_cb, early_stopping_cb, reduce_lr_cb]
 
 
-def save_model_info(args, duration, model_dir):
+def save_model_info(args, duration, hist, model_dir):
     with open('{}/info-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
-        fp.write(f'args: {args}\n')
+        fp.write(f'{args}\n')
         fp.write(f'duration: {duration}\n')
         fp.write(f'finished: {datetime.datetime.now()}\n')
+    with open('{}/hist-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
+        fp.write(f'{hist}')
 
 def run_model(args):
     model_dir = 'models/{}'.format(get_model_name(args))
@@ -82,7 +84,7 @@ def run_model(args):
     duration = datetime.datetime.now() - start
 
     save_model(m, model_dir)
-    save_model_info(args, duration, model_dir)
+    save_model_info(args, duration, hist, model_dir)
     plot_hist(hist, model_dir)
 
     print(f"Model training finished in {duration}")
