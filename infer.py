@@ -140,7 +140,6 @@ def plot_unet(args):
     gt_ds = DataSeries("nwcsaf", args.preprocess)
     mnwc_ds = DataSeries("mnwc", args.preprocess)
 
-    idx=0
     for times in time_gen:
         # first element is our seed
         leadtimes = times[1:]
@@ -151,6 +150,11 @@ def plot_unet(args):
         mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
 
         seed = np.copy(gt[0])
+
+        if np.isnan(seed).any():
+            print("Seed contains missing values, skipping")
+            continue
+
         gt = gt[1:]
 
         datetime_weights = None
@@ -169,12 +173,14 @@ def plot_unet(args):
         for i,t in enumerate(gt):
             if np.isnan(t).any():
                 continue
+
+            if not np.isnan(mnwc).any():
+                mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
+
             mae_prst[i].append(mean_absolute_error(t.flatten(), seed.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-            mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
-        idx += 1
-        if idx == 30:
-            break
+
+
     idx = np.random.randint(len(pred_gt))
     plot_timeseries([pred_gt[idx], pred_cc[idx], pred_mnwc[idx]], ['ground truth', 'cloudcast', 'mnwc'], title='Prediction for t0={}'.format(idx * PRED_STEP + args.start_date))
 
