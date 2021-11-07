@@ -85,9 +85,12 @@ def create_generators(start_date, stop_date, **kwargs):
     if not out:
         i = 0
 
-        while i < len(filenames) - 1:
-            datasets.append([filenames[i], filenames[i+1]])
-            i += 2
+        while i < len(filenames) - n_channels:
+            datasets.append([])
+            for j in range(n_channels):
+                datasets[-1].append(filenames[i+j]) # training (x) files
+            datasets[-1].append(filenames[i+n_channels]) # test (y) file
+            i += n_channels + 1
     else:
         i = 0
 
@@ -256,18 +259,26 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         y = []
 
         for ds in batch_ds:
-            x.append([preprocess_single(read_grib(ds[0]), self.preprocess)])
-            y.append(preprocess_single(read_grib(ds[1]), self.preprocess))
-            dt = datetime.datetime.strptime(os.path.basename(ds[0]).split('_')[0], '%Y%m%dT%H%M%S')
+            x.append(preprocess_many(read_gribs(ds[:-1]), self.preprocess)) #[preprocess_single(read_gribs(ds[:-1]), self.preprocess)])
+            y.append(preprocess_single(read_grib(ds[-1]), self.preprocess))
+
+            dt = datetime.datetime.strptime(os.path.basename(ds[-2]).split('_')[0], '%Y%m%dT%H%M%S')
+
+            x[-1] = np.moveaxis(x[-1], 0, 3)
+            x[-1] = np.squeeze(x[-1], axis=-2)
 
             if self.include_datetime:
-                x[-1].extend(create_datetime(dt, get_img_size(self.preprocess)))
+                dts  = create_datetime(dt, get_img_size(self.preprocess))
+                x[-1] = np.concatenate((x[-1], dts[0], dts[1]), axis=-1)
 
             if self.include_environment_data:
-                x[-1].extend(create_environment_data(self.preprocess))
-            x[-1] = np.stack(x[-1], axis=-1)
+                envs = create_environment_data(self.preprocess)
+                x[-1] = np.concatenate((x[-1], envs[0], envs[1]), axis=-1)
 
-        x = np.squeeze(np.asarray(x), axis=-2)
+#            x[-1] = np.stack(x[-1], axis=-1)
+
+#        x = np.squeeze(np.asarray(x), axis=-2)
+        x = np.asarray(x)
 #        x = np.expand_dims(x, axis=1)
 #        x = np.repeat(x, 4, axis=1)
         y = np.asarray(y)
