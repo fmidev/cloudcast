@@ -264,7 +264,6 @@ def predict_convlstm(args):
         #cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
         cc = predict_from_series(gt[:args.n_channels], PRED_LEN)
 
-        print(gt.shape, cc.shape, mnwc.shape)
         pred_gt.append(gt)
         pred_cc.append(cc)
         pred_mnwc.append(mnwc)
