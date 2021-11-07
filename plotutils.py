@@ -70,21 +70,30 @@ def plot_timeseries(datas, labels, title=None):
     plt.show()
 
 
-def plot_hist(hist, model_dir):
-    print(hist.history)
-    plt.plot(hist.history['accuracy'])
-    plt.plot(hist.history['val_accuracy'])
+def plot_hist(hist, model_dir = None, show=False):
+    print(hist)
+    plt.plot(hist['accuracy'])
+    plt.plot(hist['val_accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/accuracy.png'.format(model_dir))
 
-    plt.plot(hist.history['loss'])
-    plt.plot(hist.history['val_loss'])
+    if show:
+        plt.show()
+    else:
+        plt.savefig('{}/accuracy.png'.format(model_dir))
+
+    plt.close()
+    plt.plot(hist['loss'])
+    plt.plot(hist['val_loss'])
     plt.title('model loss')
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig('{}/loss.png'.format(model_dir))
+
+    if show:
+        plt.show()
+    else:
+        plt.savefig('{}/loss.png'.format(model_dir))
 
