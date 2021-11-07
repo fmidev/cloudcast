@@ -34,9 +34,24 @@ def parse_command_line():
 
 
 def with_generator(m, args):
-    batch_size = 32
+    img_size = get_img_size(args.preprocess)
 
-    train_gen, val_gen = create_generators(args.start_date, args.stop_date, preprocess=args.preprocess, batch_size=batch_size, include_datetime=args.include_datetime, include_environment_data=args.include_environment_data)
+    if img_size[0] >= 384:
+        batch_size = 3
+    elif img_size[0] >= 256:
+        batch_size = 8
+    elif img_size[0] >= 128:
+        batch_size = 16
+    else:
+        batch_size = 32
+
+    train_gen, val_gen = create_generators(args.start_date,
+                                           args.stop_date,
+                                           preprocess=args.preprocess,
+                                           batch_size=batch_size,
+                                           n_channels=args.n_channels,
+                                           include_datetime=args.include_datetime,
+                                           include_environment_data=args.include_environment_data)
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
@@ -75,7 +90,7 @@ def run_model(args):
     if args.include_environment_data:
         n_channels += 2
 
-    m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function)
+    m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function, optimizer='SGM')
 
     start = datetime.datetime.now()
 
@@ -85,7 +100,7 @@ def run_model(args):
 
     save_model(m, model_dir)
     save_model_info(args, duration, hist, model_dir)
-    plot_hist(hist, model_dir)
+    plot_hist(hist.history, model_dir)
 
     print(f"Model training finished in {duration}")
 
