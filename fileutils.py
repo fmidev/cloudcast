@@ -57,8 +57,8 @@ def get_filename(time, producer = 'nwcsaf', analysis_time=None):
 
 
 
-def read_time(time, producer='nwcsaf', analysis_time=None):
-    return read_grib(get_filename(time, producer, analysis_time))
+def read_time(time, producer='nwcsaf', analysis_time=None, **kwargs):
+    return read_grib(get_filename(time, producer, analysis_time), **kwargs)
 
 
 
@@ -333,7 +333,7 @@ class DataSeries:
             if t in datakeys:
                 new_series[t] = self.data_series[t]
             else:
-                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time), self.preprocess)
+                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True), self.preprocess)
 
         self.data_series = new_series
         self.analysis_time = analysis_time
