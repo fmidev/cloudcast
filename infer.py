@@ -31,6 +31,7 @@ def parse_command_line():
 
     if args.label is not None:
         args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+        args.n_channels = int(args.n_channels)
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
@@ -53,24 +54,34 @@ if __name__ == "__main__":
 
 def infer_many(orig, num_predictions, datetime_weights=None, environment_weights=None):
     predictions = []
+    hist_len = len(orig)
+
+    orig_sq = np.squeeze(np.moveaxis(orig, 0, 3), -2)
 
     for i in range(num_predictions):
-        seed = None
+        seed = oriq_sq
         if len(predictions) > 0:
-            seed = predictions[-1]
-        else:
-            seed = orig
 
-        data = [seed]
+            if len(predictions) < hist_len:
+                seed = orig[:hist_len-len(predictions)]
+
+            take = hist_len if len(predictions) > hist_len else len(predictions)
+
+            preds = np.asarray(predictions[-take:])
+
+            if seed is not None:
+                seed = np.concatenate((seed, preds), axis=0)
+            else:
+                seed = preds
+            seed = np.squeeze(np.moveaxis(seed, 0, 3), -2)
+
+        data = seed
 
         if datetime_weights is not None:
-            data.extend(datetime_weights[i])
+            data = np.concatenate((data, datetime_weights[hist_len-1][0], datetime_weights[hist_len-1][1]), axis=-1)
 
         if environment_weights is not None:
-            data.extend(environment_weights)
-
-        data = np.stack(data, axis=-1)
-        data = np.squeeze(data, axis=-2)
+            data = np.concatenate((data, environment_weights[0], environment_weights[1]), axis=-1)
 
         pred = infer(data)
         predictions.append(pred)
@@ -80,7 +91,7 @@ def infer_many(orig, num_predictions, datetime_weights=None, environment_weights
 
 
 def infer(img):
-    img = tf.expand_dims(img, axis=0)
+    img = np.expand_dims(img, axis=0)
     prediction = m.predict(img)
     pred = np.squeeze(prediction, axis=0)
     return pred
@@ -113,11 +124,10 @@ def predict_from_series(dataseries, num):
     return dataseries[-num:]
 
 
-def plot_unet(args):
-
+def predict_unet(args):
     initial = None
 
-    PRED_LEN = 9 # includes "current time"
+    PRED_LEN = 8
     PRED_STEP = timedelta(minutes=15)
 
     pred_gt = []
@@ -128,34 +138,39 @@ def plot_unet(args):
     mae_cc = []
     mae_mnwc = []
 
-    for i in range(PRED_LEN-1):
+    for i in range(PRED_LEN):
         mae_prst.append([])
         mae_cc.append([])
         mae_mnwc.append([])
 
-    time_gen = TimeseriesGenerator2(args.start_date, PRED_LEN, step=PRED_STEP, stop_date=args.stop_date)
+    time_gen = TimeseriesGenerator2(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     environment_weights = None
 
     gt_ds = DataSeries("nwcsaf", args.preprocess)
     mnwc_ds = DataSeries("mnwc", args.preprocess)
 
-    for times in time_gen:
-        # first element is our seed
-        leadtimes = times[1:]
+    history_len = args.n_channels
 
-        print("Predicting for time range {} .. {}...".format(leadtimes[0], leadtimes[-1]))
+    for times in time_gen:
+        history = times[:args.n_channels]
+        leadtimes = times[args.n_channels:]
+
+        print("Using history {} to predict {}".format(
+            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), history)),
+            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
+        ))
 
         gt = gt_ds.read_data(times)
+
         mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
+        initial = np.copy(gt[args.n_channels - 1])
 
-        seed = np.copy(gt[0])
-
-        if np.isnan(seed).any():
+        if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
             continue
 
-        gt = gt[1:]
+        gt = gt[args.n_channels:]
 
         datetime_weights = None
 
@@ -164,7 +179,7 @@ def plot_unet(args):
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess)
 
-        cc = infer_many(seed, len(leadtimes), datetime_weights, environment_weights)
+        cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
 
         pred_gt.append(gt)
         pred_cc.append(cc)
@@ -177,9 +192,22 @@ def plot_unet(args):
             if not np.isnan(mnwc).any():
                 mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
 
-            mae_prst[i].append(mean_absolute_error(t.flatten(), seed.flatten()))
+            mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
+
+    return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
+
+def plot_unet(args, predictions, errors):
+    PRED_STEP = timedelta(minutes=15)
+
+    pred_gt = predictions[0]
+    pred_cc = predictions[1]
+    pred_mnwc = predictions[2]
+
+    mae_prst = errors[0]
+    mae_cc = errors[1]
+    mae_mnwc = errors[2]
 
     idx = np.random.randint(len(pred_gt))
     plot_timeseries([pred_gt[idx], pred_cc[idx], pred_mnwc[idx]], ['ground truth', 'cloudcast', 'mnwc'], title='Prediction for t0={}'.format(idx * PRED_STEP + args.start_date))
@@ -258,5 +286,6 @@ if CONVLSTM:
     plot_mae([mae_persistence, mae_prediction, mae_mnwc],['persistence', 'cloudcast', 'mnwc'], step)
 
 else:
-    plot_unet(args)
+    predictions, errors = predict_unet(args)
+    plot_unet(args, predictions, errors)
 
