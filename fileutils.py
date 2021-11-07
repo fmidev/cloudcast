@@ -293,28 +293,6 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 # datetime ring buffer
 
 class TimeseriesGenerator:
-    def __init__(self, start_date, frames_prev, frames_next, step):
-        self.date = start_date
-        self.frames_prev = frames_prev
-        self.frames_next = frames_next
-        self.step = step
-        self.times = [start_date]
-        self.create()
-    def __iter__(self):
-        while True:
-            yield self.times
-            self.create()
-    def __next__(self):
-        return_value = self.times
-        self.create()
-        return return_value
-    def create(self):
-        if len(self.times) > 1:
-            self.times.pop(0)
-        while len(self.times) < 1 + -1 * self.frames_prev + self.frames_next:
-            self.times.append(self.times[-1] + self.step)
-
-class TimeseriesGenerator2:
     def __init__(self, start_date, ts_length, step=datetime.timedelta(minutes=15), stop_date=None):
         self.date = start_date
         self.stop_date = stop_date
