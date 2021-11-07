@@ -13,9 +13,11 @@ from tensorflow import keras
 
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
-def read_grib(file_path, message_no = 0):
+def read_grib(file_path, message_no = 0, print_filename=False):
     try:
-        print(f"Reading {file_path}")
+        if print_filename:
+            print(f"Reading {file_path}")
+
         with open(file_path) as fp:
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
 
@@ -86,17 +88,13 @@ def save_grib(data, filepath, datetime):
 
 def read_gribs(filenames):
 
-    def process_grib(file_path):
-        img = read_grib(file_path)
-        return img
-
     files_ds = []
 
     i = 0
     for f in filenames:
         i = i + 1
 
-        files_ds.append(process_grib(f))
+        files_ds.append(read_grib(f))
 
     if len(files_ds) == 0:
         print("No files found")
