@@ -13,7 +13,8 @@ from tensorflow import keras
 
 INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 
-def read_grib(file_path, message_no = 0, print_filename=False):
+def read_grib(file_path, message_no = 0, **kwargs):
+    print_filename=kwargs.get('print_filename', False)
     try:
         if print_filename:
             print(f"Reading {file_path}")
@@ -28,7 +29,7 @@ def read_grib(file_path, message_no = 0, print_filename=False):
 
             if np.max(data) == 9999.0 and np.min(data) == 9999.0:
                 data[data == 9999.0] = np.NAN
-                return data
+                return np.expand_dims(data, axis=-1)
 
             if np.max(data) > 1.1:
                 data = data / 100.0
@@ -41,7 +42,7 @@ def read_grib(file_path, message_no = 0, print_filename=False):
             return data
     except FileNotFoundError as e:
         print(e)
-        return np.full((1069, 949), np.NAN)
+        return np.full((1069, 949, 1), np.NAN)
 
 def save_grib(data, filepath, datetime):
     assert(filepath[-5:] == 'grib2')
