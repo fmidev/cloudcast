@@ -96,22 +96,18 @@ def infer(img):
     return pred
 
 
-
 def predict_from_series(dataseries, num):
-#    for _ in range(num):
-        pred = m.predict(np.expand_dims(dataseries, axis=0))
-        pred = np.squeeze(pred, axis=0)
+    pred = m.predict(np.expand_dims(dataseries, axis=0))
+    pred = np.squeeze(pred, axis=0)
+
+    if pred.shape[0] == num:
         return pred
-#        sys.exit(1)
-#        pred = np.squeeze(pred, axis=0)
-#        predicted_frame = np.expand_dims(pred[-1, ...], axis=0)
 
-#        predicted_frame = sharpen(predicted_frame, 2)
-#        print(np.min(predicted_frame), np.mean(predicted_frame), np.max(predicted_frame))
-#        print(np.histogram(predicted_frame))
-#        dataseries = np.concatenate((dataseries, predicted_frame), axis=0)
+    moar = m.predict(np.expand_dims(pred, axis=0))
+    moar = np.squeeze(moar, axis=0)
 
-#    return dataseries[-num:]
+    comb = np.concatenate((pred, moar), axis=0)
+    return comb[:num]
 
 
 def predict_unet(args):
@@ -254,9 +250,7 @@ def predict_convlstm(args):
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess)
 
-        #cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
         cc = predict_from_series(gt[:args.n_channels], PRED_LEN)
-
         pred_gt.append(gt)
         pred_cc.append(cc)
         pred_mnwc.append(mnwc)
@@ -270,7 +264,6 @@ def predict_convlstm(args):
 
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-            print(np.mean(cc[i]))
 
         continue
         # create a timeseries that consists of history, present, and future
