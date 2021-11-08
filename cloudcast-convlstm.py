@@ -18,11 +18,13 @@ def parse_command_line():
     parser.add_argument("--loss_function", action='store', type=str, default='binary_crossentropy')
     parser.add_argument("--preprocess", action='store', type=str, default='area=Scandinavia,conv=3,classes=100,img_size=128x128')
     parser.add_argument("--label", action='store', type=str)
+    parser.add_argument("--include_datetime", action='store_true', default=False)
+    parser.add_argument("--include_environment_data", action='store_true', default=False)
 
     args = parser.parse_args()
 
     if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.preprocess = args.label.split('-')
+        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
@@ -79,7 +81,8 @@ def run_model(args):
     duration = datetime.datetime.now() - start
 
     save_model(m, model_dir)
-    plot_hist(hist, model_dir)
+    save_model_info(args, duration, hist, model_dir)
+    plot_hist(hist.history, model_dir)
 
     print(f"Model training finished in {duration}")
 
