@@ -110,28 +110,28 @@ def predict_from_series(dataseries, num):
     return comb[:num]
 
 
-def predict_unet(args):
-    initial = None
+def predict(args):
+
+    time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     pred_gt = []
     pred_cc = []
     pred_mnwc = []
 
-    mae_prst = []
     mae_cc = []
+    mae_prst = []
     mae_mnwc = []
-
-    for i in range(PRED_LEN):
-        mae_prst.append([])
-        mae_cc.append([])
-        mae_mnwc.append([])
-
-    time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     environment_weights = None
 
     gt_ds = DataSeries("nwcsaf", args.preprocess)
     mnwc_ds = DataSeries("mnwc", args.preprocess)
+
+    for i in range(PRED_LEN):
+        mae_cc.append([])
+        mae_prst.append([])
+        mae_mnwc.append([])
+
 
     for times in time_gen:
         history = times[:args.n_channels]
@@ -147,6 +147,7 @@ def predict_unet(args):
         mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
         initial = np.copy(gt[args.n_channels - 1])
 
+        print("Initial time found at {}".format(times[args.n_channels-1]))
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
             continue
@@ -160,7 +161,10 @@ def predict_unet(args):
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess)
 
-        cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
+        if args.model == "unet":
+            cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
+        else:
+            cc = predict_from_series(gt[:args.n_channels], PRED_LEN)
 
         pred_gt.append(gt)
         pred_cc.append(cc)
@@ -177,7 +181,9 @@ def predict_unet(args):
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
 
+
     return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
+
 
 def plot_results(args, predictions, errors):
 
@@ -200,98 +206,6 @@ def plot_results(args, predictions, errors):
     plot_mae([mae_prst, mae_cc, mae_mnwc],['persistence', 'cloudcast', 'mnwc'], title='MAE over {} predictions'.format(len(pred_gt)))
 
 
-def predict_convlstm(args):
-
-    time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
-
-    pred_gt = []
-    pred_cc = []
-    pred_mnwc = []
-
-    mae_cc = []
-    mae_prst = []
-    mae_mnwc = []
-#    image_series = {}
-
-    environment_weights = None
-
-    gt_ds = DataSeries("nwcsaf", args.preprocess)
-    mnwc_ds = DataSeries("mnwc", args.preprocess)
-
-    for i in range(PRED_LEN):
-        mae_cc.append([])
-        mae_prst.append([])
-        mae_mnwc.append([])
-
-    for times in time_gen:
-        history = times[:args.n_channels]
-        leadtimes = times[args.n_channels:]
-
-        print("Using history {} to predict {}".format(
-            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), history)),
-            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
-        ))
-
-        gt = gt_ds.read_data(times)
-
-        mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
-        initial = np.copy(gt[args.n_channels - 1])
-
-        if np.isnan(gt).any():
-            print("Seed contains missing values, skipping")
-            continue
-
-        gt = gt[args.n_channels:]
-
-        datetime_weights = None
-
-        if args.include_datetime:
-            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
-        if args.include_environment_data and environment_weights is None:
-            environment_weights = create_environment_data(args.preprocess)
-
-        cc = predict_from_series(gt[:args.n_channels], PRED_LEN)
-        pred_gt.append(gt)
-        pred_cc.append(cc)
-        pred_mnwc.append(mnwc)
-
-        for i,t in enumerate(gt):
-            if np.isnan(t).any():
-                continue
-
-            if not np.isnan(mnwc).any():
-                mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
-
-            mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
-            mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-
-        continue
-        # create a timeseries that consists of history, present, and future
-        # first two are used to create a prediction, and the latter one is
-        # used to verify the prediction
-
-        dataseries = read_images(times, image_series, args.preprocess)
-        assert(len(dataseries) == (1 + history_len + prediction_len))
-
-        # the actual data is in values
-        datas = list(dataseries.values())
-        history = datas[:history_len+1]
-        future = np.asarray(datas[history_len+1:])
-
-        # contains the predicted frames *only*
-        predictions = predict_from_series(history, prediction_len)
-        assert(predictions.shape[0] == prediction_len)
-        assert(predictions.shape[0] == len(future))
-
-
-    return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
-
-
-if args.model == "convlstm":
-    predictions, errors = predict_convlstm(args)
-    plot_results(args, predictions, errors)
-
-else:
-    predictions, errors = predict_unet(args)
-    plot_results(args, predictions, errors)
+predictions, errors = predict(args)
+plot_results(args, predictions, errors)
 
