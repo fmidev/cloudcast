@@ -12,7 +12,8 @@ from fileutils import *
 from preprocess import *
 from plotutils import *
 
-CONVLSTM = False
+PRED_LEN = 12
+PRED_STEP = timedelta(minutes=15)
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
@@ -43,9 +44,6 @@ if __name__ == "__main__":
 
     model_file = 'models/{}'.format(get_model_name(args))
 
-    if args.model == "convlstm":
-        CONVLSTM=True
-
     print(f"Loading {model_file}")
 
     m = load_model(model_file, compile=False)
@@ -58,30 +56,31 @@ def infer_many(orig, num_predictions, datetime_weights=None, environment_weights
 
     orig_sq = np.squeeze(np.moveaxis(orig, 0, 3), -2)
 
-    for i in range(num_predictions):
-        seed = orig_sq
-        if len(predictions) > 0:
+    def create_hist(predictions):
+        if len(predictions) == 0:
+            return np.squeeze(np.moveaxis(orig, 0, 3), -2)
+        elif len(predictions) >= hist_len:
+             return np.squeeze(np.moveaxis(np.asarray(predictions[-hist_len:]), 0, 3), -2)
 
-            if len(predictions) < hist_len:
-                seed = orig[:hist_len-len(predictions)]
+        hist_a = orig[:hist_len-len(predictions)]
+        hist_b = np.asarray(predictions[-len(predictions):])
 
-            take = hist_len if len(predictions) > hist_len else len(predictions)
+        seed = np.squeeze(np.moveaxis(np.concatenate((hist_a, hist_b), axis=0), 0, 3), -2)
 
-            preds = np.asarray(predictions[-take:])
+        return seed
 
-            if seed is not None:
-                seed = np.concatenate((seed, preds), axis=0)
-            else:
-                seed = preds
-            seed = np.squeeze(np.moveaxis(seed, 0, 3), -2)
-
-        data = seed
-
+    def append_auxiliary_weights(data, datetime_weights, environment_weights):
         if datetime_weights is not None:
             data = np.concatenate((data, datetime_weights[hist_len-1][0], datetime_weights[hist_len-1][1]), axis=-1)
 
         if environment_weights is not None:
             data = np.concatenate((data, environment_weights[0], environment_weights[1]), axis=-1)
+
+        return data
+
+    for i in range(num_predictions):
+        data = create_hist(predictions)
+        data = append_auxiliary_weights(data, datetime_weights, environment_weights)
 
         pred = infer(data)
         predictions.append(pred)
@@ -117,9 +116,6 @@ def predict_from_series(dataseries, num):
 
 def predict_unet(args):
     initial = None
-
-    PRED_LEN = 8
-    PRED_STEP = timedelta(minutes=15)
 
     pred_gt = []
     pred_cc = []
@@ -188,7 +184,6 @@ def predict_unet(args):
     return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
 
 def plot_results(args, predictions, errors):
-    PRED_STEP = timedelta(minutes=15)
 
     pred_gt = predictions[0]
     pred_cc = predictions[1]
@@ -211,8 +206,6 @@ def plot_results(args, predictions, errors):
 
 def predict_convlstm(args):
 
-    PRED_STEP = timedelta(minutes=15)
-    PRED_LEN = 8
     time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     pred_gt = []
@@ -277,7 +270,7 @@ def predict_convlstm(args):
 
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-
+            print(np.mean(cc[i]))
 
         continue
         # create a timeseries that consists of history, present, and future
@@ -301,7 +294,7 @@ def predict_convlstm(args):
     return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
 
 
-if CONVLSTM:
+if args.model == "convlstm":
     predictions, errors = predict_convlstm(args)
     plot_results(args, predictions, errors)
 
