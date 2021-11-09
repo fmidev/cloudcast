@@ -25,6 +25,9 @@ def parse_command_line():
 
     if args.label is not None:
         args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+        args.include_datetime = eval(args.include_datetime)
+        args.include_environment_data = eval(args.include_environment_data)
+        args.n_channels = int(args.n_channels)
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
@@ -36,7 +39,7 @@ def parse_command_line():
 
 
 def fit(m, args):
-    batch_size = 2
+    batch_size = 1
 
     train_gen, val_gen = create_generators(args.start_date,
                                            args.stop_date,
@@ -57,12 +60,21 @@ def fit(m, args):
                                                  save_weights_only=True,
                                                  verbose=1)
 
-    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=7, min_delta=0.001)
-    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
+    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=15, min_delta=0.001)
+    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=7)
 
     hist = m.fit(train_gen, epochs = 500, validation_data = val_gen, callbacks=[cp_cb, early_stopping_cb, reduce_lr_cb])
 
     return hist
+
+
+def save_model_info(args, duration, hist, model_dir):
+    with open('{}/info-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
+        fp.write(f'{args}\n')
+        fp.write(f'duration: {duration}\n')
+        fp.write(f'finished: {datetime.datetime.now()}\n')
+    with open('{}/hist-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
+        fp.write(f'{hist}')
 
 
 def run_model(args):

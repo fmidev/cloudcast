@@ -25,6 +25,10 @@ def parse_command_line():
 
     if args.label is not None:
         args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+        args.include_datetime = eval(args.include_datetime)
+        args.include_environment_data = eval(args.include_environment_data)
+        args.n_channels = int(args.n_channels)
+
     args.model = 'unet'
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
