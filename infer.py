@@ -114,12 +114,14 @@ def predict_many(args):
 def predict(args):
     args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
     args.n_channels = int(args.n_channels)
+    args.include_datetime = eval(args.include_datetime)
+    args.include_environment_data = eval(args.include_environment_data)
 
     model_file = 'models/{}'.format(get_model_name(args))
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
 
-    time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
+    time_gen = TimeseriesGenerator(args.start_date - args.n_channels * PRED_STEP, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     mae_cc = []
     mae_prst = []
@@ -156,7 +158,7 @@ def predict(args):
 
         gt = gt_ds.read_data(times)
 
-        mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
+        mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
         initial = np.copy(gt[args.n_channels - 1])
 
         if np.isnan(gt).any():
@@ -266,6 +268,8 @@ def plot_results(args, predictions, errors):
 
     plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions['mnwc']['data'])))
 
+    plt.pause(0.001)
+    input("Press [enter] to stop")
 
 if __name__ == "__main__":
     args = parse_command_line()
