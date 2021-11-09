@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+import copy
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
@@ -19,38 +20,18 @@ def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_date", action='store', type=str, required=True)
     parser.add_argument("--stop_date", action='store', type=str, required=True)
-    parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
-    parser.add_argument("--model", action='store', type=str, default='unet')
-    parser.add_argument("--n_channels", action='store', type=int, default=1)
-    parser.add_argument("--preprocess", action='store', type=str, default='conv=3,classes=10')
-    parser.add_argument("--label", action='store', type=str)
-    parser.add_argument("--area", action='store', type=str, default='Scandinavia')
-    parser.add_argument("--include_datetime", action='store_true', default=False)
-    parser.add_argument("--include_environment_data", action='store_true', default=False)
+    parser.add_argument("--label", action='append', type=str, required=True)
 
     args = parser.parse_args()
-
-    if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
-        args.n_channels = int(args.n_channels)
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     return args
 
-if __name__ == "__main__":
-    args = parse_command_line()
-
-    model_file = 'models/{}'.format(get_model_name(args))
-
-    print(f"Loading {model_file}")
-
-    m = load_model(model_file, compile=False)
 
 
-
-def infer_many(orig, num_predictions, datetime_weights=None, environment_weights=None):
+def infer_many(m, orig, num_predictions, datetime_weights=None, environment_weights=None):
     predictions = []
     hist_len = len(orig)
 
@@ -82,21 +63,21 @@ def infer_many(orig, num_predictions, datetime_weights=None, environment_weights
         data = create_hist(predictions)
         data = append_auxiliary_weights(data, datetime_weights, environment_weights)
 
-        pred = infer(data)
+        pred = infer(m,data)
         predictions.append(pred)
 
     return np.asarray(predictions)
 
 
 
-def infer(img):
+def infer(m, img):
     img = np.expand_dims(img, axis=0)
     prediction = m.predict(img)
     pred = np.squeeze(prediction, axis=0)
     return pred
 
 
-def predict_from_series(dataseries, num):
+def predict_from_series(m, dataseries, num):
     pred = m.predict(np.expand_dims(dataseries, axis=0))
     pred = np.squeeze(pred, axis=0)
 
@@ -110,13 +91,35 @@ def predict_from_series(dataseries, num):
     return comb[:num]
 
 
+def predict_many(args):
+    all_pred = {}
+    all_err = {}
+
+    for lbl in args.label:
+        elem = copy.deepcopy(args)
+        elem.label = lbl
+
+        predictions, errors = predict(elem)
+
+        for i,k in enumerate(predictions.keys()):
+            if not k in all_pred.keys():
+                all_pred[k] = predictions[k]
+
+        for i,k in enumerate(errors.keys()):
+            if not k in all_err.keys():
+                all_err[k] = errors[k]
+
+    return all_pred, all_err
+
 def predict(args):
+    args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+    args.n_channels = int(args.n_channels)
+
+    model_file = 'models/{}'.format(get_model_name(args))
+    print(f"Loading {model_file}")
+    m = load_model(model_file, compile=False)
 
     time_gen = TimeseriesGenerator(args.start_date, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
-
-    pred_gt = []
-    pred_cc = []
-    pred_mnwc = []
 
     mae_cc = []
     mae_prst = []
@@ -127,11 +130,20 @@ def predict(args):
     gt_ds = DataSeries("nwcsaf", args.preprocess)
     mnwc_ds = DataSeries("mnwc", args.preprocess)
 
+    predictions = {
+        args.label : { 'time' : [], 'data' : [] },
+        'mnwc' : { 'time' : [], 'data' : [] },
+        'gt' : { 'time' : [], 'data' : [] }
+    }
+
     for i in range(PRED_LEN):
         mae_cc.append([])
         mae_prst.append([])
         mae_mnwc.append([])
 
+    def diff(a, b):
+        b = set(b)
+        return [i for i in a if i not in b]
 
     for times in time_gen:
         history = times[:args.n_channels]
@@ -147,10 +159,16 @@ def predict(args):
         mnwc = mnwc_ds.read_data(leadtimes, leadtimes[0].replace(minute=0))
         initial = np.copy(gt[args.n_channels - 1])
 
-        print("Initial time found at {}".format(times[args.n_channels-1]))
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
             continue
+
+        new_times = diff(times, predictions['gt']['time'])
+        for t in new_times:
+            i = times.index(t)
+            predictions['gt']['time'].append(t)
+            predictions['gt']['data'].append(gt[i])
+
 
         gt = gt[args.n_channels:]
 
@@ -162,13 +180,14 @@ def predict(args):
             environment_weights = create_environment_data(args.preprocess)
 
         if args.model == "unet":
-            cc = infer_many(gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
+            cc = infer_many(m, gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
         else:
-            cc = predict_from_series(gt[:args.n_channels], PRED_LEN)
+            cc = predict_from_series(m, gt[:args.n_channels], PRED_LEN)
 
-        pred_gt.append(gt)
-        pred_cc.append(cc)
-        pred_mnwc.append(mnwc)
+        predictions[args.label]['time'].append(leadtimes)
+        predictions[args.label]['data'].append(cc)
+        predictions['mnwc']['time'].append(leadtimes)
+        predictions['mnwc']['data'].append(mnwc)
 
         for i,t in enumerate(gt):
             if np.isnan(t).any():
@@ -180,32 +199,77 @@ def predict(args):
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
+        break
+
+    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc }
 
 
-    return [pred_gt, pred_cc, pred_mnwc], [mae_prst, mae_cc, mae_mnwc]
+
+def copy_range(gt, start, stop):
+    a = gt['time'].index(start)
+    b = gt['time'].index(stop)
+    return np.asarray(gt['data'][a:b+1]) # need inclusive end
+
+
+def calculate_errors(models, predictions):
+    errors = {}
+
+    for m in models:
+        errors[m] = [[]]*PRED_LEN
+
+    for m in models:
+        for i, pred in enumerate(predictions[m]['data']):
+            times = predictions[m]['time'][i]
+            gt = copy_range(times[0], times[-1])
+
+
+#    for elem in predictions['gt']: 
+#        time = elem['time']
+#        data = elem['data']
+
+        
+        #for k in predictions.keys():
+
 
 
 def plot_results(args, predictions, errors):
 
-    pred_gt = predictions[0]
-    pred_cc = predictions[1]
-    pred_mnwc = predictions[2]
+    labels = [ 'ground truth', 'mnwc' ]
+    labels.extend(args.label)
 
-    mae_prst = errors[0]
-    mae_cc = errors[1]
-    mae_mnwc = errors[2]
+    idx = np.random.randint(len(predictions['mnwc']['data']))
+  
+    pred_mnwc = predictions['mnwc']['data'][idx]
+    times = predictions[args.label[0]]['time'][idx]
+    gt = copy_range(predictions['gt'], times[0], times[-1])
 
-    idx = np.random.randint(len(pred_gt))
-    plot_timeseries([pred_gt[idx], pred_cc[idx], pred_mnwc[idx]], ['ground truth', 'cloudcast', 'mnwc'], title='Prediction for t0={}'.format(idx * PRED_STEP + args.start_date))
+    data = [gt, pred_mnwc]
 
-    for i,lt in enumerate(mae_prst):
-        mae_prst[i] = np.mean(mae_prst[i])
-        mae_cc[i] = np.mean(mae_cc[i])
-        mae_mnwc[i] = np.mean(mae_mnwc[i])
+    for l in args.label:
+        data.append(predictions[l]['data'][idx])
 
-    plot_mae([mae_prst, mae_cc, mae_mnwc],['persistence', 'cloudcast', 'mnwc'], title='MAE over {} predictions'.format(len(pred_gt)))
+    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]))
+
+    #######################
+
+    labels = [ 'persistence', 'mnwc' ]
+    labels.extend(args.label)
+
+    data = [errors['prst'], errors['mnwc']]
+
+    for l in args.label:
+        data.append(errors[l])
+
+    for i,m in enumerate(data):
+        for j,lt in enumerate(m):
+            data[i][j] = np.mean(data[i][j])
+
+    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions['mnwc']['data'])))
 
 
-predictions, errors = predict(args)
-plot_results(args, predictions, errors)
+if __name__ == "__main__":
+    args = parse_command_line()
+
+    predictions, errors = predict_many(args)
+    plot_results(args, predictions, errors)
 
