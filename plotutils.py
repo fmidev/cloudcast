@@ -38,7 +38,7 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
 
     plt.legend()
     plt.title(title)
-    plt.show()
+    plt.show(block=False)
 
 
 def plot_timeseries(datas, labels, title=None):
@@ -67,7 +67,7 @@ def plot_timeseries(datas, labels, title=None):
 
     fig.set_facecolor('w')
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
 
 
 def plot_hist(hist, model_dir = None, show=False):
