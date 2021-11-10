@@ -4,6 +4,9 @@ import sys
 import datetime
 import os
 import requests
+import boto3
+from botocore import UNSIGNED
+from botocore.config import Config
 from scipy import ndimage
 from PIL import Image, ImageEnhance
 from tensorflow import keras
@@ -25,8 +28,34 @@ def get_model_name(args):
                                 args.preprocess)
 
 
+def read_filenames_from_s3(start_time, stop_time, producer):
+    print("Getting object listing from s3")
+    s3 = boto3.client('s3', endpoint_url='https://lake.fmi.fi', use_ssl=True, config=Config(signature_version=UNSIGNED))
+    paginator = s3.get_paginator('list_objects_v2')
+    pages = paginator.paginate(Bucket='cc_archive', Prefix=producer + '/')
+
+#response = s3.list_objects_v2(Bucket='cc_archive', Prefix=producer + '/')
+
+    start_date = int(start_time.strftime("%Y%m%d"))
+    stop_date = int(stop_time.strftime("%Y%m%d"))
+    filenames = []
+
+    for page in pages:
+        for item in page['Contents']:
+            f = item['Key']
+
+            datetime = int(f.split('/')[-1][0:8])
+            if datetime >= start_date and datetime < stop_date:
+                filenames.append('https://lake.fmi.fi/cc_archive/{}'.format(f))
+
+    return filenames
+
+
 def read_filenames(start_time, stop_time, producer='nwcsaf'):
     print(f'Input directory: {INPUT_DIR}/{producer}')
+
+    if INPUT_DIR[0:4] == 'http':
+        return read_filenames_from_s3(start_time, stop_time, producer)
 
     files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*.grib2', recursive=True))
 
