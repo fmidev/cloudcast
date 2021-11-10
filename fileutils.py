@@ -13,8 +13,8 @@ from preprocess import *
 
 #INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
 INPUT_DIR = 'https://lake.fmi.fi/cc_archive'
-DEM = None
-LSM = None
+DEM = {}
+LSM = {}
 
 def get_model_name(args):
     return '{}-{}-{}-{}-{}-{}'.format(args.model,
@@ -187,20 +187,17 @@ def gdal_read_from_http(url):
 def create_environment_data(preprocess_label):
     global LSM, DEM
 
-    if LSM is not None and DEM is not None:
-        return LSM, DEM
+    isize = get_img_size(preprocess_label)
+    img_size = '{}x{}'.format(isize[0], isize[1])
+
+    try:
+        return LSM[img_size], DEM[img_size]
+    except KeyError as e:
+        pass
 
     tokens = preprocess_label.split(',')
 
-    proc=['standardize=true']
-
-    for t in tokens:
-        k,v = t.split('=')
-
-        if k in ('img_size',):
-            proc.append(t)
-
-    proc = ','.join(proc)
+    proc='standardize=true,img_size={}'.format(img_size)
     lsm_file = '{}/static/LSM-cloudcast.tif'.format(INPUT_DIR)
     dem_file = '{}/static/DEM-cloudcast.tif'.format(INPUT_DIR)
 
@@ -211,10 +208,10 @@ def create_environment_data(preprocess_label):
     else:
         raster = gdal.Open(lsm_file)
 
-    LSM = raster.GetRasterBand(1).ReadAsArray()
-    LSM = process_lsm(LSM)
+    LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
+    LSM[img_size] = process_lsm(LSM[img_size])
 
-    LSM = preprocess_single(LSM, proc)
+    LSM[img_size] = preprocess_single(LSM[img_size], proc)
 
     print (f"Reading {dem_file}")
 
@@ -225,12 +222,13 @@ def create_environment_data(preprocess_label):
     else:
         raster = gdal.Open(dem_file)
 
-    DEM = raster.GetRasterBand(1).ReadAsArray()
-    DEM = preprocess_single(DEM, proc)
+    DEM[img_size] = raster.GetRasterBand(1).ReadAsArray()
+    DEM[img_size] = preprocess_single(DEM[img_size], proc)
 
     raster = None
 
-    return LSM, DEM
+    return LSM[img_size], DEM[img_size]
+
 
 class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
