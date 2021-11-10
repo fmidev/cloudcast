@@ -1,3 +1,5 @@
+botocore
+boto3
 eccodes
 opencv-python
 scikit-image
