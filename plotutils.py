@@ -41,12 +41,15 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
     plt.show(block=False)
 
 
-def plot_timeseries(datas, labels, title=None):
+def plot_timeseries(datas, labels, title=None, initial_data=None):
     assert(len(datas) == len(labels))
     nrows = len(datas)
     ncols = datas[0].shape[0]
+    if initial_data is not None:
+        nrows += 1
+        labels = ['initial'] + labels
+
     print(f'nrows={nrows},ncols={ncols}')
-    #fig = plt.figure(figsize=((ncols*1.5),nrows*1.5), constrained_layout=True)
     fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False)
     fig.suptitle(title)
     for i, bigax in enumerate(bigaxes.flatten(), start=0):
@@ -56,13 +59,22 @@ def plot_timeseries(datas, labels, title=None):
         bigax.axis('off')
 
     num=1
+    write_time=nrows-1
+
+    if initial_data is not None:
+        ax = fig.add_subplot(nrows, ncols, num)
+        ax.imshow(np.squeeze(initial_data), cmap='gray_r')
+        ax.axis('off')
+        num=ncols+1
+        write_time=nrows-2
+
     for i in range(len(datas)):
         for j in range(datas[i].shape[0]):
             ax = fig.add_subplot(nrows, ncols, num)
             num += 1
             ax.imshow(np.squeeze(datas[i][j]), cmap='gray_r')
             ax.axis('off')
-            if i == (nrows - 1):
+            if i == write_time:
                 ax.set_title(f'{(j+1)*15}m', y=0, pad=-25)
 
     fig.set_facecolor('w')
