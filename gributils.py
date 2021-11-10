@@ -1,48 +1,67 @@
 import numpy as np
-import glob
-import sys
 import eccodes as ecc
 import datetime
-#import tensorflow as tf
 import cv2
 import os
-from scipy import ndimage
-from PIL import Image
-from tensorflow import keras
+import requests
+import sys
+
+def read_from_http(url):
+    r = requests.get(url, stream=True)
+
+    if r.status_code == 404:
+        print(f"Not found: {url}")
+        return np.full((1069, 949, 1), np.NAN)
+    if r.status_code != 200:
+        print(f'HTTP error: {r.status_code}')
+        sys.exit(1)
+
+    gh = ecc.codes_new_from_message(r.content)
+    return read_grib_contents(gh)
 
 
-INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
-
-def read_grib(file_path, message_no = 0, **kwargs):
-    print_filename=kwargs.get('print_filename', False)
+def read_from_file(file_path, message_no):
     try:
-        if print_filename:
-            print(f"Reading {file_path}")
-
         with open(file_path) as fp:
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
-
-            ni = ecc.codes_get_long(gh, "Ni")
-            nj = ecc.codes_get_long(gh, "Nj")
-
-            data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
-
-            if np.max(data) == 9999.0 and np.min(data) == 9999.0:
-                data[data == 9999.0] = np.NAN
-                return np.expand_dims(data, axis=-1)
-
-            if np.max(data) > 1.1:
-                data = data / 100.0
-
-            if ecc.codes_get(gh, "jScansPositively"):
-                data = np.flipud(data) # image data is +x-y
-            data = np.expand_dims(data, axis=2)
-
-            ecc.codes_release(gh)
-            return data
+            return read_grib_contents(gh)
     except FileNotFoundError as e:
         print(e)
         return np.full((1069, 949, 1), np.NAN)
+
+
+def read_grib_contents(gh):
+    ni = ecc.codes_get_long(gh, "Ni")
+    nj = ecc.codes_get_long(gh, "Nj")
+
+    data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
+
+    if np.max(data) == 9999.0 and np.min(data) == 9999.0:
+        data[data == 9999.0] = np.NAN
+        return np.expand_dims(data, axis=-1)
+
+    if np.max(data) > 1.1:
+        data = data / 100.0
+
+    if ecc.codes_get(gh, "jScansPositively"):
+        data = np.flipud(data) # image data is +x-y
+    data = np.expand_dims(data, axis=2)
+
+    ecc.codes_release(gh)
+    return data
+
+
+def read_grib(file_path, message_no = 0, **kwargs):
+    print_filename=kwargs.get('print_filename', False)
+
+    if print_filename:
+        print(f"Reading {file_path}")
+
+    if file_path[0:4] == 'http':
+        return read_from_http(file_path)
+    else:
+        return read_from_file(file_path, message_no)
+
 
 def save_grib(data, filepath, datetime):
     assert(filepath[-5:] == 'grib2')

@@ -2,8 +2,8 @@ import numpy as np
 import glob
 import sys
 import datetime
-import cv2
 import os
+import requests
 from scipy import ndimage
 from PIL import Image, ImageEnhance
 from tensorflow import keras
@@ -11,7 +11,8 @@ from gributils import *
 from osgeo import gdal,osr
 from preprocess import *
 
-INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
+#INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
+INPUT_DIR = 'https://lake.fmi.fi/cc_archive'
 DEM = None
 LSM = None
 
@@ -169,6 +170,21 @@ def process_lsm(LSM):
 
 
 
+def gdal_read_from_http(url):
+    mmap_name = '/vsimem/xxx'
+
+    def read_from_http(url):
+        r = requests.get(url, stream=True)
+
+        if r.status_code != 200:
+            print(f"Not found: {url}")
+            sys.exit(1)
+        print(r.status_code)
+        return r.content
+
+    gdal.FileFromMemBuffer(mmap_name, read_from_http(url))
+    return gdal.Open(mmap_name)
+
 def create_environment_data(preprocess_label):
     global LSM, DEM
 
@@ -190,14 +206,26 @@ def create_environment_data(preprocess_label):
     dem_file = '{}/static/DEM-cloudcast.tif'.format(INPUT_DIR)
 
     print (f"Reading {lsm_file}")
-    raster = gdal.Open(lsm_file)
+
+    if lsm_file[0:4] == 'http':
+        raster = gdal_read_from_http(lsm_file)
+    else:
+        raster = gdal.Open(lsm_file)
+
     LSM = raster.GetRasterBand(1).ReadAsArray()
     LSM = process_lsm(LSM)
 
     LSM = preprocess_single(LSM, proc)
 
     print (f"Reading {dem_file}")
-    raster = gdal.Open(dem_file)
+
+    raster = None
+
+    if dem_file[0:4] == 'http':
+        raster = gdal_read_from_http(dem_file)
+    else:
+        raster = gdal.Open(dem_file)
+
     DEM = raster.GetRasterBand(1).ReadAsArray()
     DEM = preprocess_single(DEM, proc)
 
