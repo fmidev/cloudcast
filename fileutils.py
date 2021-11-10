@@ -179,7 +179,6 @@ def gdal_read_from_http(url):
         if r.status_code != 200:
             print(f"Not found: {url}")
             sys.exit(1)
-        print(r.status_code)
         return r.content
 
     gdal.FileFromMemBuffer(mmap_name, read_from_http(url))
