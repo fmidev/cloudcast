@@ -94,7 +94,7 @@ def run_model(args):
     if args.include_environment_data:
         n_channels += 2
 
-    m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function, optimizer='SGM')
+    m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function, optimizer='SGD')
 
     start = datetime.datetime.now()
 
