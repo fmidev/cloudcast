@@ -13,19 +13,30 @@ from fileutils import *
 from preprocess import *
 from plotutils import *
 
-PRED_LEN = 12
 PRED_STEP = timedelta(minutes=15)
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", action='store', type=str, required=True)
-    parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--start_date", action='store', type=str, required=False)
+    parser.add_argument("--stop_date", action='store', type=str, required=False)
+    parser.add_argument("--single_time", action='store', type=str, required=False)
     parser.add_argument("--label", action='append', type=str, required=True)
+    parser.add_argument("--save_grib", action='store_true', default=False)
+    parser.add_argument("--disable_plot", action='store_true', default=False)
+    parser.add_argument("--prediction_len", action='store', type=int, default=12)
 
     args = parser.parse_args()
 
-    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+    if (args.start_date is None and args.stop_date is None) and args.single_time is None:
+        print("One of: (start_date, stop_date), (single_time) must be given")
+        sys.exit(1)
+
+    if args.start_date is not None and args.stop_date is not None:
+        args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
+        args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+    else:
+        args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%d %H:%M:%S')
+        args.stop_date = args.start_date
 
     return args
 
@@ -121,7 +132,7 @@ def predict(args):
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
 
-    time_gen = TimeseriesGenerator(args.start_date - args.n_channels * PRED_STEP, PRED_LEN + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
+    time_gen = TimeseriesGenerator(args.start_date - args.n_channels * PRED_STEP, args.prediction_len + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
 
     mae_cc = []
     mae_prst = []
@@ -138,7 +149,7 @@ def predict(args):
         'gt' : { 'time' : [], 'data' : [] }
     }
 
-    for i in range(PRED_LEN):
+    for i in range(args.prediction_len):
         mae_cc.append([])
         mae_prst.append([])
         mae_mnwc.append([])
@@ -182,9 +193,9 @@ def predict(args):
             environment_weights = create_environment_data(args.preprocess)
 
         if args.model == "unet":
-            cc = infer_many(m, gt[:args.n_channels], PRED_LEN, datetime_weights, environment_weights)
+            cc = infer_many(m, gt[:args.n_channels], args.prediction_len, datetime_weights, environment_weights)
         else:
-            cc = predict_from_series(m, gt[:args.n_channels], PRED_LEN)
+            cc = predict_from_series(m, gt[:args.n_channels], args.prediction_len)
 
         predictions[args.label]['time'].append(leadtimes)
         predictions[args.label]['data'].append(cc)
@@ -217,7 +228,7 @@ def calculate_errors(models, predictions):
     errors = {}
 
     for m in models:
-        errors[m] = [[]]*PRED_LEN
+        errors[m] = [[]]*args.prediction_len
 
     for m in models:
         for i, pred in enumerate(predictions[m]['data']):
@@ -250,7 +261,7 @@ def plot_results(args, predictions, errors):
     for l in args.label:
         data.append(predictions[l]['data'][idx])
 
-    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]))
+    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None) #predictions['gt']['data'][0])
 
     #######################
 
@@ -271,9 +282,32 @@ def plot_results(args, predictions, errors):
     plt.pause(0.001)
     input("Press [enter] to stop")
 
+
+
+def save_gribs(args, predictions):
+
+    for label in args.label:
+        cc = predictions[label]
+        alltimes = cc['time']
+        alldata = cc['data']
+
+        for data,times in zip(alldata, alltimes):
+            assert(len(times) == len(data))
+
+            analysistime = times[0] - PRED_STEP
+
+            for d,t in zip(data, times):
+                leadtime = int((t - analysistime).total_seconds()/60)
+                save_grib(d, '/tmp/{}+{:03d}m.grib2'.format(analysistime.strftime('%Y%m%d%H%M%S'), leadtime), analysistime, t)
+
+
 if __name__ == "__main__":
     args = parse_command_line()
 
     predictions, errors = predict_many(args)
-    plot_results(args, predictions, errors)
 
+    if not args.disable_plot:
+        plot_results(args, predictions, errors)
+
+    if args.save_grib:
+        save_gribs(args, predictions)
