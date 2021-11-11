@@ -34,8 +34,6 @@ def read_filenames_from_s3(start_time, stop_time, producer):
     paginator = s3.get_paginator('list_objects_v2')
     pages = paginator.paginate(Bucket='cc_archive', Prefix=producer + '/')
 
-#response = s3.list_objects_v2(Bucket='cc_archive', Prefix=producer + '/')
-
     start_date = int(start_time.strftime("%Y%m%d"))
     stop_date = int(stop_time.strftime("%Y%m%d"))
     filenames = []
@@ -283,10 +281,6 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         else:
             return self.create_timeseries_output(i)
 
-#    def create_datetime(self, filename, img_size):
-#        datetime_str = os.path.basename(filename).split('_')[0]
-#        return create_datetime(datetime.datetime.strptime(datetime_str, '%Y%m%dT%H%M%S'), img_size)
-
     def create_timeseries_output(self, i):
         ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
 
@@ -329,7 +323,6 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
                 envs = create_environment_data(self.preprocess)
                 x[-1] = np.concatenate((x[-1], envs[0], envs[1]), axis=-1)
 
-#            x[-1] = np.stack(x[-1], axis=-1)
 
 #        x = np.squeeze(np.asarray(x), axis=-2)
         x = np.asarray(x)
@@ -345,23 +338,42 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
 
 # datetime ring buffer
+#
+# datetimes are generated so that forecast analysis time fits between the given range
+#
+# for example
+# * history length = 2
+# * prediction length = 2
+# * single time = 202111T0800
+#
+# times are:
+# - 20211107T2330
+# - 20211107T2345
+# - 20211108T0000
+# - 20211108T0015
+
 
 class TimeseriesGenerator:
-    def __init__(self, start_date, ts_length, step=datetime.timedelta(minutes=15), stop_date=None):
+    def __init__(self, start_date, history_len, pred_len, step=datetime.timedelta(minutes=15), stop_date=None):
         self.date = start_date
         self.stop_date = stop_date
-        self.ts_length = ts_length
+        self.history_len = history_len
+        self.prediction_len = pred_len
         self.step = step
-        self.times = [start_date]
+        self.times = [start_date - (history_len - 1) * step]
         self.create()
+
     def __iter__(self):
-        while self.times[-1] != self.stop_date:
+        while True:
             yield self.times
             self.create()
+            if self.times[-1] > self.stop_date:
+                break
+
     def create(self):
         if len(self.times) > 1:
             self.times.pop(0)
-        while len(self.times) < self.ts_length: # and (self.stop_date is None or self.times[-1] != self.stop_date):
+        while len(self.times) < self.history_len + self.prediction_len:
             self.times.append(self.times[-1] + self.step)
 
 
