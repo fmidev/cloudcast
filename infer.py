@@ -24,6 +24,7 @@ def parse_command_line():
     parser.add_argument("--save_grib", action='store_true', default=False)
     parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
+    parser.add_argument("--exclude_analysistime", action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -132,7 +133,7 @@ def predict(args):
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
 
-    time_gen = TimeseriesGenerator(args.start_date - args.n_channels * PRED_STEP, args.prediction_len + args.n_channels, step=PRED_STEP, stop_date=args.stop_date)
+    time_gen = TimeseriesGenerator(args.start_date, args.n_channels, args.prediction_len, step=PRED_STEP, stop_date=args.stop_date)
 
     mae_cc = []
     mae_prst = []
@@ -167,23 +168,32 @@ def predict(args):
             list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
         ))
 
-        gt = gt_ds.read_data(times)
+        if args.disable_plot:
+            gt = gt_ds.read_data(history)
+            initial = np.copy(gt[-1])
 
-        mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
-        initial = np.copy(gt[args.n_channels - 1])
+        else:
+            gt = gt_ds.read_data(times)
+            mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
+            initial = np.copy(gt[args.n_channels - 1])
+
 
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
             continue
 
-        new_times = diff(times, predictions['gt']['time'])
+        if args.disable_plot:
+            new_times = diff(history, predictions['gt']['time'])
+        else:
+            new_times = diff(times, predictions['gt']['time'])
+
         for t in new_times:
             i = times.index(t)
             predictions['gt']['time'].append(t)
             predictions['gt']['data'].append(gt[i])
 
-
-        gt = gt[args.n_channels:]
+        if args.disable_plot is False:
+            gt = gt[args.n_channels:]
 
         datetime_weights = None
 
@@ -197,22 +207,29 @@ def predict(args):
         else:
             cc = predict_from_series(m, gt[:args.n_channels], args.prediction_len)
 
+        if args.disable_plot and not args.exclude_analysistime:
+            cc = np.concatenate((np.expand_dims(gt[-1], axis=0), cc), axis=0)
+            leadtimes = [history[-1]] + leadtimes
+
+        assert(cc.shape[0] == len(leadtimes))
         predictions[args.label]['time'].append(leadtimes)
         predictions[args.label]['data'].append(cc)
-        predictions['mnwc']['time'].append(leadtimes)
-        predictions['mnwc']['data'].append(mnwc)
+
+        if not args.disable_plot:
+            predictions['mnwc']['time'].append(leadtimes)
+            predictions['mnwc']['data'].append(mnwc)
 
         for i,t in enumerate(gt):
             if np.isnan(t).any():
                 continue
 
-            if not np.isnan(mnwc).any():
+            if not args.disable_plot and not np.isnan(mnwc).any():
                 mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
 
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
-        break
+#        break
 
     return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc }
 
@@ -294,11 +311,14 @@ def save_gribs(args, predictions):
         for data,times in zip(alldata, alltimes):
             assert(len(times) == len(data))
 
-            analysistime = times[0] - PRED_STEP
+            analysistime = times[0]
 
+            if args.exclude_analysistime:
+                analysistime = analysistime - PRED_STEP
             for d,t in zip(data, times):
                 leadtime = int((t - analysistime).total_seconds()/60)
-                save_grib(d, '/tmp/{}+{:03d}m.grib2'.format(analysistime.strftime('%Y%m%d%H%M%S'), leadtime), analysistime, t)
+                filename = '/tmp/{}/{}+{:03d}m.grib2'.format(label, analysistime.strftime('%Y%m%d%H%M%S'), leadtime)
+                save_grib(d, filename, analysistime, t)
 
 
 if __name__ == "__main__":
