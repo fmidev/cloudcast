@@ -102,7 +102,7 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "parameterNumber", 164)
     ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
     ecc.codes_set(h, "packingType", "grid_ccsds")
-    ecc.codes_set(h, "stepUnits", "m")
+    ecc.codes_set(h, "indicatorOfUnitOfTimeRange", 0)
     ecc.codes_set(h, "forecastTime", int((forecasttime - analysistime).total_seconds()/60))
 
     data = np.flipud(data)
