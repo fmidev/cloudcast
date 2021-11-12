@@ -10,10 +10,8 @@ from tensorflow import keras
 from tensorflow.keras.layers import Input, Conv2D, Dropout, MaxPooling2D, UpSampling2D, Cropping2D, concatenate, ConvLSTM2D, BatchNormalization, Conv3D
 from tensorflow.keras.models import Model
 
-#LOSS_FUNCTION = 'binary_crossentropy'
-#LOSS_FUNCTION = 'ssim'
 
-def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError'):
+def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='SGD'):
 
     inputs = Input(input_size)
     conv1 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(inputs)
@@ -54,11 +52,11 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
     conv9 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(merge9)
     conv9 = Conv2D(64, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv9)
     conv9 = Conv2D(2, 3, activation = 'relu', padding = 'same', kernel_initializer = 'he_normal')(conv9)
-    conv10 = Conv2D(1, 1, activation = 'sigmoid')(conv9)
+    conv10 = Conv2D(1, 1, activation = 'linear')(conv9)
 
     model = Model(inputs = [inputs], outputs = [conv10])
 
-    model.compile(optimizer = 'SGD', loss = loss_function, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
+    model.compile(optimizer = optimizer, loss = loss_function, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
    
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
