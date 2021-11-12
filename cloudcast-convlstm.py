@@ -20,14 +20,20 @@ def parse_command_line():
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--include_datetime", action='store_true', default=False)
     parser.add_argument("--include_environment_data", action='store_true', default=False)
+    parser.add_argument("--leadtime_conditioning", action='store_true', default=False)
 
     args = parser.parse_args()
 
     if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
         args.include_datetime = eval(args.include_datetime)
         args.include_environment_data = eval(args.include_environment_data)
+        args.leadtime_conditioning = eval(args.leadtime_conditioning)
         args.n_channels = int(args.n_channels)
+
+    assert(args.leadtime_conditioning == False)
+    assert(args.include_datetime == False)
+    assert(args.include_environment_data == False)
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
@@ -41,12 +47,7 @@ def parse_command_line():
 def fit(m, args):
     batch_size = 1
 
-    train_gen, val_gen = create_generators(args.start_date,
-                                           args.stop_date,
-                                           preprocess=args.preprocess,
-                                           batch_size=batch_size,
-                                           n_channels=args.n_channels,
-                                           output_is_timeseries=True)
+    train_gen, val_gen = create_generators(batch_size=batch_size, output_is_timeseries=True, **vars(args))
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))

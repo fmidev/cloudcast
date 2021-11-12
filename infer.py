@@ -43,7 +43,11 @@ def parse_command_line():
 
 
 
-def infer_many(m, orig, num_predictions, datetime_weights=None, environment_weights=None):
+def infer_many(m, orig, num_predictions, **kwargs):
+    datetime_weights = kwargs.get('datetime_weights', None)
+    environment_weights = kwargs.get('environment_weights', None)
+    leadtime_conditioning = kwargs.get('leadtime_conditioning', None)
+
     predictions = []
     hist_len = len(orig)
 
@@ -68,6 +72,9 @@ def infer_many(m, orig, num_predictions, datetime_weights=None, environment_weig
 
         if environment_weights is not None:
             data = np.concatenate((data, environment_weights[0], environment_weights[1]), axis=-1)
+
+        if leadtime_conditioning is not None:
+            data = np.concatenate((data, leadtime_conditioning), axis=-1)
 
         return data
 
@@ -124,10 +131,11 @@ def predict_many(args):
     return all_pred, all_err
 
 def predict(args):
-    args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+    args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
     args.n_channels = int(args.n_channels)
     args.include_datetime = eval(args.include_datetime)
     args.include_environment_data = eval(args.include_environment_data)
+    args.leadtime_conditioning = eval(args.leadtime_conditioning)
 
     model_file = 'models/{}'.format(get_model_name(args))
     print(f"Loading {model_file}")
@@ -159,7 +167,9 @@ def predict(args):
         b = set(b)
         return [i for i in a if i not in b]
 
+    num=0
     for times in time_gen:
+        num += 1
         history = times[:args.n_channels]
         leadtimes = times[args.n_channels:]
 
@@ -176,7 +186,6 @@ def predict(args):
             gt = gt_ds.read_data(times)
             mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
             initial = np.copy(gt[args.n_channels - 1])
-
 
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
@@ -201,9 +210,13 @@ def predict(args):
             datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess)
+        lt = None
+        if args.leadtime_conditioning:
+            lt = num*15.0 / (args.leadtime_conditioning * 15.0)
+            lt = np.expand_dims(np.full((get_img_size(args.preprocess)), lt), 2)
 
         if args.model == "unet":
-            cc = infer_many(m, gt[:args.n_channels], args.prediction_len, datetime_weights, environment_weights)
+            cc = infer_many(m, gt[:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
         else:
             cc = predict_from_series(m, gt[:args.n_channels], args.prediction_len)
 
@@ -228,8 +241,6 @@ def predict(args):
 
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-
-#        break
 
     return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc }
 

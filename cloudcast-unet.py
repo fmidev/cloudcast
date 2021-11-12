@@ -16,17 +16,19 @@ def parse_command_line():
     parser.add_argument("--cont", action='store_true')
     parser.add_argument("--n_channels", action='store', type=int, default=1)
     parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
-    parser.add_argument("--preprocess", action='store', type=str, default='area=Scandinavia,conv=3,classes=100,img_size=128x128')
+    parser.add_argument("--preprocess", action='store', type=str, default='img_size=128x128')
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--include_datetime", action='store_true', default=False)
     parser.add_argument("--include_environment_data", action='store_true', default=False)
+    parser.add_argument("--leadtime_conditioning", action='store', type=int, default=0)
 
     args = parser.parse_args()
 
     if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.preprocess = args.label.split('-')
+        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
         args.include_datetime = eval(args.include_datetime)
         args.include_environment_data = eval(args.include_environment_data)
+        args.leadtime_conditioning = int(args.leadtime_conditioning)
         args.n_channels = int(args.n_channels)
 
     args.model = 'unet'
@@ -49,13 +51,7 @@ def with_generator(m, args):
     else:
         batch_size = 32
 
-    train_gen, val_gen = create_generators(args.start_date,
-                                           args.stop_date,
-                                           preprocess=args.preprocess,
-                                           batch_size=batch_size,
-                                           n_channels=args.n_channels,
-                                           include_datetime=args.include_datetime,
-                                           include_environment_data=args.include_environment_data)
+    train_gen, val_gen = create_generators(batch_size=batch_size, **vars(args))
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
@@ -93,6 +89,8 @@ def run_model(args):
         n_channels += 2
     if args.include_environment_data:
         n_channels += 2
+    if args.leadtime_conditioning:
+        n_channels += 1
 
     m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function, optimizer='SGD')
 
