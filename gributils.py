@@ -6,12 +6,14 @@ import os
 import requests
 import sys
 
+DEFAULT_SIZE=(1069, 949, 1)
+
 def read_from_http(url):
     r = requests.get(url, stream=True)
 
     if r.status_code == 404:
         print(f"Not found: {url}")
-        return np.full((1069, 949, 1), np.NAN)
+        return np.full(DEFAULT_SIZE, np.NAN)
     if r.status_code != 200:
         print(f'HTTP error: {r.status_code}')
         sys.exit(1)
@@ -27,14 +29,19 @@ def read_from_file(file_path, message_no):
             return read_grib_contents(gh)
     except FileNotFoundError as e:
         print(e)
-        return np.full((1069, 949, 1), np.NAN)
+        return np.full(DEFAULT_SIZE, np.NAN)
 
 
 def read_grib_contents(gh):
     ni = ecc.codes_get_long(gh, "Ni")
     nj = ecc.codes_get_long(gh, "Nj")
 
-    data = np.asarray(ecc.codes_get_double_array(gh, "values"), dtype=np.float32).reshape(nj, ni)
+    data = ecc.codes_get_double_array(gh, "values").astype(np.float32).reshape(nj, ni)
+
+    if ecc.codes_get(gh, "jScansPositively"):
+        data = np.flipud(data) # image data is +x-y
+
+    ecc.codes_release(gh)
 
     if np.max(data) == 9999.0 and np.min(data) == 9999.0:
         data[data == 9999.0] = np.NAN
@@ -43,11 +50,8 @@ def read_grib_contents(gh):
     if np.max(data) > 1.1:
         data = data / 100.0
 
-    if ecc.codes_get(gh, "jScansPositively"):
-        data = np.flipud(data) # image data is +x-y
     data = np.expand_dims(data, axis=2)
 
-    ecc.codes_release(gh)
     return data
 
 
@@ -125,7 +129,6 @@ def read_gribs(filenames):
         i = i + 1
 
         files_ds.append(read_grib(f))
-
     if len(files_ds) == 0:
         print("No files found")
 
