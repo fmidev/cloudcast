@@ -7,8 +7,6 @@ import requests
 import boto3
 from botocore import UNSIGNED
 from botocore.config import Config
-from scipy import ndimage
-from PIL import Image, ImageEnhance
 from tensorflow import keras
 from gributils import *
 from osgeo import gdal,osr
@@ -47,6 +45,7 @@ def read_filenames_from_s3(start_time, stop_time, producer):
             if datetime >= start_date and datetime < stop_date:
                 filenames.append('https://lake.fmi.fi/cc_archive/{}'.format(f))
 
+    print("Filter matched {} files".format(len(filenames)))
     return filenames
 
 
@@ -67,6 +66,7 @@ def read_filenames(start_time, stop_time, producer='nwcsaf'):
         if datetime >= start_date and datetime < stop_date:
             filenames.append(f)
 
+    print("Filter matched {} files".format(len(filenames)))
     return filenames
 
 
