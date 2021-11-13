@@ -4,7 +4,7 @@ import datetime
 import cv2
 import os
 from scipy import ndimage
-from PIL import Image, ImageEnhance
+#from PIL import Image, ImageEnhance
 from osgeo import gdal,osr
 
 
@@ -121,14 +121,14 @@ def preprocess_single(arr, process_label):
     return arr
 
 
-def sharpen(data, factor):
+#def sharpen(data, factor):
 #    assert(data.shape == (1,) + IMG_SIZE + (1,))
-    im = Image.fromarray(np.squeeze(data) * 255)
-    im = im.convert('L')
-
-    enhancer = ImageEnhance.Sharpness(im)
-    sharp = np.array(enhancer.enhance(factor)) / 255.0
-    return np.expand_dims(sharp, [0,3])
+#    im = Image.fromarray(np.squeeze(data) * 255)
+#    im = im.convert('L')
+#
+#    enhancer = ImageEnhance.Sharpness(im)
+#    sharp = np.array(enhancer.enhance(factor)) / 255.0
+#    return np.expand_dims(sharp, [0,3])
 
 
 def time_of_year_and_day(datetime):
