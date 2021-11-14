@@ -233,6 +233,15 @@ def gdal_read_from_http(url):
     gdal.FileFromMemBuffer(mmap_name, read_from_http(url))
     return gdal.Open(mmap_name)
 
+def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
+    b = np.ones((1,) + img_size)
+    return np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b
+
+
+def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
+    return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3))
+
+
 def create_environment_data(preprocess_label):
     global LSM, DEM
 
@@ -367,12 +376,11 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
         for ds_ in batch_ds:
             ds = ds_.copy()
-            leadtime = (int(ds[-2].split('=')[1])) / float(self.leadtime_conditioning * 15)
+            leadtime = int(int(ds[-2].split('=')[1])/15)
             del ds[-2]
             x_ = preprocess_many(read_gribs(ds[:-1]), self.preprocess)
-            lt_ = np.expand_dims(np.full(get_img_size(self.preprocess), leadtime), axis=(0,3))
+            lt_ = create_squeezed_leadtime_conditioning(get_img_size(self.preprocess), self.leadtime_conditioning, leadtime)
             x.append(np.concatenate((x_, lt_), axis=0))
-            y.append(preprocess_single(read_grib(ds[-1]), self.preprocess))
 
             dt = datetime.datetime.strptime(os.path.basename(ds[-2]).split('_')[0], '%Y%m%dT%H%M%S')
 
@@ -387,6 +395,7 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
                 envs = create_environment_data(self.preprocess)
                 x[-1] = np.concatenate((x[-1], envs[0], envs[1]), axis=-1)
 
+            y.append(preprocess_single(read_grib(ds[-1]), self.preprocess))
 
         x = np.asarray(x)
         y = np.asarray(y)
