@@ -66,23 +66,29 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
         return seed
 
-    def append_auxiliary_weights(data, datetime_weights, environment_weights):
+    def append_auxiliary_weights(data, datetime_weights, environment_weights, num_prediction):
+        if leadtime_conditioning is not None:
+            data = np.concatenate((data, leadtime_conditioning[num_prediction]), axis=-1)
+
         if datetime_weights is not None:
             data = np.concatenate((data, datetime_weights[hist_len-1][0], datetime_weights[hist_len-1][1]), axis=-1)
 
         if environment_weights is not None:
             data = np.concatenate((data, environment_weights[0], environment_weights[1]), axis=-1)
 
-        if leadtime_conditioning is not None:
-            data = np.concatenate((data, leadtime_conditioning), axis=-1)
-
         return data
 
-    for i in range(num_predictions):
-        data = create_hist(predictions)
-        data = append_auxiliary_weights(data, datetime_weights, environment_weights)
+    data = orig_sq
 
-        pred = infer(m,data)
+    for i in range(num_predictions):
+
+        if leadtime_conditioning is None:
+            # autoregression
+            data = create_hist(predictions)
+
+        alldata = append_auxiliary_weights(data, datetime_weights, environment_weights, i)
+
+        pred = infer(m, alldata)
         predictions.append(pred)
 
     return np.asarray(predictions)
@@ -167,9 +173,7 @@ def predict(args):
         b = set(b)
         return [i for i in a if i not in b]
 
-    num=0
     for times in time_gen:
-        num += 1
         history = times[:args.n_channels]
         leadtimes = times[args.n_channels:]
 
@@ -205,15 +209,18 @@ def predict(args):
             gt = gt[args.n_channels:]
 
         datetime_weights = None
+        lt = None
 
         if args.include_datetime:
             datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess)
-        lt = None
         if args.leadtime_conditioning:
-            lt = num*15.0 / (args.leadtime_conditioning * 15.0)
-            lt = np.expand_dims(np.full((get_img_size(args.preprocess)), lt), 2)
+            assert(args.prediction_len <= args.leadtime_conditioning)
+            lt = []
+            for i in range(args.prediction_len):
+                lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+            lt = np.squeeze(np.asarray(lt), axis=1)
 
         if args.model == "unet":
             cc = infer_many(m, gt[:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
