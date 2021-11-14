@@ -4,6 +4,7 @@ from model import *
 from preprocess import *
 from fileutils import *
 from plotutils import *
+from generators import *
 import argparse
 import matplotlib.pyplot as plt
 
@@ -11,8 +12,8 @@ EPOCHS = 500
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", action='store', type=str, required=True)
-    parser.add_argument("--stop_date", action='store', type=str, required=True)
+    parser.add_argument("--start_date", action='store', type=str)
+    parser.add_argument("--stop_date", action='store', type=str)
     parser.add_argument("--cont", action='store_true')
     parser.add_argument("--n_channels", action='store', type=int, default=1)
     parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
@@ -21,6 +22,7 @@ def parse_command_line():
     parser.add_argument("--include_datetime", action='store_true', default=False)
     parser.add_argument("--include_environment_data", action='store_true', default=False)
     parser.add_argument("--leadtime_conditioning", action='store', type=int, default=0)
+    parser.add_argument("--dataseries_file", action='store', type=str, default='')
 
     args = parser.parse_args()
 
@@ -33,8 +35,13 @@ def parse_command_line():
 
     args.model = 'unet'
 
-    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+    if (not args.start_date and not args.stop_date) and not args.dataseries_file:
+        print("Either start_date,stop_date or dataseries_file needs to be defined")
+        sys.exit(1)
+
+    if args.start_date and args.stop_date:
+        args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
+        args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     return args
 
