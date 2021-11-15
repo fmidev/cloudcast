@@ -74,6 +74,8 @@ def save_model_info(args, duration, hist, model_dir):
         fp.write(f'{args}\n')
         fp.write(f'duration: {duration}\n')
         fp.write(f'finished: {datetime.datetime.now()}\n')
+        fp.write(f"hostname: {os.environ['HOSTNAME']}\n")
+
     with open('{}/hist-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
         fp.write(f'{hist}')
 
