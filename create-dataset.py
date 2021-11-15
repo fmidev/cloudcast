@@ -26,8 +26,8 @@ def create(args):
     filenames = read_filenames(args.start_date, args.stop_date, 'nwcsaf')
     times = np.asarray(list(map(lambda x: os.path.basename(x).split('_')[0], filenames)))
 
-    datas = read_gribs(filenames)
-    datas = preprocess_many(datas, args.preprocess)
+    datas = read_gribs(filenames, img_size=get_img_size(args.preprocess))
+#    datas = preprocess_many(datas, args.preprocess)
     
     print('Created data shape: {}'.format(datas.shape))
     np.savez(args.filename, datas, times)

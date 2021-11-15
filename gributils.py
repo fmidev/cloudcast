@@ -32,11 +32,16 @@ def read_from_file(file_path, message_no):
         return np.full(DEFAULT_SIZE, np.NAN)
 
 
-def read_grib_contents(gh):
+def read_grib_contents(gh, **kwargs):
     ni = ecc.codes_get_long(gh, "Ni")
     nj = ecc.codes_get_long(gh, "Nj")
 
     data = ecc.codes_get_double_array(gh, "values").astype(np.float32).reshape(nj, ni)
+
+    img_size = kwargs.get('img_size', None)
+
+    if img_size is not None:
+        data = np.expand_dims(cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
 
     if ecc.codes_get(gh, "jScansPositively"):
         data = np.flipud(data) # image data is +x-y
@@ -49,6 +54,9 @@ def read_grib_contents(gh):
 
     if np.max(data) > 1.1:
         data = data / 100.0
+
+    assert(np.min(data) > -0.02)
+    assert(np.max(data) < 1.02)
 
     data = np.expand_dims(data, axis=2)
 
@@ -84,11 +92,6 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, 'Ny', data.shape[1])
     ecc.codes_set(h, 'DxInMetres', 2372500 / data.shape[0])
     ecc.codes_set(h, 'DyInMetres', 2672500 / data.shape[1])
-
-#        ecc.codes_set(h, 'Nx', 949)
-#        ecc.codes_set(h, 'Ny', 1069)
-#        ecc.codes_set(h, 'DxInMeters', 2500)
-#        ecc.codes_set(h, 'DyInMeters', 2500)
     ecc.codes_set(h, 'jScansPositively', 1)
     ecc.codes_set(h, "latitudeOfFirstGridPointInDegrees", 50.3196)
     ecc.codes_set(h, "longitudeOfFirstGridPointInDegrees", 0.27828)
@@ -120,15 +123,12 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_release(h)
 
 
-def read_gribs(filenames):
+def read_gribs(filenames, **kwargs):
 
     files_ds = []
 
-    i = 0
     for f in filenames:
-        i = i + 1
-
-        files_ds.append(read_grib(f))
+        files_ds.append(read_grib(f, **kwargs))
     if len(files_ds) == 0:
         print("No files found")
 
