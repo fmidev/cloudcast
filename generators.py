@@ -2,6 +2,7 @@ import datetime
 import numpy as np
 from tensorflow import keras
 from fileutils import *
+from preprocess import get_img_size
 
 def add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess):
     if include_datetime:
@@ -9,7 +10,7 @@ def add_auxiliary_data(x, include_datetime, include_environment_data, dt, prepro
         x = np.concatenate((x, np.expand_dims(dts[0], axis=0), np.expand_dims(dts[1], axis=0)), axis=0)
 
     if include_environment_data:
-        envs = create_environment_data('preprocess')
+        envs = create_environment_data(preprocess)
         x = np.concatenate((x, np.expand_dims(envs[0], axis=0), np.expand_dims(envs[1], axis=0)), axis=0)
 
     return x
@@ -20,7 +21,7 @@ def create_generators_from_dataseries(**kwargs):
     leadtime_conditioning = kwargs.get('leadtime_conditioning', 0)
     include_datetime = kwargs.get('include_datetime')
     include_environment_data = kwargs.get('include_environment_data')
-
+    preprocess = kwargs.get('preprocess')
     dataseries_file = kwargs.get('dataseries_file', '')
 
     print(f'Reading input data from {dataseries_file}')
@@ -52,21 +53,20 @@ def create_generators_from_dataseries(**kwargs):
             thist = times[i:i+n_channels]
 
             assert(len(thist) >= 1)
-            dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S') # #12] if n_channels > 1 else thist[0]
+            dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
+
+            y = np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0) # y
 
             if leadtime_conditioning == 0:
-                hist = add_auxiliary_data(hist, include_datetime, include_environment_data, dt, kwargs.get('preprocess'))
-                y = np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0) # y
+                hist = add_auxiliary_data(hist, include_datetime, include_environment_data, dt, preprocess)
                 datasets.append(np.concatenate((hist, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
                 for j in range(0, leadtime_conditioning):
-                    leadtime = create_squeezed_leadtime_conditioning(img_size, leadtime_conditioning, j) # x leadtime conditioning
+                    leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
 
                     x = np.concatenate((hist, leadtime), axis=0)
-                    x = add_auxiliary_data(x, include_datetime, include_environment_data, dt, kwargs.get('preprocess'))
-
-                    y = np.expand_dims(dataseries[i+n_channels+j], axis=0) # y
+                    x = add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess)
 
                     datasets.append(np.concatenate((x, y), axis=0))
                     datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
