@@ -1,4 +1,5 @@
 import datetime
+import numpy as np
 from tensorflow import keras
 
 
@@ -15,27 +16,26 @@ def create_generators_from_dataseries(**kwargs):
     dataset = np.load(dataseries_file)
     dataseries = dataset['arr_0']
     times = dataset['arr_1']
-    assert(not out)
-    assert(leadtime_conditioning)
 
     datasets = []
 
-    print('Preprocessing data')
+    print('Creating generators')
 
     if out:
         i = 0
 
-        while i < dataseries.shape[0] - (n_channels + 1):
+        n_channels += 1
+        while i < dataseries.shape[0] - n_channels:
             ds_data = []
-            for j in range(n_channels + 1):
+            for j in range(n_channels):
                 ds_data.append(dataseries[i + j])
             datasets.append(ds_data)
-            i += (n_channels + 1)
+            i += n_channels
 
     else:
         i = 0
 
-        n_fut = math.max(1, leadtime_conditioning)
+        n_fut = max(1, leadtime_conditioning)
         while i < dataseries.shape[0] - (n_channels + n_fut):
             hist = []
             thist = []
@@ -47,9 +47,8 @@ def create_generators_from_dataseries(**kwargs):
 
             if leadtime_conditioning == 0:
                 y = np.expand_dims(dataseries[i+n_channels+1], axis=0) # y
-                datasets.append(np.concatenate((x, y), axis=0))
+                datasets.append(np.concatenate((hist, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
-               
             else:
                 dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
                 img_size = get_img_size(kwargs.get('preprocess'))
@@ -312,7 +311,7 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
         for i in batch_ds:
             x.append(i[...,:-1])
-            y.append(i[...,-1])
+            y.append(np.expand_dims(i[...,-1], axis=-1))
 
         x = np.asarray(x)
         y = np.asarray(y)
