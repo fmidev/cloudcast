@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 import sys
 
 def parse_command_line():
@@ -52,6 +53,13 @@ def verify(args):
 
     print(f"found {miss} missing, {static} static grids out of {datas.shape[0]}")
     print(f"max: {allmax}, min: {allmin}, mean: {np.mean(datas)}")
+
+    idx = np.random.randint(datas.shape[0])
+
+    print(f'showing random grid from location {idx} (time: {times[idx]})')
+
+    plt.imshow(datas[idx])
+    plt.show()
 
 if __name__ == "__main__":
     args = parse_command_line()
