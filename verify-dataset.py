@@ -25,7 +25,7 @@ def verify(args):
 
     assert(datas.shape[0] == times.shape[0])
     print("datas and times length match: {}".format(datas.shape[0]))
-
+    print("data shape: {}".format(datas.shape))
     static=0
     miss=0
     allmax=-1e38
@@ -37,8 +37,10 @@ def verify(args):
 
         if np.mean(arr) == 9999.0:
             miss += 1
+            print('miss:',times[i])
         if min_ == max_:
             static += 1
+            print('static:',min_,max_,times[i])
         if allmax < max_:
             allmax = max_
         if allmin > min_:
@@ -49,7 +51,7 @@ def verify(args):
             sys.exit(1)
 
     print(f"found {miss} missing, {static} static grids out of {datas.shape[0]}")
-    print(f"max: {allmax}, min: {allmin}")
+    print(f"max: {allmax}, min: {allmin}, mean: {np.mean(datas)}")
 
 if __name__ == "__main__":
     args = parse_command_line()
