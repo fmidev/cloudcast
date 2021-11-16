@@ -11,16 +11,17 @@ from generators import *
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", action='store', type=str, required=True)
-    parser.add_argument("--stop_date", action='store', type=str, required=True)
-    parser.add_argument("--n_channels", action='store', type=int)
+    parser.add_argument("--start_date", action='store', type=str)
+    parser.add_argument("--stop_date", action='store', type=str)
+    parser.add_argument("--n_channels", action='store', type=int, default=12)
     parser.add_argument("--cont", action='store_true')
     parser.add_argument("--loss_function", action='store', type=str, default='binary_crossentropy')
-    parser.add_argument("--preprocess", action='store', type=str, default='area=Scandinavia,conv=3,classes=100,img_size=128x128')
+    parser.add_argument("--preprocess", action='store', type=str, default='img_size=128x128')
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--include_datetime", action='store_true', default=False)
     parser.add_argument("--include_environment_data", action='store_true', default=False)
     parser.add_argument("--leadtime_conditioning", action='store_true', default=False)
+    parser.add_argument("--dataseries_file", action='store', type=str, default='')
 
     args = parser.parse_args()
 
@@ -35,11 +36,13 @@ def parse_command_line():
     assert(args.include_datetime == False)
     assert(args.include_environment_data == False)
 
-    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+    if (not args.start_date and not args.stop_date) and not args.dataseries_file:
+        print("Either start_date,stop_date or dataseries_file needs to be defined")
+        sys.exit(1)
 
-    if args.n_channels is None:
-        args.n_channels = 10
+    if args.start_date and args.stop_date:
+        args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
+        args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     return args
 
