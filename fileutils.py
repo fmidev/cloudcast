@@ -85,6 +85,14 @@ def get_filename(time, producer = 'nwcsaf', analysis_time=None):
             lt_h = int(lt.total_seconds() // 3600)
             lt_m = int(lt.total_seconds() // 60 % 60)
             return '{}/mnwc/{}00+{:03d}h{:02d}m.grib2'.format(INPUT_DIR, analysis_time.strftime('%Y%m%d%H'), lt_h, lt_m)
+    if producer == 'meps':
+        assert(analysis_time is not None)
+        ahour = int(analysis_time.strftime('%H'))
+        ahour = ahour - ahour % 3
+        lt = (time - analysis_time)
+        lt_h = int(lt.total_seconds() // 3600)
+        lt_m = int(lt.total_seconds() // 60 % 60)
+        return '{}/meps/{}{}00+{:03d}h{:02d}m.grib2'.format(INPUT_DIR, analysis_time.strftime('%Y%m%d'), ahour, lt_h, lt_m)
 
 
 

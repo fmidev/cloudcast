@@ -153,15 +153,18 @@ def predict(args):
     mae_cc = []
     mae_prst = []
     mae_mnwc = []
+    mae_meps = []
 
     environment_weights = None
 
     gt_ds = DataSeries("nwcsaf", args.preprocess)
     mnwc_ds = DataSeries("mnwc", args.preprocess)
+    meps_ds = DataSeries("meps", args.preprocess)
 
     predictions = {
         args.label : { 'time' : [], 'data' : [] },
         'mnwc' : { 'time' : [], 'data' : [] },
+        'meps' : { 'time' : [], 'data' : [] },
         'gt' : { 'time' : [], 'data' : [] }
     }
 
@@ -169,6 +172,7 @@ def predict(args):
         mae_cc.append([])
         mae_prst.append([])
         mae_mnwc.append([])
+        mae_meps.append([])
 
     def diff(a, b):
         b = set(b)
@@ -190,6 +194,7 @@ def predict(args):
         else:
             gt = gt_ds.read_data(times)
             mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
+            meps = meps_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
             initial = np.copy(gt[args.n_channels - 1])
 
         if np.isnan(gt).any():
@@ -239,18 +244,22 @@ def predict(args):
         if not args.disable_plot:
             predictions['mnwc']['time'].append(leadtimes)
             predictions['mnwc']['data'].append(mnwc)
+            predictions['meps']['time'].append(leadtimes)
+            predictions['meps']['data'].append(meps)
 
         for i,t in enumerate(gt):
             if np.isnan(t).any():
                 continue
 
-            if not args.disable_plot and not np.isnan(mnwc).any():
+            if not args.disable_plot and not np.isnan(mnwc[i]).any():
                 mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
+            if not args.disable_plot and not np.isnan(meps[i]).any():
+                mae_meps[i].append(mean_absolute_error(t.flatten(), meps[i].flatten()))
 
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
-    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc }
+    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc, 'meps' : mae_meps }
 
 
 
@@ -283,16 +292,17 @@ def calculate_errors(models, predictions):
 
 def plot_results(args, predictions, errors):
 
-    labels = [ 'ground truth', 'mnwc' ]
+    labels = [ 'ground truth', 'mnwc', 'meps' ]
     labels.extend(args.label)
 
     idx = np.random.randint(len(predictions['mnwc']['data']))
   
     pred_mnwc = predictions['mnwc']['data'][idx]
+    pred_meps = predictions['meps']['data'][idx]
     times = predictions[args.label[0]]['time'][idx]
     gt = copy_range(predictions['gt'], times[0], times[-1])
 
-    data = [gt, pred_mnwc]
+    data = [gt, pred_mnwc, pred_meps]
 
     for l in args.label:
         data.append(predictions[l]['data'][idx])
@@ -301,10 +311,10 @@ def plot_results(args, predictions, errors):
 
     #######################
 
-    labels = [ 'persistence', 'mnwc' ]
+    labels = [ 'persistence', 'mnwc', 'meps' ]
     labels.extend(args.label)
 
-    data = [errors['prst'], errors['mnwc']]
+    data = [errors['prst'], errors['mnwc'], errors['meps']]
 
     for l in args.label:
         data.append(errors[l])

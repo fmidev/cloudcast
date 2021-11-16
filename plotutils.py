@@ -24,18 +24,20 @@ def plot_convlstm(ground_truth, predictions, mnwc):
 
 
 def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
-    print(data)
-    print(labels)
     assert(len(data) == len(labels))
     fig = plt.figure()
     ax = plt.axes()
 
-    x = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
-    x = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), x))
-
+    xlabels = list(map(lambda x: step * x, range(0, len(data[0]))))
+    xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
+    xreal = np.asarray(range(len(data[0])))
     for i,mae in enumerate(data):
-        ax.plot(x, mae, label=labels[i])
+        mae = np.asarray(mae)
+        x = xreal[np.isfinite(mae)]
+        y = mae[np.isfinite(mae)]
+        ax.plot(x, y, label=labels[i], linestyle='-', marker='o')
 
+    ax.set_xticklabels(xlabels)
     plt.legend()
     plt.title(title)
     plt.show(block=False)
