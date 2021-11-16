@@ -49,13 +49,13 @@ def create_generators_from_dataseries(**kwargs):
 
         n_fut = max(1, leadtime_conditioning)
         while i < dataseries.shape[0] - (n_channels + n_fut):
-            hist = np.squeeze(dataseries[i:i+n_channels], axis=-1)
+            hist = dataseries[i:i+n_channels]
             thist = times[i:i+n_channels]
 
             assert(len(thist) >= 1)
             dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
 
-            y = np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0) # y
+            y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1) # y
 
             if leadtime_conditioning == 0:
                 hist = add_auxiliary_data(hist, include_datetime, include_environment_data, dt, preprocess)
