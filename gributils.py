@@ -8,7 +8,7 @@ import sys
 
 DEFAULT_SIZE=(1069, 949, 1)
 
-def read_from_http(url):
+def read_from_http(url, **kwargs):
     r = requests.get(url, stream=True)
 
     if r.status_code == 404:
@@ -19,14 +19,14 @@ def read_from_http(url):
         sys.exit(1)
 
     gh = ecc.codes_new_from_message(r.content)
-    return read_grib_contents(gh)
+    return read_grib_contents(gh, **kwargs)
 
 
-def read_from_file(file_path, message_no):
+def read_from_file(file_path, message_no, **kwargs):
     try:
         with open(file_path) as fp:
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
-            return read_grib_contents(gh)
+            return read_grib_contents(gh, **kwargs)
     except FileNotFoundError as e:
         print(e)
         return np.full(DEFAULT_SIZE, np.NAN)
@@ -39,7 +39,6 @@ def read_grib_contents(gh, **kwargs):
     data = ecc.codes_get_double_array(gh, "values").astype(np.float32).reshape(nj, ni)
 
     img_size = kwargs.get('img_size', None)
-
     if img_size is not None:
         data = np.expand_dims(cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
 
@@ -70,9 +69,9 @@ def read_grib(file_path, message_no = 0, **kwargs):
         print(f"Reading {file_path}")
 
     if file_path[0:4] == 'http':
-        return read_from_http(file_path)
+        return read_from_http(file_path, **kwargs)
     else:
-        return read_from_file(file_path, message_no)
+        return read_from_file(file_path, message_no, **kwargs)
 
 
 def save_grib(data, filepath, analysistime, forecasttime):
@@ -132,4 +131,4 @@ def read_gribs(filenames, **kwargs):
     if len(files_ds) == 0:
         print("No files found")
 
-    return np.asarray(files_ds)
+    return np.squeeze(np.asarray(files_ds), -2)
