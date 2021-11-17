@@ -6,7 +6,7 @@ import os
 from scipy import ndimage
 #from PIL import Image, ImageEnhance
 from osgeo import gdal,osr
-from fileutils import get_filename
+from fileutils import get_filename, gdal_read_from_http
 
 DEM = {}
 LSM = {}
