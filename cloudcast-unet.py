@@ -6,7 +6,6 @@ from fileutils import *
 from plotutils import *
 from generators import *
 import argparse
-import matplotlib.pyplot as plt
 
 EPOCHS = 500
 
@@ -110,7 +109,7 @@ def run_model(args):
     duration = datetime.datetime.now() - start
 
     save_model(m, model_dir)
-    save_model_info(args, duration, hist, model_dir)
+    save_model_info(args, duration, hist.history, model_dir)
     plot_hist(hist.history, model_dir)
 
     print(f"Model training finished in {duration}")
