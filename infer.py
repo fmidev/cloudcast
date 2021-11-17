@@ -26,7 +26,7 @@ def parse_command_line():
     parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
     parser.add_argument("--exclude_analysistime", action='store_true', default=False)
-
+    parser.add_argument("--include_climatology", action='store_true', default=False)
     args = parser.parse_args()
 
     if (args.start_date is None and args.stop_date is None) and args.single_time is None:
@@ -152,6 +152,7 @@ def predict(args):
 
     mae_cc = []
     mae_prst = []
+    mae_clim = []
     mae_mnwc = []
     mae_meps = []
 
@@ -165,7 +166,8 @@ def predict(args):
         args.label : { 'time' : [], 'data' : [] },
         'mnwc' : { 'time' : [], 'data' : [] },
         'meps' : { 'time' : [], 'data' : [] },
-        'gt' : { 'time' : [], 'data' : [] }
+        'gt' : { 'time' : [], 'data' : [] },
+        'clim' : { 'time' : [], 'data' : [] }
     }
 
     for i in range(args.prediction_len):
@@ -173,6 +175,7 @@ def predict(args):
         mae_prst.append([])
         mae_mnwc.append([])
         mae_meps.append([])
+        mae_clim.append([])
 
     def diff(a, b):
         b = set(b)
@@ -196,6 +199,9 @@ def predict(args):
             mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
             meps = meps_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
             initial = np.copy(gt[args.n_channels - 1])
+
+            if args.include_climatology:
+                clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess))
 
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")
@@ -247,6 +253,10 @@ def predict(args):
             predictions['meps']['time'].append(leadtimes)
             predictions['meps']['data'].append(meps)
 
+            if args.include_climatology:
+                predictions['clim']['time'].append(leadtimes)
+                predictions['clim']['data'].append(clim)
+
         for i,t in enumerate(gt):
             if np.isnan(t).any():
                 continue
@@ -259,7 +269,10 @@ def predict(args):
             mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
             mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
 
-    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc, 'meps' : mae_meps }
+            if args.include_climatology:
+                mae_clim[i].append(mean_absolute_error(t.flatten(), clim[i].flatten()))
+
+    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc, 'meps' : mae_meps, 'clim' : mae_clim }
 
 
 
@@ -293,31 +306,39 @@ def calculate_errors(models, predictions):
 def plot_results(args, predictions, errors):
 
     labels = [ 'ground truth', 'mnwc', 'meps' ]
+    if args.include_climatology:
+        labels.append('clim')
+
     labels.extend(args.label)
 
     idx = np.random.randint(len(predictions['mnwc']['data']))
-  
-    pred_mnwc = predictions['mnwc']['data'][idx]
-    pred_meps = predictions['meps']['data'][idx]
+
+    data = []
+
+    for l in labels[1:]:
+        data.append(predictions[l]['data'][idx])
+
     times = predictions[args.label[0]]['time'][idx]
     gt = copy_range(predictions['gt'], times[0], times[-1])
 
-    data = [gt, pred_mnwc, pred_meps]
-
-    for l in args.label:
-        data.append(predictions[l]['data'][idx])
+    data = [gt] + data #, pred_mnwc, pred_meps, pred_clim]
 
     plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None) #predictions['gt']['data'][0])
 
     #######################
 
     labels = [ 'persistence', 'mnwc', 'meps' ]
+    if args.include_climatology:
+        labels.append('clim')
+
     labels.extend(args.label)
 
-    data = [errors['prst'], errors['mnwc'], errors['meps']]
+    data = []
 
-    for l in args.label:
+    for l in labels[1:]:
         data.append(errors[l])
+
+    data = [errors['prst']] + data
 
     for i,m in enumerate(data):
         for j,lt in enumerate(m):
