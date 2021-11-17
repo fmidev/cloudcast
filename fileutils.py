@@ -207,8 +207,6 @@ def create_environment_data(preprocess_label):
     except KeyError as e:
         pass
 
-    tokens = preprocess_label.split(',')
-
     proc='standardize=true,img_size={}'.format(img_size)
     lsm_file = '{}/static/LSM-cloudcast.tif'.format(INPUT_DIR)
     dem_file = '{}/static/DEM-cloudcast.tif'.format(INPUT_DIR)
@@ -222,7 +220,6 @@ def create_environment_data(preprocess_label):
 
     LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
     LSM[img_size] = process_lsm(LSM[img_size])
-
     LSM[img_size] = preprocess_single(LSM[img_size], proc)
 
     print (f"Reading {dem_file}")
