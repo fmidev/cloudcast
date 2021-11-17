@@ -2,7 +2,7 @@ import datetime
 import numpy as np
 from tensorflow import keras
 from fileutils import *
-from preprocess import get_img_size
+from preprocess import *
 
 def add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess):
     if include_datetime:
@@ -362,4 +362,34 @@ class TimeseriesGenerator:
             self.times.pop(0)
         while len(self.times) < self.history_len + self.prediction_len:
             self.times.append(self.times[-1] + self.step)
+
+
+class DataSeries:
+    def __init__(self, producer, preprocess = None, single_analysis_time = True):
+        self.data_series = {}
+        self.producer = producer
+        self.preprocess = preprocess
+        self.analysis_time = None
+        self.single_analysis_time = single_analysis_time
+
+    def read_data():
+        return np.asarray(list(self.data_series.values()))
+
+    def read_data(self, times, analysis_time=None):
+        datakeys = self.data_series.keys()
+
+        if analysis_time != self.analysis_time and self.single_analysis_time:
+            datakeys = []
+
+        new_series = {}
+        for t in times:
+            if t in datakeys:
+                new_series[t] = self.data_series[t]
+            else:
+                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True), self.preprocess)
+
+        self.data_series = new_series
+        self.analysis_time = analysis_time
+
+        return np.asarray(list(self.data_series.values()))
 
