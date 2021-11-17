@@ -112,6 +112,8 @@ def preprocess_single(arr, process_label):
             arr = to_classes(arr, int(v))
         elif k == 'standardize' and v == 'true':
             arr = (arr - arr.mean()) / arr.std()
+        elif k == 'normalize' and v == 'true':
+            arr = (arr - np.min(arr)) / np.ptp(arr)
         elif k == 'img_size':
             img_size = tuple(map(int, v.split('x')))
             arr = np.expand_dims(cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
@@ -139,3 +141,23 @@ def time_of_year_and_day(datetime):
     toy = np.cos(datetime.timestamp() * (2 * np.pi / year))
 
     return tod, toy
+
+
+def sun_declination_angle(datetime):
+    # from mos-tools
+    jday = datetime.timetuple().tm_yday
+    hour = int(datetime.strftime("%H"))
+
+    daydoy = jday + hour / 24.0 - 32
+
+    if daydoy < 0:
+        daydoy += 365
+
+    declination = -np.asin(0.39779 *
+                           np.cos(0.98565 / 360 * 2 * np.pi * (daydoy + 10) + 1.914 / 360 * 2 * np.pi *
+                             np.sin(0.98565 / 360 * 2 * np.pi * (daydoy - 2))
+                           )
+                          ) * 360 / 2 / np.pi
+
+    return declination
+
