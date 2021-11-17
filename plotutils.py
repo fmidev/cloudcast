@@ -25,21 +25,31 @@ def plot_convlstm(ground_truth, predictions, mnwc):
 
 def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
     assert(len(data) == len(labels))
-    fig = plt.figure()
+    fig = plt.figure(figsize=(12,7))
     ax = plt.axes()
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
 
-    xlabels = list(map(lambda x: step * x, range(0, len(data[0]))))
+    xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
     xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
     xreal = np.asarray(range(len(data[0])))
+
+    labels = list(map(lambda x: x.replace('True','T')
+                                 .replace('False','F')
+                                 .replace('binary_crossentropy', 'bc')
+                                 .replace('MeanSquaredError', 'MSE'), labels))
+
     for i,mae in enumerate(data):
         mae = np.asarray(mae)
         x = xreal[np.isfinite(mae)]
         y = mae[np.isfinite(mae)]
         ax.plot(x, y, label=labels[i], linestyle='-', marker='o')
 
+    ax.set_xticks(xreal)
     ax.set_xticklabels(xlabels)
-    plt.legend()
     plt.title(title)
+
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.show(block=False)
 
 
