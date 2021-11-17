@@ -37,7 +37,10 @@ def parse_command_line():
         args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
         args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
     else:
-        args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%d %H:%M:%S')
+        try:
+            args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%d %H:%M:%S')
+        except ValueError as e:
+            args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%dT%H:%M:%S')
         args.stop_date = args.start_date
 
     return args
