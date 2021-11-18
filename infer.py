@@ -204,7 +204,7 @@ def predict(args):
             initial = np.copy(gt[args.n_channels - 1])
 
             if args.include_climatology:
-                clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess))
+                clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
 
         if np.isnan(gt).any():
             print("Seed contains missing values, skipping")

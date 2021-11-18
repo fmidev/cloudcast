@@ -276,11 +276,16 @@ def create_environment_data(preprocess_label):
     return LSM[img_size], DEM[img_size]
 
 
-def generate_clim_values(shape):
-    lst = []
+def generate_clim_values(shape, month):
+    assert(month >= 1 and month <= 12)
+    month -= 1
+
     d = np.load(get_filename(None, 'clim'))
-    x = d['arr_0']
-    y = d['arr_1']
+    m = d['arr_0'][month]
+    x = m[...,0]
+    y = m[...,1]
+
+    lst = []
 
     for _ in range(shape[0]):
         lst.append(np.random.choice(y, size=(shape[1], shape[2]), p=x))
