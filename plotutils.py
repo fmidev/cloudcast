@@ -23,16 +23,20 @@ def plot_convlstm(ground_truth, predictions, mnwc):
     plt.show()
 
 
-def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
+def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None):
     assert(len(data) == len(labels))
     fig = plt.figure(figsize=(12,7))
     ax = plt.axes()
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
 
-    xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
-    xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
     xreal = np.asarray(range(len(data[0])))
+
+    if xvalues is None:
+        xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
+        xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
+    else:
+        xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
 
     labels = list(map(lambda x: x.replace('True','T')
                                  .replace('False','F')
@@ -53,7 +57,7 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None):
     plt.show(block=False)
 
 
-def plot_timeseries(datas, labels, title=None, initial_data=None):
+def plot_timeseries(datas, labels, title=None, initial_data=None, start_from_zero=False):
     assert(len(datas) == len(labels))
     nrows = len(datas)
     ncols = datas[0].shape[0]
@@ -80,6 +84,8 @@ def plot_timeseries(datas, labels, title=None, initial_data=None):
         num=ncols+1
         write_time=nrows-2
 
+    offset = 0 if start_from_zero else 1
+
     for i in range(len(datas)):
         for j in range(datas[i].shape[0]):
             ax = fig.add_subplot(nrows, ncols, num)
@@ -87,7 +93,7 @@ def plot_timeseries(datas, labels, title=None, initial_data=None):
             ax.imshow(np.squeeze(datas[i][j]), cmap='gray_r')
             ax.axis('off')
             if i == write_time:
-                ax.set_title(f'{(j+1)*15}m', y=0, pad=-25)
+                ax.set_title(f'{(j+offset)*15}m', y=0, pad=-25)
 
     fig.set_facecolor('w')
     plt.tight_layout()

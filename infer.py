@@ -25,8 +25,9 @@ def parse_command_line():
     parser.add_argument("--save_grib", action='store_true', default=False)
     parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
-    parser.add_argument("--exclude_analysistime", action='store_true', default=False)
-    parser.add_argument("--include_climatology", action='store_true', default=False)
+    parser.add_argument("--exclude_analysistime", action='store_true', default=False, help='exclude analysistime from data')
+    parser.add_argument("--include_additional", action='store', nargs='+')
+
     args = parser.parse_args()
 
     if (args.start_date is None and args.stop_date is None) and args.single_time is None:
@@ -54,7 +55,6 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
     predictions = []
     hist_len = len(orig)
-
     orig_sq = np.squeeze(np.moveaxis(orig, 0, 3), -2)
 
     def create_hist(predictions):
@@ -91,7 +91,6 @@ def infer_many(m, orig, num_predictions, **kwargs):
             data = create_hist(predictions)
 
         alldata = append_auxiliary_weights(data, datetime_weights, environment_weights, i)
-
         pred = infer(m, alldata)
         predictions.append(pred)
 
@@ -153,32 +152,41 @@ def predict(args):
 
     time_gen = TimeseriesGenerator(args.start_date, args.n_channels, args.prediction_len, step=PRED_STEP, stop_date=args.stop_date)
 
-    mae_cc = []
-    mae_prst = []
-    mae_clim = []
-    mae_mnwc = []
-    mae_meps = []
+    mae = {}
+    mae[args.label] = []
+    mae['persistence'] = []
 
     environment_weights = None
 
-    gt_ds = DataSeries("nwcsaf", args.preprocess)
-    mnwc_ds = DataSeries("mnwc", args.preprocess)
-    meps_ds = DataSeries("meps", args.preprocess)
+    nwp = []
+    climatology = False
 
+    for k in args.include_additional:
+        if k == 'climatology':
+            climatology=True
+        else:
+            nwp.append(k)
+
+    dss = {}
+    dss['nwcsaf'] = DataSeries("nwcsaf", args.preprocess)
     predictions = {
         args.label : { 'time' : [], 'data' : [] },
-        'mnwc' : { 'time' : [], 'data' : [] },
-        'meps' : { 'time' : [], 'data' : [] },
         'gt' : { 'time' : [], 'data' : [] },
-        'clim' : { 'time' : [], 'data' : [] }
     }
 
-    for i in range(args.prediction_len):
-        mae_cc.append([])
-        mae_prst.append([])
-        mae_mnwc.append([])
-        mae_meps.append([])
-        mae_clim.append([])
+    if climatology:
+        predictions['climatology'] = { 'time' : [], 'data' : [] }
+        mae['climatology'] = []
+
+    for k in nwp:
+        dss[k] = DataSeries(k, args.preprocess)
+        predictions[k] = { 'time' : [], 'data' : [] }
+        mae[k] = []
+
+    for k in mae:
+        atim = 1 if args.exclude_analysistime is False else 0
+        for i in range(args.prediction_len + atim):
+            mae[k].append([])
 
     def diff(a, b):
         b = set(b)
@@ -193,20 +201,29 @@ def predict(args):
             list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
         ))
 
+        datas = {}
         if args.disable_plot:
-            gt = gt_ds.read_data(history)
+            datas['nwcsaf'] = dss['nwcsaf'].read_data(history)
             initial = np.copy(gt[-1])
 
         else:
-            gt = gt_ds.read_data(times)
-            mnwc = mnwc_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
-            meps = meps_ds.read_data(leadtimes, times[args.n_channels].replace(minute=0))
-            initial = np.copy(gt[args.n_channels - 1])
+            for k in dss:
+                analysis_time = None
+                _leadtimes = leadtimes.copy()
+                if not args.exclude_analysistime:
+                    _leadtimes = [times[args.n_channels-1]] + leadtimes
+                if k in ['meps','mnwc']:
+                    analysis_time = times[args.n_channels].replace(minute=0)
+                    datas[k] = dss[k].read_data(_leadtimes, analysis_time)
+                elif k == 'nwcsaf':
+                    datas[k] = dss[k].read_data(times)
 
-            if args.include_climatology:
+            initial = np.copy(datas['nwcsaf'][args.n_channels - 1])
+
+            if climatology:
                 clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
 
-        if np.isnan(gt).any():
+        if np.isnan(datas['nwcsaf']).any():
             print("Seed contains missing values, skipping")
             continue
 
@@ -218,10 +235,10 @@ def predict(args):
         for t in new_times:
             i = times.index(t)
             predictions['gt']['time'].append(t)
-            predictions['gt']['data'].append(gt[i])
+            predictions['gt']['data'].append(datas['nwcsaf'][i])
 
-        if args.disable_plot is False:
-            gt = gt[args.n_channels:]
+#        if args.disable_plot is True:
+#            datas['nwcsaf'] = datas['nwcsaf'][args.n_channels:]
 
         datetime_weights = None
         lt = None
@@ -238,44 +255,47 @@ def predict(args):
             lt = np.squeeze(np.asarray(lt), axis=1)
 
         if args.model == "unet":
-            cc = infer_many(m, gt[:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
+            cc = infer_many(m, datas['nwcsaf'][:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
         else:
-            cc = predict_from_series(m, gt[:args.n_channels], args.prediction_len)
+            cc = predict_from_series(m, datas['nwcsaf'][:args.n_channels], args.prediction_len)
 
-        if args.disable_plot and not args.exclude_analysistime:
-            cc = np.concatenate((np.expand_dims(gt[-1], axis=0), cc), axis=0)
+        if args.exclude_analysistime is False:
+            cc = np.concatenate((np.expand_dims(datas['nwcsaf'][args.n_channels-1], axis=0), cc), axis=0)
             leadtimes = [history[-1]] + leadtimes
 
         assert(cc.shape[0] == len(leadtimes))
         predictions[args.label]['time'].append(leadtimes)
         predictions[args.label]['data'].append(cc)
 
-        if not args.disable_plot:
-            predictions['mnwc']['time'].append(leadtimes)
-            predictions['mnwc']['data'].append(mnwc)
-            predictions['meps']['time'].append(leadtimes)
-            predictions['meps']['data'].append(meps)
+        if args.disable_plot:
+            continue
 
-            if args.include_climatology:
-                predictions['clim']['time'].append(leadtimes)
-                predictions['clim']['data'].append(clim)
+        for k in nwp:
+            predictions[k]['time'].append(leadtimes)
+            predictions[k]['data'].append(datas[k])
 
-        for i,t in enumerate(gt):
+        if climatology:
+            predictions['climatology']['time'].append(leadtimes)
+            predictions['climatology']['data'].append(clim)
+
+        future_data = datas['nwcsaf'][args.n_channels:]
+
+        if args.exclude_analysistime is False:
+            future_data = datas['nwcsaf'][args.n_channels-1:]
+
+        for i,t in enumerate(future_data):
             if np.isnan(t).any():
                 continue
+            for k in nwp:
+                if not args.disable_plot and not np.isnan(datas[k][i]).any():
+                    mae[k][i].append(mean_absolute_error(t.flatten(), datas[k][i].flatten()))
 
-            if not args.disable_plot and not np.isnan(mnwc[i]).any():
-                mae_mnwc[i].append(mean_absolute_error(t.flatten(), mnwc[i].flatten()))
-            if not args.disable_plot and not np.isnan(meps[i]).any():
-                mae_meps[i].append(mean_absolute_error(t.flatten(), meps[i].flatten()))
+            mae['persistence'][i].append(mean_absolute_error(t.flatten(), initial.flatten()))
+            mae[args.label][i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
+            if climatology:
+                mae['climatology'][i].append(mean_absolute_error(t.flatten(), clim[i].flatten()))
 
-            mae_prst[i].append(mean_absolute_error(t.flatten(), initial.flatten()))
-            mae_cc[i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-
-            if args.include_climatology:
-                mae_clim[i].append(mean_absolute_error(t.flatten(), clim[i].flatten()))
-
-    return predictions, {'prst' : mae_prst, args.label : mae_cc, 'mnwc' : mae_mnwc, 'meps' : mae_meps, 'clim' : mae_clim }
+    return predictions, mae
 
 
 
@@ -308,47 +328,46 @@ def calculate_errors(models, predictions):
 
 def plot_results(args, predictions, errors):
 
-    labels = [ 'ground truth', 'mnwc', 'meps' ]
-    if args.include_climatology:
-        labels.append('clim')
-
-    labels.extend(args.label)
-
-    idx = np.random.randint(len(predictions['mnwc']['data']))
+    labels = list(predictions.keys())
+    try:
+        labels.remove('climatology') # not plotting this in stamp plot
+    except ValueError as e:
+        pass
+    labels.sort()
+    idx = np.random.randint(len(predictions[args.label[0]]['data']))
 
     data = []
 
-    for l in labels[1:]:
+    for l in labels:
+        if l == 'gt':
+            continue
         data.append(predictions[l]['data'][idx])
 
     times = predictions[args.label[0]]['time'][idx]
     gt = copy_range(predictions['gt'], times[0], times[-1])
 
-    data = [gt] + data #, pred_mnwc, pred_meps, pred_clim]
+    data = [gt] + data
 
-    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None) #predictions['gt']['data'][0])
+    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
 
     #######################
 
-    labels = [ 'persistence', 'mnwc', 'meps' ]
-    if args.include_climatology:
-        labels.append('clim')
+    labels = list(errors.keys())
 
-    labels.extend(args.label)
+    labels.sort()
 
     data = []
 
-    for l in labels[1:]:
-        data.append(errors[l])
+    for l in labels:
+        data.append([])
+        for i,j in enumerate(errors[l]):
+            data[-1].append(np.mean(j))
 
-    data = [errors['prst']] + data
+    xvalues = None
+    if args.exclude_analysistime is False:
+        xvalues = list(range(0, len(data[0])))
 
-    for i,m in enumerate(data):
-        for j,lt in enumerate(m):
-            data[i][j] = np.mean(data[i][j])
-
-    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions['mnwc']['data'])))
-
+    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions[args.label[0]]['data']) ), xvalues=xvalues)
     plt.pause(0.001)
     input("Press [enter] to stop")
 
