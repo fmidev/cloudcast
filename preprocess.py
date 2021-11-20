@@ -233,7 +233,7 @@ def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
     return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3))
 
 
-def create_environment_data(preprocess_label):
+def create_environment_data(preprocess_label, normalize=False):
     global LSM, DEM
 
     isize = get_img_size(preprocess_label)
@@ -244,7 +244,13 @@ def create_environment_data(preprocess_label):
     except KeyError as e:
         pass
 
-    proc='standardize=true,img_size={}'.format(img_size)
+    proc='standardize=true'
+
+    if normalize:
+        proc='normalize=true'
+
+    proc = '{},img_size={}'.format(proc, img_size)
+
     lsm_file = get_filename(None, 'LSM')
     dem_file = get_filename(None, 'DEM')
 
