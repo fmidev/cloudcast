@@ -28,6 +28,7 @@ def parse_command_line():
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
     parser.add_argument("--exclude_analysistime", action='store_true', default=False, help='exclude analysistime from data')
     parser.add_argument("--include_additional", action='store', nargs='+', default=[])
+    parser.add_argument("--top", action='store', type=int, default=-1, help='out of all models select the top n that perform best')
 
     args = parser.parse_args()
 
@@ -359,6 +360,38 @@ def calculate_errors(models, predictions):
 
 
 
+def filter_top_n(predictions, errors, n):
+    maes = {}
+
+    labels = list(errors.keys())
+
+    print(predictions.keys())
+    print(errors.keys())
+
+    for l in labels:
+        maes[l] = np.mean(errors[l])
+
+    # sort best first
+    maes = dict(sorted(maes.items(), key=lambda item: item[1]))
+
+    # pick top n
+    maes = {k : maes[k] for k in list(maes)[:n]}
+
+    labels = list(maes.keys())
+
+    f_predictions = {}
+    f_errors = {}
+
+    for l in labels:
+        predkey = l
+        if l == 'persistence':
+            predkey = 'gt'
+        f_predictions[predkey] = predictions[predkey]
+        f_errors[l] = errors[l]
+
+    return f_predictions, f_errors
+
+
 def plot_results(args, predictions, errors):
 
     labels = list(predictions.keys())
@@ -367,11 +400,12 @@ def plot_results(args, predictions, errors):
     except ValueError as e:
         pass
 
+    print(labels)
     labels.sort()
-    idx = np.random.randint(len(predictions[args.label[0]]['data']))
+    idx = np.random.randint(len(predictions[labels[-1]]['data']))
 
     data = []
-    times = predictions[args.label[0]]['time'][idx]
+    times = predictions[labels[-1]]['time'][idx]
 
     for l in labels:
         if l == 'gt':
@@ -398,7 +432,7 @@ def plot_results(args, predictions, errors):
     if args.exclude_analysistime is False:
         xvalues = list(range(0, len(data[0])))
 
-    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions[args.label[0]]['data']) ), xvalues=xvalues)
+    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions[labels[-1]]['data']) ), xvalues=xvalues)
     plt.pause(0.001)
     input("Press [enter] to stop")
 
@@ -429,6 +463,9 @@ if __name__ == "__main__":
 
     args.label = normalize_label(args.label)
     predictions, errors = predict_many(args)
+
+    if args.top != -1:
+        predictions, errors = filter_top_n(predictions, errors, args.top)
 
     if not args.disable_plot:
         plot_results(args, predictions, errors)
