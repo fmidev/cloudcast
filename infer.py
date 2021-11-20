@@ -21,7 +21,7 @@ def parse_command_line():
     parser.add_argument("--start_date", action='store', type=str, required=False)
     parser.add_argument("--stop_date", action='store', type=str, required=False)
     parser.add_argument("--single_time", action='store', type=str, required=False)
-    parser.add_argument("--label", action='append', type=str, required=True)
+    parser.add_argument("--label", action='store', nargs='+', type=str, required=True)
     parser.add_argument("--save_grib", action='store_true', default=False)
     parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
@@ -246,7 +246,7 @@ def predict(args):
         if args.include_datetime:
             datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
         if args.include_environment_data and environment_weights is None:
-            environment_weights = create_environment_data(args.preprocess)
+            environment_weights = create_environment_data(args.preprocess, args.model == 'convlstm')
         if args.leadtime_conditioning:
             assert(args.prediction_len <= args.leadtime_conditioning)
             lt = []
@@ -257,7 +257,16 @@ def predict(args):
         if args.model == "unet":
             cc = infer_many(m, datas['nwcsaf'][:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
         else:
-            cc = predict_from_series(m, datas['nwcsaf'][:args.n_channels], args.prediction_len)
+            hist = datas['nwcsaf'][:args.n_channels]
+
+            if args.include_environment_data:
+                dt0 = np.tile(environment_weights[0], 6)
+                dt0 = np.swapaxes(np.expand_dims(dt0, axis=0), 0, 3)
+                dt1 = np.tile(environment_weights[1], 6)
+                dt1 = np.swapaxes(np.expand_dims(dt1, axis=0), 0, 3)
+                hist = np.concatenate((hist, dt0, dt1), axis=-1)
+                assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
+            cc = predict_from_series(m, hist, args.prediction_len)
 
         if args.exclude_analysistime is False:
             cc = np.concatenate((np.expand_dims(datas['nwcsaf'][args.n_channels-1], axis=0), cc), axis=0)
@@ -333,20 +342,18 @@ def plot_results(args, predictions, errors):
         labels.remove('climatology') # not plotting this in stamp plot
     except ValueError as e:
         pass
+
     labels.sort()
     idx = np.random.randint(len(predictions[args.label[0]]['data']))
 
     data = []
+    times = predictions[args.label[0]]['time'][idx]
 
     for l in labels:
         if l == 'gt':
+            data.append(copy_range(predictions['gt'], times[0], times[-1]))
             continue
         data.append(predictions[l]['data'][idx])
-
-    times = predictions[args.label[0]]['time'][idx]
-    gt = copy_range(predictions['gt'], times[0], times[-1])
-
-    data = [gt] + data
 
     plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
 
