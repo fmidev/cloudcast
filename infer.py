@@ -399,6 +399,11 @@ def filter_top_n(predictions, errors, n, keep_persistence=True):
 
 def plot_results(args, predictions, errors):
 
+    while True:
+        first = list(predictions.keys())[np.random.randint(len(predictions))]
+        if first != 'gt':
+            break
+
     if len(predictions) < 8:
         labels = list(predictions.keys())
         try:
@@ -407,10 +412,10 @@ def plot_results(args, predictions, errors):
             pass
 
         labels.sort()
-        idx = np.random.randint(len(predictions[labels[-1]]['data']))
+        idx = np.random.randint(len(predictions[first]['data']))
 
         data = []
-        times = predictions[labels[-1]]['time'][idx]
+        times = predictions[first]['time'][idx]
 
         for l in labels:
             if l == 'gt':
@@ -428,16 +433,19 @@ def plot_results(args, predictions, errors):
 
     data = []
 
+    maelabels=[]
     for l in labels:
         data.append([])
         for i,j in enumerate(errors[l]):
             data[-1].append(np.mean(j))
 
+        maelabels.append('{} ({:.3f})'.format(l, np.mean(data[-1])))
+
     xvalues = None
     if args.exclude_analysistime is False:
         xvalues = list(range(0, len(data[0])))
 
-    plot_mae(data, labels, title='MAE over {} predictions'.format(len(predictions[labels[-1]]['data']) ), xvalues=xvalues)
+    plot_mae(data, maelabels, title='MAE over {} predictions'.format(len(predictions[first]['data']) ), xvalues=xvalues)
     plt.pause(0.001)
     input("Press [enter] to stop")
 
