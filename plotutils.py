@@ -41,7 +41,8 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None)
     labels = list(map(lambda x: x.replace('True','T')
                                  .replace('False','F')
                                  .replace('binary_crossentropy', 'bc')
-                                 .replace('MeanSquaredError', 'MSE'), labels))
+                                 .replace('MeanSquaredError', 'MSE')
+                                 .replace('img_size', 'i_s'), labels))
 
     for i,mae in enumerate(data):
         mae = np.asarray(mae)
