@@ -47,6 +47,18 @@ def parse_command_line():
     return args
 
 
+def normalize_label(label):
+    normalized_labels = []
+
+    for lbl in args.label:
+        if lbl.find('*') != -1:
+            lbls = [os.path.basename(x) for x in glob.glob(f"models/{lbl}")]
+            normalized_labels.extend(lbls)
+
+        else:
+            normalized_labels.append(lbl)
+
+    return normalized_labels
 
 def infer_many(m, orig, num_predictions, **kwargs):
     datetime_weights = kwargs.get('datetime_weights', None)
@@ -403,6 +415,7 @@ def save_gribs(args, predictions):
 if __name__ == "__main__":
     args = parse_command_line()
 
+    args.label = normalize_label(args.label)
     predictions, errors = predict_many(args)
 
     if not args.disable_plot:
