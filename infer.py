@@ -360,25 +360,29 @@ def calculate_errors(models, predictions):
         #for k in predictions.keys():
 
 
-
-def filter_top_n(predictions, errors, n):
-    maes = {}
+def sort_errors(errors, best_first=True):
+    assert(best_first)
 
     labels = list(errors.keys())
 
-    print(predictions.keys())
-    print(errors.keys())
+    maes = {}
 
     for l in labels:
         maes[l] = np.mean(errors[l])
 
-    # sort best first
+     # sort best first
     maes = dict(sorted(maes.items(), key=lambda item: item[1]))
 
-    # pick top n
-    maes = {k : maes[k] for k in list(maes)[:n]}
+    return list(maes.keys())
 
-    labels = list(maes.keys())
+
+def filter_top_n(predictions, errors, n, keep_persistence=True):
+
+    labels = sort_errors(errors)
+    labels = labels[:n]
+
+    if keep_persistence and 'persistence' not in labels:
+        labels[-1] = 'persistence'
 
     f_predictions = {}
     f_errors = {}
@@ -395,32 +399,32 @@ def filter_top_n(predictions, errors, n):
 
 def plot_results(args, predictions, errors):
 
-    labels = list(predictions.keys())
-    try:
-        labels.remove('climatology') # not plotting this in stamp plot
-    except ValueError as e:
-        pass
+    if len(predictions) < 8:
+        labels = list(predictions.keys())
+        try:
+            labels.remove('climatology') # not plotting this in stamp plot
+        except ValueError as e:
+            pass
 
-    print(labels)
-    labels.sort()
-    idx = np.random.randint(len(predictions[labels[-1]]['data']))
+        labels.sort()
+        idx = np.random.randint(len(predictions[labels[-1]]['data']))
 
-    data = []
-    times = predictions[labels[-1]]['time'][idx]
+        data = []
+        times = predictions[labels[-1]]['time'][idx]
 
-    for l in labels:
-        if l == 'gt':
-            data.append(copy_range(predictions['gt'], times[0], times[-1]))
-            continue
-        data.append(predictions[l]['data'][idx])
+        for l in labels:
+            if l == 'gt':
+                data.append(copy_range(predictions['gt'], times[0], times[-1]))
+                continue
+            data.append(predictions[l]['data'][idx])
 
-    plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
+        plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
+    else:
+        print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
     #######################
 
-    labels = list(errors.keys())
-
-    labels.sort()
+    labels = sort_errors(errors)
 
     data = []
 
