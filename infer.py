@@ -15,6 +15,7 @@ from plotutils import *
 from generators import *
 
 PRED_STEP = timedelta(minutes=15)
+DSS = {}
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
@@ -26,7 +27,7 @@ def parse_command_line():
     parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
     parser.add_argument("--exclude_analysistime", action='store_true', default=False, help='exclude analysistime from data')
-    parser.add_argument("--include_additional", action='store', nargs='+')
+    parser.add_argument("--include_additional", action='store', nargs='+', default=[])
 
     args = parser.parse_args()
 
@@ -152,6 +153,8 @@ def predict_many(args):
     return all_pred, all_err
 
 def predict(args):
+    global DSS
+
     args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
     args.n_channels = int(args.n_channels)
     args.include_datetime = eval(args.include_datetime)
@@ -161,6 +164,13 @@ def predict(args):
     model_file = 'models/{}'.format(get_model_name(args))
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
+
+    try:
+        dss = DSS[args.preprocess]
+    except KeyError as e:
+        DSS[args.preprocess] = {}
+        dss = DSS[args.preprocess]
+
 
     time_gen = TimeseriesGenerator(args.start_date, args.n_channels, args.prediction_len, step=PRED_STEP, stop_date=args.stop_date)
 
@@ -179,8 +189,9 @@ def predict(args):
         else:
             nwp.append(k)
 
-    dss = {}
-    dss['nwcsaf'] = DataSeries("nwcsaf", args.preprocess)
+    if not 'nwcsaf' in dss:
+        dss['nwcsaf'] = DataSeries("nwcsaf", args.preprocess)
+
     predictions = {
         args.label : { 'time' : [], 'data' : [] },
         'gt' : { 'time' : [], 'data' : [] },
@@ -191,7 +202,8 @@ def predict(args):
         mae['climatology'] = []
 
     for k in nwp:
-        dss[k] = DataSeries(k, args.preprocess)
+        if not k in dss:
+            dss[k] = DataSeries(k, args.preprocess)
         predictions[k] = { 'time' : [], 'data' : [] }
         mae[k] = []
 
