@@ -131,4 +131,9 @@ def read_gribs(filenames, **kwargs):
     if len(files_ds) == 0:
         print("No files found")
 
-    return np.squeeze(np.asarray(files_ds), -2)
+    files_ds = np.asarray(files_ds)
+
+    if files_ds.shape[-2] == 1:
+        files_ds = np.squeeze(files_ds, -2)
+
+    return files_ds
