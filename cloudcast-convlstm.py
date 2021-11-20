@@ -34,7 +34,6 @@ def parse_command_line():
 
     assert(args.leadtime_conditioning == False)
     assert(args.include_datetime == False)
-    assert(args.include_environment_data == False)
 
     if (not args.start_date and not args.stop_date) and not args.dataseries_file:
         print("Either start_date,stop_date or dataseries_file needs to be defined")
@@ -64,8 +63,8 @@ def fit(m, args):
                                                  save_weights_only=True,
                                                  verbose=1)
 
-    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=15, min_delta=0.001)
-    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=7)
+    early_stopping_cb = keras.callbacks.EarlyStopping(monitor="val_loss", patience=8, min_delta=0.001)
+    reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
 
     hist = m.fit(train_gen, epochs = 500, validation_data = val_gen, callbacks=[cp_cb, early_stopping_cb, reduce_lr_cb])
 
@@ -89,8 +88,11 @@ def run_model(args):
     pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(get_model_name(args)) if args.cont else None
 
     img_size = get_img_size(args.preprocess)
+    n_channels = 1
+    if args.include_environment_data:
+        n_channels += 2
 
-    m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (1,), loss_function=args.loss_function)
+    m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function)
 
     start = datetime.datetime.now()
 

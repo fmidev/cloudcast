@@ -36,11 +36,20 @@ def create_generators_from_dataseries(**kwargs):
     if out:
         i = 0
 
+        if include_environment_data:
+            envs = create_environment_data(preprocess, True)
+            assert(np.max(envs[0]) <= 1 and np.max(envs[1]) <= 1)
+
         n_channels += 1
         while i < dataseries.shape[0] - n_channels:
             ds_data = []
             for j in range(n_channels):
-                ds_data.append(dataseries[i + j])
+                x = dataseries[i + j]
+
+                if include_environment_data:
+                    x = np.concatenate((x, envs[0], envs[1]), axis=-1)
+
+                ds_data.append(x)
             datasets.append(ds_data)
             i += n_channels
 
