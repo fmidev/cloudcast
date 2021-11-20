@@ -100,8 +100,11 @@ def plot_timeseries(datas, labels, title=None, initial_data=None, start_from_zer
     plt.show(block=False)
 
 
-def plot_hist(hist, model_dir = None, show=False):
-    print(hist)
+def plot_hist(hist, model_dir = None, show=False, save_path=None, name_files=False):
+
+    if save_path is None:
+        save_path = model_dir
+
     plt.plot(hist['accuracy'])
     plt.plot(hist['val_accuracy'])
     plt.title(f'training accuracy for\n{model_dir}')
@@ -112,12 +115,16 @@ def plot_hist(hist, model_dir = None, show=False):
     if show:
         plt.show()
     else:
-        plt.savefig('{}/accuracy.png'.format(model_dir))
+        filename = "accuracy.png"
+        if name_files:
+            filename = '{}_{}'.format(model_dir, filename)
 
+        plt.savefig('{}/{}'.format(save_path, filename))
+        print('Wrote file {}/{}'.format(save_path, filename))
     plt.close()
     plt.plot(hist['loss'])
     plt.plot(hist['val_loss'])
-    plt.title('training loss for\n{model_dir}')
+    plt.title(f'training loss for\n{model_dir}')
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
@@ -125,5 +132,9 @@ def plot_hist(hist, model_dir = None, show=False):
     if show:
         plt.show()
     else:
-        plt.savefig('{}/loss.png'.format(model_dir))
+        filename = "loss.png"
+        if name_files:
+            filename = '{}_{}'.format(model_dir, filename)
 
+        plt.savefig('{}/{}'.format(save_path, filename))
+        print('Wrote file {}/{}'.format(save_path, filename))
