@@ -269,7 +269,8 @@ def predict(args):
         lt = None
 
         if args.include_datetime:
-            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), leadtimes))
+            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), history))
+
         if args.include_environment_data and environment_weights is None:
             environment_weights = create_environment_data(args.preprocess, args.model == 'convlstm')
         if args.leadtime_conditioning:
