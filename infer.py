@@ -13,6 +13,7 @@ from fileutils import *
 from preprocess import *
 from plotutils import *
 from generators import *
+from verifutils import *
 
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
@@ -376,13 +377,25 @@ def sort_errors(errors, best_first=True):
     return list(maes.keys())
 
 
-def filter_top_n(predictions, errors, n, keep_persistence=True):
+def filter_top_n(predictions, errors, n, keep=[]):
+
+    if n == -1 or len(predictions) < n:
+        return predictions, errors
 
     labels = sort_errors(errors)
+
+    print("Filtering predictions from {} to {}".format(len(predictions), n))
+
     labels = labels[:n]
 
-    if keep_persistence and 'persistence' not in labels:
-        labels[-1] = 'persistence'
+    for k in keep:
+        labels.reverse()
+        if k not in labels:
+            for i,j in enumerate(labels):
+                if j not in keep:
+                    labels[i] = k
+                    break
+        labels.reverse()
 
     f_predictions = {}
     f_errors = {}
@@ -476,9 +489,9 @@ if __name__ == "__main__":
 
     args.label = normalize_label(args.label)
     predictions, errors = predict_many(args)
+    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
-    if args.top != -1:
-        predictions, errors = filter_top_n(predictions, errors, args.top)
+    # recall(predictions)
 
     if not args.disable_plot:
         plot_results(args, predictions, errors)
