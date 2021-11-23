@@ -42,6 +42,7 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None)
                                  .replace('False','F')
                                  .replace('binary_crossentropy', 'bc')
                                  .replace('MeanSquaredError', 'MSE')
+                                 .replace('MeanAbsoluteError', 'MAE')
                                  .replace('img_size', 'i_s'), labels))
 
     for i,mae in enumerate(data):
