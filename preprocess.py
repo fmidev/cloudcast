@@ -127,15 +127,6 @@ def preprocess_single(arr, process_label):
     return arr
 
 
-#def sharpen(data, factor):
-#    assert(data.shape == (1,) + IMG_SIZE + (1,))
-#    im = Image.fromarray(np.squeeze(data) * 255)
-#    im = im.convert('L')
-#
-#    enhancer = ImageEnhance.Sharpness(im)
-#    sharp = np.array(enhancer.enhance(factor)) / 255.0
-#    return np.expand_dims(sharp, [0,3])
-
 
 def time_of_year_and_day(datetime):
     day = 24*60*60
@@ -201,7 +192,7 @@ def process_lsm(LSM):
     # 230       No data (burnt areas, clouds,)
 
     # forest
-    LSM[np.logical_and(LSM >= 40, LSM >= 100)] = 0
+    LSM[np.logical_and(LSM >= 40, LSM <= 100)] = 0
 
     # urban
     LSM[LSM == 190] = 1
@@ -216,7 +207,7 @@ def process_lsm(LSM):
     LSM[LSM == 210] = 4
 
     # agriculture
-    LSM[np.logical_or(LSM <= 14, LSM == 20)] = 5
+    LSM[np.logical_and(LSM >= 11, LSM <= 30)] = 5
 
     # rest
     LSM[LSM > 5] = 6
@@ -244,10 +235,7 @@ def create_environment_data(preprocess_label, normalize=False):
     except KeyError as e:
         pass
 
-    proc='standardize=true'
-
-    if normalize:
-        proc='normalize=true'
+    proc='normalize=true'
 
     proc = '{},img_size={}'.format(proc, img_size)
 
