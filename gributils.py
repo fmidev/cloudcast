@@ -19,14 +19,14 @@ def read_from_http(url, **kwargs):
         sys.exit(1)
 
     gh = ecc.codes_new_from_message(r.content)
-    return read_grib_contents(gh, **kwargs)
+    return read_grib_contents(gh, fileuri=url, **kwargs)
 
 
 def read_from_file(file_path, message_no, **kwargs):
     try:
         with open(file_path) as fp:
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
-            return read_grib_contents(gh, **kwargs)
+            return read_grib_contents(gh, fileuri=file_path, **kwargs)
     except FileNotFoundError as e:
         print(e)
         return np.full(DEFAULT_SIZE, np.NAN)
@@ -54,8 +54,9 @@ def read_grib_contents(gh, **kwargs):
     if np.max(data) > 1.1:
         data = data / 100.0
 
-    assert(np.min(data) > -0.02)
-    assert(np.max(data) < 1.02)
+    if np.min(data) < -0.01 or np.max(data) > 1.01:
+        print("Invalid data found from '{}': min={} max={}".format(kwargs['fileuri'], np.min(data), np.max(data)))
+        sys.exit(1)
 
     data = np.expand_dims(data, axis=2)
 
