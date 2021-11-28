@@ -25,7 +25,7 @@ def get_model_name(args):
                                 args.preprocess)
 
 
-def read_filenames_from_s3(start_time, stop_time, producer):
+def read_filenames_from_s3(start_time, stop_time, producer, param="effective-cloudiness"):
     print("Getting object listing from s3")
     s3 = boto3.client('s3', endpoint_url='https://lake.fmi.fi', use_ssl=True, config=Config(signature_version=UNSIGNED))
     paginator = s3.get_paginator('list_objects_v2')
@@ -40,20 +40,20 @@ def read_filenames_from_s3(start_time, stop_time, producer):
             f = item['Key']
 
             datetime = int(f.split('/')[-1][0:8])
-            if datetime >= start_date and datetime < stop_date:
+            if f.find(param) != -1 and datetime >= start_date and datetime < stop_date:
                 filenames.append('https://lake.fmi.fi/cc_archive/{}'.format(f))
 
     print("Filter matched {} files".format(len(filenames)))
     return filenames
 
 
-def read_filenames(start_time, stop_time, producer='nwcsaf'):
+def read_filenames(start_time, stop_time, producer='nwcsaf', param="effective-cloudiness"):
     print(f'Input directory: {INPUT_DIR}/{producer}')
 
     if INPUT_DIR[0:4] == 'http':
         return read_filenames_from_s3(start_time, stop_time, producer)
 
-    files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*.grib2', recursive=True))
+    files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*{param}*.grib2', recursive=True))
 
     start_date = int(start_time.strftime("%Y%m%d"))
     stop_date = int(stop_time.strftime("%Y%m%d"))
@@ -69,9 +69,9 @@ def read_filenames(start_time, stop_time, producer='nwcsaf'):
 
 
 
-def get_filename(time, producer = 'nwcsaf', analysis_time=None):
+def get_filename(time, producer = 'nwcsaf', analysis_time=None, param='effective-cloudiness'):
     if producer == 'nwcsaf':
-        return '{}/nwcsaf/{}_nwcsaf_effective-cloudiness.grib2'.format(INPUT_DIR, time.strftime('%Y/%m/%d/%Y%m%dT%H%M%S'))
+        return '{}/nwcsaf/{}_nwcsaf_{}.grib2'.format(INPUT_DIR, time.strftime('%Y/%m/%d/%Y%m%dT%H%M%S'), param)
     if producer == 'mnwc':
         if analysis_time is None:
             # return newest possible
