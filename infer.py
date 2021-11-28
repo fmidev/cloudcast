@@ -18,6 +18,17 @@ from verifutils import *
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
 
+def parse_time(timestr):
+    masks = ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']
+    for m in masks:
+        try:
+            return datetime.datetime.strptime(timestr, m)
+        except ValueError as e:
+            pass
+
+    return None
+
+
 def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_date", action='store', type=str, required=False)
@@ -38,13 +49,10 @@ def parse_command_line():
         sys.exit(1)
 
     if args.start_date is not None and args.stop_date is not None:
-        args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-        args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+        args.start_date = parse_time(args.start_date)
+        args.stop_date = parse_time(args.stop_date)
     else:
-        try:
-            args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%d %H:%M:%S')
-        except ValueError as e:
-            args.start_date = datetime.datetime.strptime(args.single_time, '%Y-%m-%dT%H:%M:%S')
+        args.start_date = parse_time(args.single_time)
         args.stop_date = args.start_date
 
     return args
@@ -410,7 +418,7 @@ def filter_top_n(predictions, errors, n, keep=[]):
     return f_predictions, f_errors
 
 
-def plot_results(args, predictions, errors):
+def plot_timeseries(args, predictions):
 
     while True:
         first = list(predictions.keys())[np.random.randint(len(predictions))]
@@ -440,29 +448,6 @@ def plot_results(args, predictions, errors):
     else:
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
-    #######################
-
-    labels = sort_errors(errors)
-
-    data = []
-
-    maelabels=[]
-    for l in labels:
-        data.append([])
-        for i,j in enumerate(errors[l]):
-            data[-1].append(np.mean(j))
-
-        maelabels.append('{} ({:.3f})'.format(l, np.mean(data[-1])))
-
-    xvalues = None
-    if args.exclude_analysistime is False:
-        xvalues = list(range(0, len(data[0])))
-
-    plot_mae(data, maelabels, title='MAE over {} predictions'.format(len(predictions[first]['data']) ), xvalues=xvalues)
-    plt.pause(0.001)
-    input("Press [enter] to stop")
-
-
 
 def save_gribs(args, predictions):
 
@@ -491,10 +476,10 @@ if __name__ == "__main__":
     predictions, errors = predict_many(args)
     predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
-    # recall(predictions)
-
-    if not args.disable_plot:
-        plot_results(args, predictions, errors)
+    plot_timeseries(args, predictions)
+    produce_scores(predictions)
 
     if args.save_grib:
         save_gribs(args, predictions)
+
+    plt.show()
