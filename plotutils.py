@@ -1,8 +1,91 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from mpl_toolkits.basemap import Basemap
 from datetime import timedelta
+from osgeo import osr
+
+FIGURE=0
+
+def figure():
+    global FIGURE
+    FIGURE += 1
+    return FIGURE
+
+
+def reduce_label(label):
+   return label.replace('True','T') \
+               .replace('False','F') \
+               .replace('binary_crossentropy', 'bc') \
+               .replace('MeanSquaredError', 'MSE') \
+               .replace('MeanAbsoluteError', 'MAE') \
+               .replace('img_size', 'i_s')
+
+
+def latlonraster():
+    # Data axis to CRS axis mapping: 1,2
+    # Origin = (-1072595.173187759937719,9675899.727970723062754)
+    # Pixel Size = (18535.155999999999040,-20878.905999999999040)
+    # Corner Coordinates:
+    # Upper Left  (-1072595.173, 9675899.728) ( 18d 7'31.78"W, 72d37'10.55"N)
+    # Lower Left  (-1072595.173, 7003399.760) (  0d11'14.17"E, 50d12'42.21"N)
+    # Upper Right ( 1299904.795, 9675899.728) ( 53d39'41.09"E, 71d33' 5.48"N)
+    # Lower Right ( 1299904.795, 7003399.760) ( 32d48'21.68"E, 49d42'34.98"N)
+    # Center      (  113654.811, 8339649.744) ( 17d15'33.72"E, 63d12'24.20"N)
+    # Band 1 Block=128x1 Type=Float64, ColorInterp=Undefined
+
+    src = osr.SpatialReference()
+    tgt = osr.SpatialReference()
+    src.ImportFromProj4("+proj=lcc +lat_0=0 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+    tgt.ImportFromEPSG(4326)
+
+    transform = osr.CoordinateTransformation(src, tgt)
+
+    x = np.linspace(-1072595.173, 1299904.795, 128)
+    y = np.linspace(9675899.728, 7003399.760, 128)
+
+    lon = []
+    lat = []
+
+    for y_ in y:
+        lon.append([])
+        lat.append([])
+        for x_ in x:
+            lat_,lon_, _ = transform.TransformPoint(x_, y_)
+            lon[-1].append(lon_)
+            lat[-1].append(lat_)
+
+    return np.asarray(lon), np.asarray(lat)
+
+
+def plot_on_map(data, title=None):
+#    ax.set_title(filename)
+#    plt.figure(figure())
+#    plt.imshow(data)
+#    data=np.flipud(data)
+    plt.figure(figure(), figsize=(10,8))
+    m = Basemap(llcrnrlon=-0.5,llcrnrlat=49.,urcrnrlon=57.5,urcrnrlat=72.3,
+            ellps='WGS84',\
+            resolution='l',area_thresh=1000.,projection='lcc',\
+            lat_1=63.,lat_2=63,lat_0=63,lon_0=15.)
+
+    lons, lats = latlonraster()
+
+    x, y = m(lons, lats)
+    cs = m.pcolormesh(x,y,data,shading='auto') #,cmap=plt.cm.Greys)
+
+    m.drawcoastlines()
+    m.drawmapboundary()
+    m.drawparallels(np.arange(-90.,120.,30.),labels=[1,0,0,0])
+    m.drawmeridians(np.arange(-180.,180.,15.),labels=[0,0,0,1])
+
+    plt.colorbar(cs,orientation='vertical', shrink=0.5)
+    plt.title(title)
+
 
 def plot_convlstm(ground_truth, predictions, mnwc):
+    plt.figure(figure())
+
     fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(16, 7), constrained_layout=True)
 
     for idx, ax in enumerate(axes[0]):
@@ -23,10 +106,44 @@ def plot_convlstm(ground_truth, predictions, mnwc):
     plt.show()
 
 
-def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None):
+def plot_normal(x, y, y2, labels, title=None, xlabels=None):
+    assert(len(labels) == len(y))
+    fig = plt.figure(figure(), figsize=(12,7))
+    ax1 = plt.axes()
+    box = ax1.get_position()
+    ax1.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+
+    xreal = np.asarray(range(len(x)))
+
+    labels = list(map(lambda x: reduce_label(x), labels))
+
+    color = 'tab:grey'
+
+    ax1.set_xlabel('time')
+    ax1.set_ylabel('count')
+    ax1.scatter(x, y2, color=color, marker='x', label='counts')
+    ax1.tick_params(axis='y', labelcolor=color)
+
+    ax2 = ax1.twinx()
+
+    for i,y_ in enumerate(y):
+        y_ = np.asarray(y_)
+#        x = xreal[np.isfinite(y_)]
+        #y = mae[np.isfinite(mae)]
+        ax2.plot(x, y_, label=labels[i], linestyle='-', marker='o')
+        ax2.set_ylabel('mean absolute error')
+
+    plt.title(title)
+    plt.gcf().autofmt_xdate()
+    ax2.legend()
+
+def plot_linegraph(data, labels, step=timedelta(minutes=15), title=None, xvalues=None):
     assert(len(data) == len(labels))
-    fig = plt.figure(figsize=(12,7))
+    fig = plt.figure(figure(), figsize=(12,7))
     ax = plt.axes()
+    ax.set_xlabel('leadtime')
+    ax.set_ylabel('mae')
+
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
 
@@ -38,12 +155,7 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None)
     else:
         xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
 
-    labels = list(map(lambda x: x.replace('True','T')
-                                 .replace('False','F')
-                                 .replace('binary_crossentropy', 'bc')
-                                 .replace('MeanSquaredError', 'MSE')
-                                 .replace('MeanAbsoluteError', 'MAE')
-                                 .replace('img_size', 'i_s'), labels))
+    labels = list(map(lambda x: reduce_label(x), labels))
 
     for i,mae in enumerate(data):
         mae = np.asarray(mae)
@@ -56,11 +168,11 @@ def plot_mae(data, labels, step=timedelta(minutes=15), title=None, xvalues=None)
     plt.title(title)
 
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    plt.show(block=False)
 
 
-def plot_timeseries(datas, labels, title=None, initial_data=None, start_from_zero=False):
+def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=False):
     assert(len(datas) == len(labels))
+
     nrows = len(datas)
     ncols = datas[0].shape[0]
     if initial_data is not None:
@@ -68,7 +180,7 @@ def plot_timeseries(datas, labels, title=None, initial_data=None, start_from_zer
         labels = ['initial'] + labels
 
     print(f'nrows={nrows},ncols={ncols}')
-    fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False)
+    fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False, num=figure())
     fig.suptitle(title)
     for i, bigax in enumerate(bigaxes.flatten(), start=0):
         bigax.set_title(labels[i])
@@ -98,8 +210,54 @@ def plot_timeseries(datas, labels, title=None, initial_data=None, start_from_zer
                 ax.set_title(f'{(j+offset)*15}m', y=0, pad=-25)
 
     fig.set_facecolor('w')
-    plt.tight_layout()
-    plt.show(block=False)
+
+
+def plot_histogram(datas, labels):
+    assert(len(datas) == len(labels))
+    n_bins = 20
+
+    fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=False, num=figure())
+    fig.set_size_inches(8,6)
+
+    for i, data in enumerate(datas):
+        axs[i].hist(np.asarray(data).flatten(), bins=n_bins, density=True)
+        axs[i].set_title(reduce_label(labels[i]))
+
+
+def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v']):
+
+    plt.figure(figure(), figsize=(9,8))
+    legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
+    csi_cmap = 'Blues'
+    ticks = np.arange(0, 1.1, 0.1)
+    grid_ticks = np.arange(0, 1.01, 0.01)
+    xlabel="Success Ratio (1-FAR)"
+    ylabel="Probability of Detection"
+    csi_label="Critical Success Index"
+    title="Performance Diagram"
+    sr_g, pod_g = np.meshgrid(grid_ticks, grid_ticks)
+    bias = pod_g / sr_g
+    csi = 1.0 / (1.0 / sr_g + 1.0 / pod_g - 1.0)
+    csi_contour = plt.contourf(sr_g, pod_g, csi, np.arange(0.1, 1.1, 0.1), extend="max", cmap=csi_cmap)
+    b_contour = plt.contour(sr_g, pod_g, bias, [0.5, 1, 1.5, 2, 4], colors="k", linestyles="dashed")
+    plt.clabel(b_contour, fmt="%1.1f", manual=[(0.2, 0.9), (0.4, 0.9), (0.6, 0.9), (0.7, 0.7)])
+
+    for r, d in enumerate(data):
+        pod = d[0]
+        far = d[1]
+        plt.plot(1 - far, pod, marker=markers[r], linewidth=12, color=colors[r], 
+                 label=labels[r].replace("_dist", "").replace("-", " ").replace("_", " "))
+
+    cbar = plt.colorbar(csi_contour)
+    cbar.set_label(csi_label, fontsize=14)
+    plt.xlabel(xlabel, fontsize=14)
+    plt.ylabel(ylabel, fontsize=14)
+    plt.xticks(ticks)
+    plt.yticks(ticks)
+    plt.title(title, fontsize=14, fontweight="bold")
+    plt.text(0.48,0.6,"Frequency Bias",fontdict=dict(fontsize=14, rotation=45))
+    plt.legend()
+
 
 
 def plot_hist(hist, model_dir = None, show=False, save_path=None, name_files=False):

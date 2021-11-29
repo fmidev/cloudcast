@@ -14,6 +14,7 @@ from preprocess import *
 from plotutils import *
 from generators import *
 from verifutils import *
+from skimage.metrics import structural_similarity as ssim
 
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
@@ -144,23 +145,18 @@ def predict_from_series(m, dataseries, num):
 
 def predict_many(args):
     all_pred = {}
-    all_err = {}
 
     for lbl in args.label:
         elem = copy.deepcopy(args)
         elem.label = lbl
 
-        predictions, errors = predict(elem)
+        predictions = predict(elem)
 
         for i,k in enumerate(predictions.keys()):
             if not k in all_pred.keys():
                 all_pred[k] = predictions[k]
 
-        for i,k in enumerate(errors.keys()):
-            if not k in all_err.keys():
-                all_err[k] = errors[k]
-
-    return all_pred, all_err
+    return all_pred
 
 def predict(args):
     global DSS
@@ -184,10 +180,6 @@ def predict(args):
 
     time_gen = TimeseriesGenerator(args.start_date, args.n_channels, args.prediction_len, step=PRED_STEP, stop_date=args.stop_date)
 
-    mae = {}
-    mae[args.label] = []
-    mae['persistence'] = []
-
     environment_weights = None
 
     nwp = []
@@ -209,18 +201,11 @@ def predict(args):
 
     if climatology:
         predictions['climatology'] = { 'time' : [], 'data' : [] }
-        mae['climatology'] = []
 
     for k in nwp:
         if not k in dss:
             dss[k] = DataSeries(k, args.preprocess)
         predictions[k] = { 'time' : [], 'data' : [] }
-        mae[k] = []
-
-    for k in mae:
-        atim = 1 if args.exclude_analysistime is False else 0
-        for i in range(args.prediction_len + atim):
-            mae[k].append([])
 
     def diff(a, b):
         b = set(b)
@@ -327,19 +312,8 @@ def predict(args):
         if args.exclude_analysistime is False:
             future_data = datas['nwcsaf'][args.n_channels-1:]
 
-        for i,t in enumerate(future_data):
-            if np.isnan(t).any():
-                continue
-            for k in nwp:
-                if not args.disable_plot and not np.isnan(datas[k][i]).any():
-                    mae[k][i].append(mean_absolute_error(t.flatten(), datas[k][i].flatten()))
 
-            mae['persistence'][i].append(mean_absolute_error(t.flatten(), initial.flatten()))
-            mae[args.label][i].append(mean_absolute_error(t.flatten(), cc[i].flatten()))
-            if climatology:
-                mae['climatology'][i].append(mean_absolute_error(t.flatten(), clim[i].flatten()))
-
-    return predictions, mae
+    return predictions
 
 
 
@@ -348,25 +322,6 @@ def copy_range(gt, start, stop):
     b = gt['time'].index(stop)
     return np.asarray(gt['data'][a:b+1]) # need inclusive end
 
-
-def calculate_errors(models, predictions):
-    errors = {}
-
-    for m in models:
-        errors[m] = [[]]*args.prediction_len
-
-    for m in models:
-        for i, pred in enumerate(predictions[m]['data']):
-            times = predictions[m]['time'][i]
-            gt = copy_range(times[0], times[-1])
-
-
-#    for elem in predictions['gt']: 
-#        time = elem['time']
-#        data = elem['data']
-
-        
-        #for k in predictions.keys():
 
 
 def sort_errors(errors, best_first=True):
@@ -444,7 +399,7 @@ def plot_timeseries(args, predictions):
                 continue
             data.append(predictions[l]['data'][idx])
 
-        plot_timeseries(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
+        plot_stamps(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
     else:
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
@@ -473,11 +428,11 @@ if __name__ == "__main__":
     args = parse_command_line()
 
     args.label = normalize_label(args.label)
-    predictions, errors = predict_many(args)
-    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
+    predictions = predict_many(args)
+#    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
     plot_timeseries(args, predictions)
-    produce_scores(predictions)
+    produce_scores(args, predictions)
 
     if args.save_grib:
         save_gribs(args, predictions)
