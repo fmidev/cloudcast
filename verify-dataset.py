@@ -58,7 +58,7 @@ def verify(args):
 
     print(f'showing random grid from location {idx} (time: {times[idx]})')
 
-    plt.imshow(datas[idx])
+    plt.imshow(np.squeeze(datas[idx]))
     plt.show()
 
 if __name__ == "__main__":
