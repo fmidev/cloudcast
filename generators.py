@@ -64,23 +64,23 @@ def create_generators_from_dataseries(**kwargs):
             assert(len(thist) >= 1)
             dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
 
-            y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1) # y
-
             if leadtime_conditioning == 0:
                 hist = add_auxiliary_data(hist, include_datetime, include_environment_data, dt, preprocess)
+                y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1)
                 datasets.append(np.concatenate((hist, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
                 for j in range(0, leadtime_conditioning):
                     leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
-
                     x = np.concatenate((hist, leadtime), axis=0)
                     x = add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess)
-
+                    y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels+j], axis=-1), axis=0), axis=-1)
                     datasets.append(np.concatenate((x, y), axis=0))
                     datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
 
             i += n_channels + leadtime_conditioning
+
+    assert(len(datasets) == int(dataseries.shape[0] / (n_channels + n_fut)) * n_fut)
 
     np.random.shuffle(datasets)
     test_val_split = (np.floor(len(datasets) * 0.9)).astype(np.int)
