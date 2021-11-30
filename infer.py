@@ -223,7 +223,7 @@ def predict(args):
         datas = {}
         if args.disable_plot:
             datas['nwcsaf'] = dss['nwcsaf'].read_data(history)
-            initial = np.copy(gt[-1])
+            initial = np.copy(datas['nwcsaf'][-1])
 
         else:
             for k in dss:
@@ -431,10 +431,11 @@ if __name__ == "__main__":
     predictions = predict_many(args)
 #    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
-    plot_timeseries(args, predictions)
-    produce_scores(args, predictions)
-
     if args.save_grib:
         save_gribs(args, predictions)
 
-    plt.show()
+    if not args.disable_plot:
+        plot_timeseries(args, predictions)
+        produce_scores(args, predictions)
+
+        plt.show()
