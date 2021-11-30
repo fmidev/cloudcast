@@ -78,7 +78,7 @@ def plot_mae_per_leadtime(ae):
             maelt.append(np.mean(lt))
         maelt = np.asarray(maelt)
 
-        plot_linegraph([maelt], [l], title='MAE over {} predictions'.format(newae.shape[0])) #, xvalues=xvalues)
+        plot_linegraph([maelt], [l], title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae')
 
 
 def plot_mae2d(ae, times):
@@ -184,36 +184,28 @@ def categorical_scores(predictions):
 
             ret[l] = {}
 
-            pred_times = predictions[l]['time'][0]
-            a = gtt.index(pred_times[0])
-            b = gtt.index(pred_times[-1])
+            preds=[]
+            gts=[]
+            for pred_times in predictions[l]['time']:
+#            pred_times = predictions[l]['time'][0]
+                a = gtt.index(pred_times[0])
+                b = gtt.index(pred_times[-1])
 
-            gt_data = gtd[a:b+1]
+                gt_data = gtd[a:b+1]
 
-            pred_data = np.asarray(predictions[l]['data'][0]).copy()
-            pred_data = categorize(pred_data)
+                pred_data = np.asarray(predictions[l]['data'][0]).copy()
+                pred_data = categorize(pred_data)
 
-            assert(gt_data.shape == pred_data.shape)
-            ret[l] = np.flip(confusion_matrix(gt_data.flatten(), pred_data.flatten(), normalize='all')) # wikipedia syntax
+                assert(gt_data.shape == pred_data.shape)
+
+                preds.append(pred_data.flatten())
+                gts.append(gt_data.flatten())
+
+            preds = np.asarray(preds)
+            gts = np.asarray(gts)
+
+            ret[l] = np.flip(confusion_matrix(gts.flatten(), preds.flatten(), normalize='all')) # wikipedia syntax
         return ret
-
-
-    def print_score(data, score):
-        print('{:<45} {}'.format(score,'   '.join(CATEGORIES)))
-        for l in ret:
-            lbl = l.replace('True','T') \
-                 .replace('False','F') \
-                 .replace('binary_crossentropy', 'bc') \
-                 .replace('MeanSquaredError', 'MSE') \
-                 .replace('MeanAbsoluteError', 'MAE') \
-                 .replace('img_size', 'i_s')
-
-            outstr = '{:<45}'.format(lbl)
-            for c in CATEGORIES:
-                val = calculate_categorical_score(c, ret[l], score)
-                outstr += "    {:.3f}".format(val)
-
-            print(outstr)
 
     cm = calc_confusion_matrix(predictions)
 
@@ -224,7 +216,7 @@ def categorical_scores(predictions):
             f = calculate_categorical_score(c, cm[l], 'FAR')
             catscores.append((p, f))
 
-        plot_performance_diagram(catscores, CATEGORIES)
+        plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions'.format(len(predictions[keys[0]]['data'])))
 
 
 def ssim(args, predictions):
@@ -266,5 +258,5 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0)
 
-    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(ssims[-1].shape[0])) #, xvalues=xvalues)
+    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(list(predictions.keys())[0]), ylabel='ssim')
 

@@ -137,23 +137,24 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None):
     plt.gcf().autofmt_xdate()
     ax2.legend()
 
-def plot_linegraph(data, labels, step=timedelta(minutes=15), title=None, xvalues=None):
+def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None):
     assert(len(data) == len(labels))
     fig = plt.figure(figure(), figsize=(12,7))
     ax = plt.axes()
     ax.set_xlabel('leadtime')
-    ax.set_ylabel('mae')
+    ax.set_ylabel(ylabel)
+    step=timedelta(minutes=15)
 
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
 
     xreal = np.asarray(range(len(data[0])))
 
-    if xvalues is None:
-        xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
-        xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
-    else:
-        xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
+#    if xvalues is None:
+    xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
+    xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
+#    else:
+#        xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
@@ -216,7 +217,7 @@ def plot_histogram(datas, labels):
     assert(len(datas) == len(labels))
     n_bins = 20
 
-    fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=False, num=figure())
+    fig, axs = plt.subplots(1, len(datas), sharey=True, tight_layout=False, num=figure())
     fig.set_size_inches(8,6)
 
     for i, data in enumerate(datas):
@@ -224,7 +225,7 @@ def plot_histogram(datas, labels):
         axs[i].set_title(reduce_label(labels[i]))
 
 
-def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v']):
+def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v'], title='Performance diagram'):
 
     plt.figure(figure(), figsize=(9,8))
     legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
@@ -234,7 +235,6 @@ def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], m
     xlabel="Success Ratio (1-FAR)"
     ylabel="Probability of Detection"
     csi_label="Critical Success Index"
-    title="Performance Diagram"
     sr_g, pod_g = np.meshgrid(grid_ticks, grid_ticks)
     bias = pod_g / sr_g
     csi = 1.0 / (1.0 / sr_g + 1.0 / pod_g - 1.0)
