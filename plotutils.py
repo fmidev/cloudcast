@@ -22,7 +22,7 @@ def reduce_label(label):
                .replace('img_size', 'i_s')
 
 
-def latlonraster():
+def latlonraster(img_size):
     # Data axis to CRS axis mapping: 1,2
     # Origin = (-1072595.173187759937719,9675899.727970723062754)
     # Pixel Size = (18535.155999999999040,-20878.905999999999040)
@@ -41,8 +41,12 @@ def latlonraster():
 
     transform = osr.CoordinateTransformation(src, tgt)
 
-    x = np.linspace(-1072595.173, 1299904.795, 128)
-    y = np.linspace(9675899.728, 7003399.760, 128)
+    if img_size == (128,128):
+        x = np.linspace(-1072595.173, 1299904.795, 128)
+        y = np.linspace(9675899.728, 7003399.760, 128)
+    elif img_size == (256,256):
+        x = np.linspace(-1067961.384, 1304538.584, 256)
+        y = np.linspace(9681119.454, 7008619.486, 256)
 
     lon = []
     lat = []
@@ -59,17 +63,12 @@ def latlonraster():
 
 
 def plot_on_map(data, title=None):
-#    ax.set_title(filename)
-#    plt.figure(figure())
-#    plt.imshow(data)
-#    data=np.flipud(data)
     plt.figure(figure(), figsize=(10,8))
     m = Basemap(llcrnrlon=-0.5,llcrnrlat=49.,urcrnrlon=57.5,urcrnrlat=72.3,
-            ellps='WGS84',\
-            resolution='l',area_thresh=1000.,projection='lcc',\
+            ellps='WGS84',resolution='l',area_thresh=1000.,projection='lcc',\
             lat_1=63.,lat_2=63,lat_0=63,lon_0=15.)
 
-    lons, lats = latlonraster()
+    lons, lats = latlonraster(data.shape)
 
     x, y = m(lons, lats)
     cs = m.pcolormesh(x,y,data,shading='auto') #,cmap=plt.cm.Greys)

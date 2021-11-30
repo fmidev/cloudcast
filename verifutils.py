@@ -91,7 +91,8 @@ def plot_mae2d(ae, times):
 
     for l in ae:
         # calculate average 2d field
-        mae = np.average(ae[l].reshape((-1, 128, 128, 1)), axis=0)
+        img_size = ae[l][0].shape[1:3]
+        mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0)
         plot_on_map(np.squeeze(mae), title=title)
 
 
