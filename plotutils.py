@@ -214,10 +214,10 @@ def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=Fa
 
 def plot_histogram(datas, labels):
     assert(len(datas) == len(labels))
-    n_bins = 20
+    n_bins = 50
 
     fig, axs = plt.subplots(1, len(datas), sharey=True, tight_layout=False, num=figure())
-    fig.set_size_inches(8,6)
+    fig.set_size_inches(12,8)
 
     for i, data in enumerate(datas):
         axs[i].hist(np.asarray(data).flatten(), bins=n_bins, density=True)
