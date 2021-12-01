@@ -259,5 +259,5 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0)
 
-    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(list(predictions.keys())[0]), ylabel='ssim')
+    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(len(predictions[list(predictions.keys())[0]]['data'])), ylabel='ssim')
 
