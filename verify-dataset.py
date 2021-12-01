@@ -24,8 +24,14 @@ def verify(args):
     datas = dataset['arr_0']
     times = dataset['arr_1']
 
-    assert(datas.shape[0] == times.shape[0])
-    print("datas and times length match: {}".format(datas.shape[0]))
+    is_forecast = (len(datas.shape) == 5)
+    if not is_forecast:
+        assert(datas.shape[0] == times.shape[0])
+        print("datas and times length match: {}".format(datas.shape[0]))
+    else:
+        assert(datas.shape[0:2] == times.shape[0:2])
+        print("datas and times length match: {}".format(datas.shape[0:2]))
+       
     print("data shape: {}".format(datas.shape))
     static=0
     miss=0
@@ -56,9 +62,15 @@ def verify(args):
 
     idx = np.random.randint(datas.shape[0])
 
-    print(f'showing random grid from location {idx} (time: {times[idx]})')
+    if is_forecast:
+        idx2 = np.random.randint(datas[idx].shape[0])
+        print(f'showing random grid from location {idx},{idx2} (time: {times[idx][idx2]})')
+        plt.imshow(np.squeeze(datas[idx][idx2]))
 
-    plt.imshow(np.squeeze(datas[idx]))
+    else:
+        print(f'showing random grid from location {idx} (time: {times[idx]})')
+        plt.imshow(np.squeeze(datas[idx]))
+
     plt.show()
 
 if __name__ == "__main__":
