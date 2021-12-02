@@ -14,15 +14,22 @@ def parse_command_line():
     parser.add_argument("--preprocess", action='store', type=str, required=True)
     parser.add_argument("--producer", action='store', type=str, default='nwcsaf')
     parser.add_argument("--param", action='store', type=str, default='effective-cloudiness')
-
-    parser.add_argument("filename", action='store')
+    parser.add_argument("--packing_type", action='store', type=str, default='npz')
+    parser.add_argument("directory", action='store')
 
     args = parser.parse_args()
 
     args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
+    if args.packing_type not in ('npz','npy'):
+        print("packing type must be one of: npz, npy")
+        sys.exit(1)
+
     return args
+
+def create_filename(args):
+    return '{}/{}-{}-{}-{}-{}.{}'.format(args.directory, args.producer, args.param, args.start_date.strftime('%Y%m%d'), args.stop_date.strftime('%Y%m%d'), args.preprocess, args.packing_type)
 
 
 def save_to_file(datas, times, filename):
@@ -43,7 +50,7 @@ def create_timeseries(args):
     
     print('Created data shape: {}'.format(datas.shape))
 
-    save_to_file(datas, times, args.filename)
+    save_to_file(datas, times, create_filename(args))
 
 def create_forecast(args):
     filenames = read_filenames(args.start_date, args.stop_date, args.producer, args.param)
@@ -64,7 +71,7 @@ def create_forecast(args):
         _lt = _lt.strip('m')
         _h, _m = _lt.split('h')
         step = datetime.timedelta(minutes = int(_m) + 60 * int(_h))
-        atimes[-1].append((atime + step).strftime('%Y%m%d%H%M%S'))
+        atimes[-1].append((atime + step).strftime('%Y%m%dT%H%M%S'))
 
     atimes = np.asarray(atimes)
     datas = read_gribs(filenames, img_size=get_img_size(args.preprocess))
@@ -73,12 +80,10 @@ def create_forecast(args):
 
     print('Created data shape: {}'.format(datas.shape))
 
-    save_to_file(datas, atimes, args.filename)
+    save_to_file(datas, atimes, create_filename(args))
 
 if __name__ == "__main__":
     args = parse_command_line()
-
-    assert(args.filename[-3:-1] == 'np')
 
     if args.producer == 'nwcsaf':
         create_timeseries(args)
