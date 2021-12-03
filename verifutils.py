@@ -64,8 +64,7 @@ def ae2d(predictions):
 
         ret[l] = np.asarray(ret[l])
 
-        if first:
-            first = False
+        first = False
 
     return ret, times
 

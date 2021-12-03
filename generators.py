@@ -350,7 +350,7 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
 
 class TimeseriesGenerator:
-    def __init__(self, start_date, history_len, pred_len, step=datetime.timedelta(minutes=15), stop_date=None):
+    def __init__(self, start_date, stop_date, history_len, pred_len, step=datetime.timedelta(minutes=15)):
         self.date = start_date
         self.stop_date = stop_date
         self.history_len = history_len
@@ -358,6 +358,7 @@ class TimeseriesGenerator:
         self.step = step
         self.times = [start_date - (history_len - 1) * step]
         self.create()
+        assert(start_date is not None and stop_date is not None)
 
     def __iter__(self):
         while True:
@@ -374,12 +375,13 @@ class TimeseriesGenerator:
 
 
 class DataSeries:
-    def __init__(self, producer, preprocess = None, single_analysis_time = True):
+    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness'):
         self.data_series = {}
         self.producer = producer
         self.preprocess = preprocess
         self.analysis_time = None
         self.single_analysis_time = single_analysis_time
+        self.param = param
 
     def read_data():
         return np.asarray(list(self.data_series.values()))
@@ -395,7 +397,7 @@ class DataSeries:
             if t in datakeys:
                 new_series[t] = self.data_series[t]
             else:
-                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True), self.preprocess)
+                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True, param=self.param), self.preprocess)
 
         self.data_series = new_series
         self.analysis_time = analysis_time

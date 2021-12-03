@@ -177,9 +177,7 @@ def predict(args):
         DSS[args.preprocess] = {}
         dss = DSS[args.preprocess]
 
-
-    time_gen = TimeseriesGenerator(args.start_date, args.n_channels, args.prediction_len, step=PRED_STEP, stop_date=args.stop_date)
-
+    time_gen = TimeseriesGenerator(args.start_date, args.stop_date, args.n_channels, args.prediction_len, step=PRED_STEP)
     environment_weights = None
 
     nwp = []
