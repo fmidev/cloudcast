@@ -258,7 +258,7 @@ def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], m
     plt.ylabel(ylabel, fontsize=14)
     plt.xticks(ticks)
     plt.yticks(ticks)
-    plt.title(title, fontsize=14, fontweight="bold")
+    plt.title(title, fontsize=14)
     plt.text(0.48,0.6,"Frequency Bias",fontdict=dict(fontsize=14, rotation=45))
     plt.legend()
 

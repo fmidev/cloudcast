@@ -70,14 +70,15 @@ def ae2d(predictions):
 
 
 def plot_mae_per_leadtime(ae):
+    maelts = []
     for l in ae:
         newae = np.moveaxis(ae[l], 0, 1)
         maelt = []
         for i,lt in enumerate(newae):
             maelt.append(np.mean(lt))
-        maelt = np.asarray(maelt)
+        maelts.append(np.asarray(maelt))
 
-        plot_linegraph([maelt], [l], title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae')
+    plot_linegraph(maelts, list(ae.keys()), title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae')
 
 
 def plot_mae2d(ae, times):
@@ -89,10 +90,11 @@ def plot_mae2d(ae, times):
     title = 'MAE between {}..{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'))
 
     for l in ae:
+        titlel = '{}\n{}'.format(title, l)
         # calculate average 2d field
         img_size = ae[l][0].shape[1:3]
         mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0)
-        plot_on_map(np.squeeze(mae), title=title)
+        plot_on_map(np.squeeze(mae), title=titlel)
 
 
 def plot_mae_timeseries(ae, times):
@@ -119,26 +121,23 @@ def plot_mae_timeseries(ae, times):
             my.append(np.max(y[i-3:i]))
             mcounts.append(np.sum(counts[i-3:i]))
         return mx, my, mcounts
- 
-    ret={}
-    for l in ae:
-        ret[l] = {}
 
+    for l in ae.keys():
+        maets={}
         for i,aes in enumerate(ae[l]):
             _times = times[i]
-            for j, ae in enumerate(aes):
+            for j, _ae in enumerate(aes):
                 t = _times[j]
                 try:
-                    ret[l][t].append(ae)
+                    maets[t].append(_ae)
                 except KeyError as e:
-                    ret[l][t] = [ ae ]
+                    maets[t] = [ _ae ]
 
-        mx, my, mcounts = aggregate_to_max_hour(ret[l])
+        mx, my, mcounts = aggregate_to_max_hour(maets)
 
         xlabels = list(map(lambda x: x.strftime('%H:%M'), mx))
 
-        plot_normal(mx, [my], mcounts, [l],title='MAE between {}..{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M')), xlabels=xlabels)
-
+        plot_normal(mx, [my], mcounts, [l],title='MAE between {}..{}\n{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'), l), xlabels=xlabels)
 
 
 def calculate_categorical_score(category, cm, score):
@@ -216,7 +215,7 @@ def categorical_scores(predictions):
             f = calculate_categorical_score(c, cm[l], 'FAR')
             catscores.append((p, f))
 
-        plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions'.format(len(predictions[keys[0]]['data'])))
+        plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions\n{}'.format(len(predictions[keys[0]]['data']), l))
 
 
 def ssim(args, predictions):
