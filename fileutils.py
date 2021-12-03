@@ -88,7 +88,7 @@ def get_filename(time, producer = 'nwcsaf', analysis_time=None, param='effective
         lt = (time - analysis_time)
         lt_h = int(lt.total_seconds() // 3600)
         lt_m = int(lt.total_seconds() // 60 % 60)
-        return '{}/meps/{}{}00+{:03d}h{:02d}m-{}.grib2'.format(INPUT_DIR, analysis_time.strftime('%Y%m%d'), ahour, lt_h, lt_m, param)
+        return '{}/meps/{}/{}{:02d}00+{:03d}h{:02d}m-{}.grib2'.format(INPUT_DIR, analysis_time.strftime('%Y/%m/%d'), analysis_time.strftime('%Y%m%d'), ahour, lt_h, lt_m, param)
     if producer == 'DEM':
         return '{}/static/DEM-cloudcast.tif'.format(INPUT_DIR)
     if producer == 'LSM':
@@ -98,8 +98,8 @@ def get_filename(time, producer = 'nwcsaf', analysis_time=None, param='effective
 
 
 
-def read_time(time, producer='nwcsaf', analysis_time=None, **kwargs):
-    return read_grib(get_filename(time, producer, analysis_time), **kwargs)
+def read_time(time, producer='nwcsaf', analysis_time=None, param='effective-cloudiness', **kwargs):
+    return read_grib(get_filename(time, producer, analysis_time, param), **kwargs)
 
 
 
