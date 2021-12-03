@@ -73,6 +73,12 @@ def create_forecast(args):
         step = datetime.timedelta(minutes = int(_m) + 60 * int(_h))
         atimes[-1].append((atime + step).strftime('%Y%m%dT%H%M%S'))
 
+    if args.producer == 'meps':
+        for t in atimes:
+            if len(t) != 7:
+                print('Error: expecting 7 times per forecast, got {}: {}'.format(len(t), t))
+                sys.exit(1)
+
     atimes = np.asarray(atimes)
     datas = read_gribs(filenames, img_size=get_img_size(args.preprocess))
     # reshape to match times, ie [num_forecasts, num_leadtimes, h, w, channels]
