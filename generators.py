@@ -23,6 +23,7 @@ def create_generators_from_dataseries(**kwargs):
     include_environment_data = kwargs.get('include_environment_data')
     preprocess = kwargs.get('preprocess')
     dataseries_file = kwargs.get('dataseries_file', '')
+    onehot_conditioning = kwargs.get('onehot_conditioning', False)
 
     print(f'Reading input data from {dataseries_file}')
     dataset = np.load(dataseries_file)
@@ -71,7 +72,10 @@ def create_generators_from_dataseries(**kwargs):
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
                 for j in range(0, leadtime_conditioning):
-                    leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
+                    if not onehot_conditioning:
+                        leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
+                    else:
+                        leadtime = create_onehot_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
                     x = np.concatenate((hist, leadtime), axis=0)
                     x = add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess)
                     y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels+j], axis=-1), axis=0), axis=-1)

@@ -217,7 +217,7 @@ def process_lsm(LSM):
 
 def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
     b = np.ones((1,) + img_size)
-    return np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b
+    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1)
 
 
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):

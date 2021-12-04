@@ -93,12 +93,17 @@ def run_model(args):
     img_size = get_img_size(args.preprocess)
     n_channels = int(args.n_channels)
 
+    args.onehot_conditioning = True
+
     if args.include_datetime:
         n_channels += 2
     if args.include_environment_data:
         n_channels += 2
     if args.leadtime_conditioning:
-        n_channels += 1
+        if args.onehot_conditioning:
+            n_channels += 12
+        else:
+            n_channels += 1
 
     m = unet(pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function, optimizer='SGD')
 

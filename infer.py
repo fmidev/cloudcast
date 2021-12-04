@@ -56,6 +56,8 @@ def parse_command_line():
         args.start_date = parse_time(args.single_time)
         args.stop_date = args.start_date
 
+    args.onehot_conditioning = True
+
     return args
 
 
@@ -76,6 +78,7 @@ def infer_many(m, orig, num_predictions, **kwargs):
     datetime_weights = kwargs.get('datetime_weights', None)
     environment_weights = kwargs.get('environment_weights', None)
     leadtime_conditioning = kwargs.get('leadtime_conditioning', None)
+    onehot_conditioning = kwargs.get('onehot_conditioning', False)
 
     predictions = []
     hist_len = len(orig)
@@ -96,7 +99,11 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
     def append_auxiliary_weights(data, datetime_weights, environment_weights, num_prediction):
         if leadtime_conditioning is not None:
-            data = np.concatenate((data, leadtime_conditioning[num_prediction]), axis=-1)
+            if onehot_conditioning:
+                lts = np.squeeze(np.swapaxes(leadtime_conditioning[num_prediction], 0, -1))
+                data = np.concatenate((data, lts), axis=-1)
+            else:
+                data = np.concatenate((data, leadtime_conditioning[num_prediction]), axis=-1)
 
         if datetime_weights is not None:
             data = np.concatenate((data, datetime_weights[hist_len-1][0], datetime_weights[hist_len-1][1]), axis=-1)
@@ -269,11 +276,16 @@ def predict(args):
             assert(args.prediction_len <= args.leadtime_conditioning)
             lt = []
             for i in range(args.prediction_len):
-                lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
-            lt = np.squeeze(np.asarray(lt), axis=1)
+                if args.onehot_conditioning is False:
+                    lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+                else:
+                    lt.append(create_onehot_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+
+            if args.onehot_conditioning is False:
+                lt = np.squeeze(np.asarray(lt), axis=1)
 
         if args.model == "unet":
-            cc = infer_many(m, datas['nwcsaf'][:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt)
+            cc = infer_many(m, datas['nwcsaf'][:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt, onehot_conditioning=args.onehot_conditioning)
         else:
             hist = datas['nwcsaf'][:args.n_channels]
 
