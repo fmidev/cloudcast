@@ -15,6 +15,7 @@ def parse_command_line():
     parser.add_argument("--producer", action='store', type=str, default='nwcsaf')
     parser.add_argument("--param", action='store', type=str, default='effective-cloudiness')
     parser.add_argument("--packing_type", action='store', type=str, default='npz')
+    parser.add_argument("--dtype", action='store', type=str, default='f32')
     parser.add_argument("directory", action='store')
 
     args = parser.parse_args()
@@ -23,13 +24,16 @@ def parse_command_line():
     args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
     if args.packing_type not in ('npz','npy'):
-        print("packing type must be one of: npz, npy")
-        sys.exit(1)
+        raise Exception("Packing type must be one of: npz, npy")
+
+    dtypes = ['f32', 'f16', 'u8']
+    if dtype not in dtypes:
+        raise Exception("dtype must be one of: {}".format(dtypes))
 
     return args
 
 def create_filename(args):
-    return '{}/{}-{}-{}-{}-{}.{}'.format(args.directory, args.producer, args.param, args.start_date.strftime('%Y%m%d'), args.stop_date.strftime('%Y%m%d'), args.preprocess, args.packing_type)
+    return '{}/{}-{}-{}-{}-{}-{}.{}'.format(args.directory, args.producer, args.param, args.start_date.strftime('%Y%m%d'), args.stop_date.strftime('%Y%m%d'), args.preprocess, args.dtype, args.packing_type)
 
 
 def save_to_file(datas, times, filename):
@@ -46,7 +50,7 @@ def create_timeseries(args):
     filenames = read_filenames(args.start_date, args.stop_date, args.producer, args.param)
     times = np.asarray(list(map(lambda x: os.path.basename(x).split('_')[0], filenames)))
 
-    datas = read_gribs(filenames, img_size=get_img_size(args.preprocess))
+    datas = read_gribs(filenames, img_size=get_img_size(args.preprocess), dtype=np.dtype(args.dtype))
     
     print('Created data shape: {}'.format(datas.shape))
 
