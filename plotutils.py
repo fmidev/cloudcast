@@ -50,8 +50,11 @@ def latlonraster(img_size):
     elif img_size == (384,384):
         x = np.linspace(-1066416.788, 1306083.052, 384)
         y = np.linspace(9682859.235, 7010359.395, 384)
+    elif img_size == (512,512):
+        x = np.linspace(-1065644.490, 1306855.478, 512)
+        y = np.linspace(9683729.573, 7011229.349, 512)
     else:
-        print("Unsupported img_size for 2d plotting: {}".format(img_size))
+        raise Exception("Unsupported img_size for 2d plotting: {}".format(img_size))
 
     lon = []
     lat = []
