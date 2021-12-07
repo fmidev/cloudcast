@@ -10,10 +10,7 @@ from botocore.config import Config
 from gributils import *
 from osgeo import gdal,osr
 
-INPUT_DIR = 'https://lake.fmi.fi/cc_archive'
-
-if os.environ['HOSTNAME'] == 'pansuola':
-    INPUT_DIR = '/home/partio/cloudnwc/effective_cloudiness/data/'
+INPUT_DIR = os.environ['CLOUDCAST_INPUT_DIR']
 
 def get_model_name(args):
     return '{}-{}-{}-{}-{}-{}-{}'.format(args.model,
