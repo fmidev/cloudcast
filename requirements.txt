@@ -1,6 +1,7 @@
 botocore
 boto3
 eccodes
+gdal==3.0.4
 opencv-python
 qnorm
 scikit-image
