@@ -217,11 +217,11 @@ def process_lsm(LSM):
 
 def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
     b = np.ones((1,) + img_size)
-    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1)
+    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1).astype(np.float32)
 
 
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
-    return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3))
+    return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3)).astype(np.float32)
 
 
 def create_environment_data(preprocess_label, normalize=False):
@@ -251,7 +251,7 @@ def create_environment_data(preprocess_label, normalize=False):
 
     LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
     LSM[img_size] = process_lsm(LSM[img_size])
-    LSM[img_size] = preprocess_single(LSM[img_size], proc)
+    LSM[img_size] = preprocess_single(LSM[img_size], proc).astype(np.float32)
 
     print (f"Reading {dem_file}")
 
@@ -263,7 +263,7 @@ def create_environment_data(preprocess_label, normalize=False):
         raster = gdal.Open(dem_file)
 
     DEM[img_size] = raster.GetRasterBand(1).ReadAsArray()
-    DEM[img_size] = preprocess_single(DEM[img_size], proc)
+    DEM[img_size] = preprocess_single(DEM[img_size], proc).astype(np.float32)
 
     raster = None
 
