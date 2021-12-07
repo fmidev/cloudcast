@@ -2,6 +2,7 @@ botocore
 boto3
 eccodes
 opencv-python
+qnorm
 scikit-image
 scikit-learn
 tensorflow
