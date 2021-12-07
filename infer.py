@@ -14,7 +14,6 @@ from preprocess import *
 from plotutils import *
 from generators import *
 from verifutils import *
-from skimage.metrics import structural_similarity as ssim
 
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
@@ -56,7 +55,7 @@ def parse_command_line():
         args.start_date = parse_time(args.single_time)
         args.stop_date = args.start_date
 
-    args.onehot_conditioning = True
+    args.onehot_conditioning = False
 
     return args
 
