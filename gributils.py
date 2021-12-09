@@ -5,8 +5,27 @@ import cv2
 import os
 import requests
 import sys
+import boto3
+from io import BytesIO
 
 DEFAULT_SIZE=(1069, 949, 1)
+
+def write_to_s3(object_name, data, **kwargs):
+    s3 = boto3.resource('s3',
+      endpoint_url = 'https://{}'.format(os.environ['S3_HOSTNAME']),
+      aws_access_key_id = os.environ['S3_ACCESS_KEY_ID'],
+      aws_secret_access_key = os.environ['S3_SECRET_ACCESS_KEY']
+    )
+
+    bucket_name = object_name[5:].split('/')[0]
+    obj_name = '/'.join(object_name[5:].split('/')[1:])
+
+    bucket = s3.Bucket(bucket_name)
+
+    data.seek(0)
+
+    bucket.upload_fileobj(data, obj_name)
+
 
 def read_from_http(url, **kwargs):
     r = requests.get(url, stream=True)
@@ -79,13 +98,6 @@ def read_grib(file_path, message_no = 0, **kwargs):
 def save_grib(data, filepath, analysistime, forecasttime):
     assert(filepath[-5:] == 'grib2')
 
-    try:
-        os.makedirs(os.path.dirname(filepath))
-    except FileExistsError as e:
-        pass
-
-
-
     h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
     ecc.codes_set(h, "gridType", "lambert")
     ecc.codes_set(h, 'shapeOfTheEarth', 5)
@@ -117,9 +129,21 @@ def save_grib(data, filepath, analysistime, forecasttime):
 
     ecc.codes_set_values(h, data.flatten())
 
-    with open(filepath, 'wb') as fp:
-        ecc.codes_write(h, fp)
-        print(f'Wrote file {filepath}')
+    if filepath[0:5] == 's3://':
+        bio = BytesIO()
+        ecc.codes_write(h, bio)
+
+        write_to_s3(filepath, bio)
+    else:
+        try:
+            os.makedirs(os.path.dirname(filepath))
+        except FileExistsError as e:
+            pass
+
+        with open(filepath, 'wb') as fp:
+            ecc.codes_write(h, fp)
+
+    print(f'Wrote file {filepath}')
 
     ecc.codes_release(h)
 

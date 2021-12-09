@@ -205,7 +205,7 @@ def save_gribs(args, predictions):
 
         for d,t in zip(data, times):
             leadtime = int((t - analysistime).total_seconds()/60)
-            filename = '/tmp/{}/{}+{:03d}m.grib2'.format(args.label, analysistime.strftime('%Y%m%d%H%M%S'), leadtime)
+            filename = '{}/{}+{:03d}m.grib2'.format(args.directory, analysistime.strftime('%Y%m%d%H%M%S'), leadtime)
             save_grib(d, filename, analysistime, t)
 
 
