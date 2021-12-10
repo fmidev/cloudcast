@@ -35,10 +35,7 @@ def parse_command_line():
     parser.add_argument("--stop_date", action='store', type=str, required=False)
     parser.add_argument("--single_time", action='store', type=str, required=False)
     parser.add_argument("--label", action='store', nargs='+', type=str, required=True)
-    parser.add_argument("--save_grib", action='store_true', default=False)
-    parser.add_argument("--disable_plot", action='store_true', default=False)
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
-    parser.add_argument("--exclude_analysistime", action='store_true', default=False, help='exclude analysistime from data')
     parser.add_argument("--include_additional", action='store', nargs='+', default=[])
     parser.add_argument("--top", action='store', type=int, default=-1, help='out of all models select the top n that perform best')
 
@@ -225,43 +222,32 @@ def predict(args):
         ))
 
         datas = {}
-        if args.disable_plot:
-            datas['nwcsaf'] = dss['nwcsaf'].read_data(history)
-            initial = np.copy(datas['nwcsaf'][-1])
 
-        else:
-            for k in dss:
-                analysis_time = None
-                _leadtimes = leadtimes.copy()
-                if not args.exclude_analysistime:
-                    _leadtimes = [times[args.n_channels-1]] + leadtimes
-                if k in ['meps','mnwc']:
-                    analysis_time = times[args.n_channels].replace(minute=0)
-                    datas[k] = dss[k].read_data(_leadtimes, analysis_time)
-                elif k == 'nwcsaf':
-                    datas[k] = dss[k].read_data(times)
+        for k in dss:
+            analysis_time = None
+            _leadtimes = leadtimes.copy()
+            _leadtimes = [times[args.n_channels-1]] + leadtimes
+            if k in ['meps','mnwc']:
+                analysis_time = times[args.n_channels].replace(minute=0)
+                datas[k] = dss[k].read_data(_leadtimes, analysis_time)
+            elif k == 'nwcsaf':
+                datas[k] = dss[k].read_data(times)
 
-            initial = np.copy(datas['nwcsaf'][args.n_channels - 1])
+        initial = np.copy(datas['nwcsaf'][args.n_channels - 1])
 
-            if climatology:
-                clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
+        if climatology:
+            clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
 
         if np.isnan(datas['nwcsaf']).any():
             print("Seed contains missing values, skipping")
             continue
 
-        if args.disable_plot:
-            new_times = diff(history, predictions['gt']['time'])
-        else:
-            new_times = diff(times, predictions['gt']['time'])
+        new_times = diff(times, predictions['gt']['time'])
 
         for t in new_times:
             i = times.index(t)
             predictions['gt']['time'].append(t)
             predictions['gt']['data'].append(datas['nwcsaf'][i])
-
-#        if args.disable_plot is True:
-#            datas['nwcsaf'] = datas['nwcsaf'][args.n_channels:]
 
         datetime_weights = None
         lt = None
@@ -297,16 +283,12 @@ def predict(args):
                 assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
             cc = predict_from_series(m, hist, args.prediction_len)
 
-        if args.exclude_analysistime is False:
-            cc = np.concatenate((np.expand_dims(datas['nwcsaf'][args.n_channels-1], axis=0), cc), axis=0)
-            leadtimes = [history[-1]] + leadtimes
+        cc = np.concatenate((np.expand_dims(datas['nwcsaf'][args.n_channels-1], axis=0), cc), axis=0)
+        leadtimes = [history[-1]] + leadtimes
 
         assert(cc.shape[0] == len(leadtimes))
         predictions[args.label]['time'].append(leadtimes)
         predictions[args.label]['data'].append(cc)
-
-        if args.disable_plot:
-            continue
 
         for k in nwp:
             predictions[k]['time'].append(leadtimes)
@@ -316,10 +298,7 @@ def predict(args):
             predictions['climatology']['time'].append(leadtimes)
             predictions['climatology']['data'].append(clim)
 
-        future_data = datas['nwcsaf'][args.n_channels:]
-
-        if args.exclude_analysistime is False:
-            future_data = datas['nwcsaf'][args.n_channels-1:]
+        future_data = datas['nwcsaf'][args.n_channels-1:]
 
 
     return predictions
@@ -408,29 +387,10 @@ def plot_timeseries(args, predictions):
                 continue
             data.append(predictions[l]['data'][idx])
 
-        plot_stamps(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=(not args.exclude_analysistime))
+        plot_stamps(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=True)
     else:
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
-
-def save_gribs(args, predictions):
-
-    for label in args.label:
-        cc = predictions[label]
-        alltimes = cc['time']
-        alldata = cc['data']
-
-        for data,times in zip(alldata, alltimes):
-            assert(len(times) == len(data))
-
-            analysistime = times[0]
-
-            if args.exclude_analysistime:
-                analysistime = analysistime - PRED_STEP
-            for d,t in zip(data, times):
-                leadtime = int((t - analysistime).total_seconds()/60)
-                filename = '/tmp/{}/{}+{:03d}m.grib2'.format(label, analysistime.strftime('%Y%m%d%H%M%S'), leadtime)
-                save_grib(d, filename, analysistime, t)
 
 
 if __name__ == "__main__":
@@ -440,11 +400,7 @@ if __name__ == "__main__":
     predictions = predict_many(args)
 #    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
-    if args.save_grib:
-        save_gribs(args, predictions)
+    plot_timeseries(args, predictions)
+    produce_scores(args, predictions)
 
-    if not args.disable_plot:
-        plot_timeseries(args, predictions)
-        produce_scores(args, predictions)
-
-        plt.show()
+    plt.show()
