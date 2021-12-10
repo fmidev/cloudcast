@@ -103,12 +103,12 @@ def save_grib(data, filepath, analysistime, forecasttime):
     h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
     ecc.codes_set(h, "gridType", "lambert")
     ecc.codes_set(h, 'shapeOfTheEarth', 5)
-    ecc.codes_set(h, 'Nx', data.shape[0])
-    ecc.codes_set(h, 'Ny', data.shape[1])
-    ecc.codes_set(h, 'DxInMetres', 2372500 / data.shape[0])
-    ecc.codes_set(h, 'DyInMetres', 2672500 / data.shape[1])
+    ecc.codes_set(h, 'Nx', data.shape[1])
+    ecc.codes_set(h, 'Ny', data.shape[0])
+    ecc.codes_set(h, 'DxInMetres', 2370000 / (data.shape[1]-1))
+    ecc.codes_set(h, 'DyInMetres', 2670000 / (data.shape[0]-1))
     ecc.codes_set(h, 'jScansPositively', 1)
-    ecc.codes_set(h, "latitudeOfFirstGridPointInDegrees", 50.3196)
+    ecc.codes_set(h, "latitudeOfFirstGridPointInDegrees", 50.319616)
     ecc.codes_set(h, "longitudeOfFirstGridPointInDegrees", 0.27828)
     ecc.codes_set(h, "Latin1InDegrees", 63.3)
     ecc.codes_set(h, "Latin2InDegrees", 63.3)
@@ -128,7 +128,6 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "forecastTime", int((forecasttime - analysistime).total_seconds()/60))
 
     data = np.flipud(data)
-
     ecc.codes_set_values(h, data.flatten())
 
     if filepath[0:5] == 's3://':
