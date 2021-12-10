@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from fileutils import *
 from preprocess import *
 from generators import *
+from postprocess import *
 
 PRED_STEP = timedelta(minutes=15)
 
@@ -15,11 +16,18 @@ def parse_command_line():
         except ValueError as e:
             raise argparse.ArgumentTypeError(e)
 
+    def output_size(x):
+        try:
+            return tuple(map(int, x.split('x')))
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(e)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--analysis_time", action='store', type=valid_time, required=True)
     parser.add_argument("--label", action='store', type=str, required=True)
     parser.add_argument("--directory", action='store', default='/tmp')
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
+    parser.add_argument("--output_size", action='store', type=output_size, default=None, help='downsampled size hxw')
 
     args = parser.parse_args()
     args.onehot_conditioning = False
