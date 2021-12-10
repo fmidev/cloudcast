@@ -119,7 +119,7 @@ def predict(args):
 
     dss = DataSeries("nwcsaf", args.preprocess)
 
-    time_gen = TimeseriesGenerator(args.analysis_time, args.analysis_time, args.n_channels, args.prediction_len, step=PRED_STEP)
+    time_gen = iter(TimeseriesGenerator(args.analysis_time, args.analysis_time, args.n_channels, args.prediction_len, step=PRED_STEP))
     environment_weights = None
 
     predictions = { 'time' : [], 'data' : [] }
@@ -128,69 +128,72 @@ def predict(args):
         b = set(b)
         return [i for i in a if i not in b]
 
-    for times in time_gen:
-        history = times[:args.n_channels]
-        leadtimes = times[args.n_channels:]
+    times = next(time_gen)
+    history = times[:args.n_channels]
+    leadtimes = times[args.n_channels:]
 
-        print("Using history {} to predict {}".format(
-            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), history)),
-            list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
-        ))
+    print("Using history {} to predict {}".format(
+        list(map(lambda x: '{}'.format(x.strftime('%H:%M')), history)),
+        list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
+    ))
 
-        datas = dss.read_data(history)
-        initial = np.copy(datas[-1])
+    datas = dss.read_data(history)
 
-        if np.isnan(datas.any()):
-            print("Seed contains missing values, skipping")
-            continue
+    if np.isnan(datas.any()):
+        print("Seed contains missing values, aborting")
+        return
 
-        datetime_weights = None
-        lt = None
+    datetime_weights = None
+    lt = None
 
-        if args.include_datetime:
-            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), history))
+    if args.include_datetime:
+        datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), history))
 
-        if args.include_environment_data and environment_weights is None:
-            environment_weights = create_environment_data(args.preprocess, args.model == 'convlstm')
+    if args.include_environment_data and environment_weights is None:
+        environment_weights = create_environment_data(args.preprocess, args.model == 'convlstm')
 
-        if args.leadtime_conditioning:
-            assert(args.prediction_len <= args.leadtime_conditioning)
-            lt = []
-            for i in range(args.prediction_len):
-                if args.onehot_conditioning is False:
-                    lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
-                else:
-                    lt.append(create_onehot_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
-
+    if args.leadtime_conditioning:
+        assert(args.prediction_len <= args.leadtime_conditioning)
+        lt = []
+        for i in range(args.prediction_len):
             if args.onehot_conditioning is False:
-                lt = np.squeeze(np.asarray(lt), axis=1)
+                lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+            else:
+                lt.append(create_onehot_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
 
-        if args.model == "unet":
-            cc = infer_many(m, datas[:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt, onehot_conditioning=args.onehot_conditioning)
-        else:
-            hist = datas[:args.n_channels]
+        if args.onehot_conditioning is False:
+            lt = np.squeeze(np.asarray(lt), axis=1)
 
-            if args.include_environment_data:
-                dt0 = np.tile(environment_weights[0], 6)
-                dt0 = np.swapaxes(np.expand_dims(dt0, axis=0), 0, 3)
-                dt1 = np.tile(environment_weights[1], 6)
-                dt1 = np.swapaxes(np.expand_dims(dt1, axis=0), 0, 3)
-                hist = np.concatenate((hist, dt0, dt1), axis=-1)
-                assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
-            cc = predict_from_series(m, hist, args.prediction_len)
+    if args.model == "unet":
+        cc = infer_many(m, datas[:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt, onehot_conditioning=args.onehot_conditioning)
+    else:
+        hist = datas[:args.n_channels]
 
-        cc = np.concatenate((np.expand_dims(datas[args.n_channels-1], axis=0), cc), axis=0)
-        leadtimes = [history[-1]] + leadtimes
+        if args.include_environment_data:
+            dt0 = np.tile(environment_weights[0], 6)
+            dt0 = np.swapaxes(np.expand_dims(dt0, axis=0), 0, 3)
+            dt1 = np.tile(environment_weights[1], 6)
+            dt1 = np.swapaxes(np.expand_dims(dt1, axis=0), 0, 3)
+            hist = np.concatenate((hist, dt0, dt1), axis=-1)
+            assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
+        cc = predict_from_series(m, hist, args.prediction_len)
 
-        assert(cc.shape[0] == len(leadtimes))
-        predictions['time'].append(leadtimes)
-        predictions['data'].append(cc)
+    cc = np.concatenate((np.expand_dims(datas[args.n_channels-1], axis=0), cc), axis=0)
+    leadtimes = [history[-1]] + leadtimes
 
+    if args.output_size is not None:
+        ccn = []
+        for i,_cc in enumerate(cc):
+            _ccn = downscale(np.squeeze(_cc), args.output_size)
+            _ccn = np.expand_dims(_ccn, axis=-1)
+            ccn.append(_ccn)
+        cc = np.asarray(ccn)
+
+    assert(cc.shape[0] == len(leadtimes))
+    predictions['time'].append(leadtimes)
+    predictions['data'].append(cc)
 
     return predictions
-
-
-
 
 
 def save_gribs(args, predictions):
