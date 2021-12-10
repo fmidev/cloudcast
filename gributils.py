@@ -98,6 +98,8 @@ def read_grib(file_path, message_no = 0, **kwargs):
 def save_grib(data, filepath, analysistime, forecasttime):
     assert(filepath[-5:] == 'grib2')
 
+    number = 164 if filepath.find('unet') != -1 else 192
+
     h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
     ecc.codes_set(h, "gridType", "lambert")
     ecc.codes_set(h, 'shapeOfTheEarth', 5)
@@ -116,10 +118,10 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "dataDate", int(analysistime.strftime('%Y%m%d')))
     ecc.codes_set(h, "dataTime", int(analysistime.strftime('%H%M')))
     ecc.codes_set(h, "centre", 86)
-    ecc.codes_set(h, "generatingProcessIdentifier", 255)
+    ecc.codes_set(h, "generatingProcessIdentifier", 251)
     ecc.codes_set(h, "discipline", 192)
     ecc.codes_set(h, "parameterCategory", 128)
-    ecc.codes_set(h, "parameterNumber", 164)
+    ecc.codes_set(h, "parameterNumber", number)
     ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
     ecc.codes_set(h, "packingType", "grid_ccsds")
     ecc.codes_set(h, "indicatorOfUnitOfTimeRange", 0)
