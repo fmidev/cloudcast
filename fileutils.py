@@ -4,10 +4,8 @@ import sys
 import datetime
 import os
 import requests
-import boto3
-from botocore import UNSIGNED
-from botocore.config import Config
 from gributils import *
+from s3utils import *
 from osgeo import gdal,osr
 
 INPUT_DIR = os.environ['CLOUDCAST_INPUT_DIR']
@@ -20,28 +18,6 @@ def get_model_name(args):
                                 args.include_environment_data,
                                 args.leadtime_conditioning,
                                 args.preprocess)
-
-
-def read_filenames_from_s3(start_time, stop_time, producer, param="effective-cloudiness"):
-    print("Getting object listing from s3")
-    s3 = boto3.client('s3', endpoint_url='https://lake.fmi.fi', use_ssl=True, config=Config(signature_version=UNSIGNED))
-    paginator = s3.get_paginator('list_objects_v2')
-    pages = paginator.paginate(Bucket='cc_archive', Prefix=producer + '/')
-
-    start_date = int(start_time.strftime("%Y%m%d"))
-    stop_date = int(stop_time.strftime("%Y%m%d"))
-    filenames = []
-
-    for page in pages:
-        for item in page['Contents']:
-            f = item['Key']
-
-            datetime = int(f.split('/')[-1][0:8])
-            if f.find(param) != -1 and datetime >= start_date and datetime < stop_date:
-                filenames.append('https://lake.fmi.fi/cc_archive/{}'.format(f))
-
-    print("Filter matched {} files".format(len(filenames)))
-    return filenames
 
 
 def read_filenames(start_time, stop_time, producer='nwcsaf', param="effective-cloudiness"):

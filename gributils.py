@@ -5,27 +5,9 @@ import cv2
 import os
 import requests
 import sys
-import boto3
-from io import BytesIO
+from s3utils import *
 
 DEFAULT_SIZE=(1069, 949, 1)
-
-def write_to_s3(object_name, data, **kwargs):
-    s3 = boto3.resource('s3',
-      endpoint_url = 'https://{}'.format(os.environ['S3_HOSTNAME']),
-      aws_access_key_id = os.environ['S3_ACCESS_KEY_ID'],
-      aws_secret_access_key = os.environ['S3_SECRET_ACCESS_KEY']
-    )
-
-    bucket_name = object_name[5:].split('/')[0]
-    obj_name = '/'.join(object_name[5:].split('/')[1:])
-
-    bucket = s3.Bucket(bucket_name)
-
-    data.seek(0)
-
-    bucket.upload_fileobj(data, obj_name)
-
 
 def read_from_http(url, **kwargs):
     r = requests.get(url, stream=True)
