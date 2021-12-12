@@ -4,6 +4,8 @@ import matplotlib.dates as mdates
 from mpl_toolkits.basemap import Basemap
 from datetime import timedelta
 from osgeo import osr
+from s3utils import *
+from io import BytesIO
 
 FIGURE=0
 
@@ -11,6 +13,20 @@ def figure():
     global FIGURE
     FIGURE += 1
     return FIGURE
+
+
+def savefig(plot_dir):
+    fname = '{}/figure{}.png'.format(plot_dir, FIGURE)
+
+    if fname[0:5] == 's3://':
+        img_data = BytesIO()
+        plt.savefig(img_data)
+        img_data.seek(0)
+        write_to_s3(fname, img_data)
+    else:
+        plt.savefig(fname)
+
+    print(f'Saved {fname}')
 
 
 def reduce_label(label):
@@ -70,7 +86,7 @@ def latlonraster(img_size):
     return np.asarray(lon), np.asarray(lat)
 
 
-def plot_on_map(data, title=None):
+def plot_on_map(data, title=None, plot_dir=None):
     plt.figure(figure(), figsize=(10,8))
     m = Basemap(llcrnrlon=-0.5,llcrnrlat=49.,urcrnrlon=57.5,urcrnrlat=72.3,
             ellps='WGS84',resolution='l',area_thresh=1000.,projection='lcc',\
@@ -89,6 +105,8 @@ def plot_on_map(data, title=None):
     plt.colorbar(cs,orientation='vertical', shrink=0.5)
     plt.title(title)
 
+    if plot_dir is not None:
+        savefig(plot_dir)
 
 def plot_convlstm(ground_truth, predictions, mnwc):
     plt.figure(figure())
@@ -110,10 +128,11 @@ def plot_convlstm(ground_truth, predictions, mnwc):
         ax.set_title(f'mnwc frame {idx}')
         ax.axis('off')
 
+
     plt.show()
 
 
-def plot_normal(x, y, y2, labels, title=None, xlabels=None):
+def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
     assert(len(labels) == len(y))
     fig = plt.figure(figure(), figsize=(12,7))
     ax1 = plt.axes()
@@ -144,7 +163,10 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None):
     plt.gcf().autofmt_xdate()
     ax2.legend()
 
-def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None):
+    if plot_dir is not None:
+        savefig(plot_dir)
+
+def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None, start_from_zero=False):
     assert(len(data) == len(labels))
     fig = plt.figure(figure(), figsize=(12,7))
     ax = plt.axes()
@@ -157,8 +179,10 @@ def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None):
 
     xreal = np.asarray(range(len(data[0])))
 
+    offset = 0 if start_from_zero else 1
+
 #    if xvalues is None:
-    xlabels = list(map(lambda x: step * x, range(1, 1+len(data[0]))))
+    xlabels = list(map(lambda x: step * x, range(offset, offset+len(data[0]))))
     xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
 #    else:
 #        xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
@@ -177,8 +201,10 @@ def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None):
 
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
+    if plot_dir is not None:
+        savefig(plot_dir)
 
-def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=False):
+def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=False, plot_dir=None):
     assert(len(datas) == len(labels))
 
     nrows = len(datas)
@@ -219,8 +245,11 @@ def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=Fa
 
     fig.set_facecolor('w')
 
+    if plot_dir is not None:
+        savefig(plot_dir)
 
-def plot_histogram(datas, labels):
+
+def plot_histogram(datas, labels, plot_dir=None):
     assert(len(datas) == len(labels))
     n_bins = 50
 
@@ -231,8 +260,10 @@ def plot_histogram(datas, labels):
         axs[i].hist(np.asarray(data).flatten(), bins=n_bins, density=True)
         axs[i].set_title(reduce_label(labels[i]))
 
+    if plot_dir is not None:
+        savefig(plot_dir)
 
-def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v'], title='Performance diagram'):
+def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v'], title='Performance diagram', plot_dir=None):
 
     plt.figure(figure(), figsize=(9,8))
     legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
@@ -265,6 +296,8 @@ def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], m
     plt.text(0.48,0.6,"Frequency Bias",fontdict=dict(fontsize=14, rotation=45))
     plt.legend()
 
+    if plot_dir is not None:
+        savefig(plot_dir)
 
 
 def plot_hist(hist, model_dir = None, show=False, save_path=None, name_files=False):

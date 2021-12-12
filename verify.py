@@ -38,6 +38,7 @@ def parse_command_line():
     parser.add_argument("--prediction_len", action='store', type=int, default=12)
     parser.add_argument("--include_additional", action='store', nargs='+', default=[])
     parser.add_argument("--top", action='store', type=int, default=-1, help='out of all models select the top n that perform best')
+    parser.add_argument("--plot_dir", action='store', type=str, default=None, help='save plots to directory of choice')
 
     args = parser.parse_args()
 
@@ -233,8 +234,6 @@ def predict(args):
             elif k == 'nwcsaf':
                 datas[k] = dss[k].read_data(times)
 
-        initial = np.copy(datas['nwcsaf'][args.n_channels - 1])
-
         if climatology:
             clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
 
@@ -283,7 +282,8 @@ def predict(args):
                 assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
             cc = predict_from_series(m, hist, args.prediction_len)
 
-        cc = np.concatenate((np.expand_dims(datas['nwcsaf'][args.n_channels-1], axis=0), cc), axis=0)
+        initial = np.expand_dims(np.copy(datas['nwcsaf'][args.n_channels-1]), axis=0)
+        cc = np.concatenate((initial, cc), axis=0)
         leadtimes = [history[-1]] + leadtimes
 
         assert(cc.shape[0] == len(leadtimes))
@@ -297,8 +297,6 @@ def predict(args):
         if climatology:
             predictions['climatology']['time'].append(leadtimes)
             predictions['climatology']['data'].append(clim)
-
-        future_data = datas['nwcsaf'][args.n_channels-1:]
 
 
     return predictions
@@ -387,7 +385,7 @@ def plot_timeseries(args, predictions):
                 continue
             data.append(predictions[l]['data'][idx])
 
-        plot_stamps(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=True)
+        plot_stamps(data, labels, title='Prediction for t0={}'.format(times[0]), initial_data=None, start_from_zero=True, plot_dir=args.plot_dir)
     else:
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
@@ -403,4 +401,5 @@ if __name__ == "__main__":
     plot_timeseries(args, predictions)
     produce_scores(args, predictions)
 
-    plt.show()
+    if args.plot_dir is None:
+        plt.show()
