@@ -1,7 +1,7 @@
 import boto3
+import os
 from botocore import UNSIGNED
 from botocore.config import Config
-from io import BytesIO
 
 
 def read_filenames_from_s3(start_time, stop_time, producer, param="effective-cloudiness"):
