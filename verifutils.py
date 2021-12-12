@@ -7,13 +7,13 @@ from plotutils import *
 CATEGORIES =  ['cloudy', 'partly-cloudy', 'clear']
 
 def produce_scores(args, predictions):
-    mae(predictions)
-    categorical_scores(predictions)
-    histogram(predictions)
+    mae(args, predictions)
+    categorical_scores(args, predictions)
+    histogram(args, predictions)
     ssim(args, predictions)
 
 
-def histogram(predictions):
+def histogram(args, predictions):
     datas=[]
     labels=[]
 
@@ -22,14 +22,33 @@ def histogram(predictions):
         labels.append(l)
 
     datas = np.asarray(datas)
-    plot_histogram(datas, labels)
+    plot_histogram(datas, labels, plot_dir=args.plot_dir)
 
 
-def mae(predictions):
+def mae(args, predictions):
     ae, times = ae2d(predictions)
-    plot_mae_per_leadtime(ae)
-    plot_mae2d(ae, times)
-    plot_mae_timeseries(ae, times)
+    plot_mae_per_leadtime(args, ae)
+
+    ae, times = remove_initial_ae(ae, times)
+    plot_mae2d(args, ae, times)
+    plot_mae_timeseries(args, ae, times)
+
+
+def remove_initial_ae(ae, times):
+    newae={}
+    for l in ae:
+        if l == 'persistence':
+            continue
+        newae[l] = []
+        for i,pred_data in enumerate(ae[l]):
+            newae[l].append(np.delete(pred_data, 0, axis=0))
+
+        newae[l] = np.asarray(newae[l])
+
+    for i,t in enumerate(times):
+        times[i] = t[1:]
+
+    return newae,times
 
 # absolute error 2d
 def ae2d(predictions):
@@ -44,15 +63,10 @@ def ae2d(predictions):
 
         ret[l] = []
 
-        for pred_times in predictions[l]['time']:
-            pred_times = pred_times[1:] # skip analysis time
-
+        for pred_times,pred_data in zip(predictions[l]['time'], predictions[l]['data']):
             a = gtt.index(pred_times[0])
             b = gtt.index(pred_times[-1])
-
             gt_data = np.asarray(predictions['gt']['data'][a:b+1])
-            pred_data = np.asarray(predictions[l]['data'][0])
-            pred_data = pred_data[1:]
 
             assert(gt_data.shape == pred_data.shape)
 
@@ -66,22 +80,40 @@ def ae2d(predictions):
 
         first = False
 
+    # create persistence
+    ret['persistence'] = []
+    for i,pred_times in enumerate(times):
+        a = gtt.index(pred_times[0])
+        b = gtt.index(pred_times[-1])
+        gt_data = np.asarray(predictions['gt']['data'][a:b+1])
+        initial = np.expand_dims(gt_data[0], axis=0)
+        initial = np.repeat(initial, len(pred_times), axis=0)
+
+        assert(gt_data.shape == initial.shape)
+
+        mae = np.abs(gt_data - initial)
+        ret['persistence'].append(mae)
+
+    ret['persistence'] = np.asarray(ret['persistence'])
+
     return ret, times
 
 
-def plot_mae_per_leadtime(ae):
+def plot_mae_per_leadtime(args, ae):
     maelts = []
     for l in ae:
         newae = np.moveaxis(ae[l], 0, 1)
         maelt = []
+
         for i,lt in enumerate(newae):
             maelt.append(np.mean(lt))
+
         maelts.append(np.asarray(maelt))
 
-    plot_linegraph(maelts, list(ae.keys()), title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae')
+    plot_linegraph(maelts, list(ae.keys()), title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae', plot_dir=args.plot_dir, start_from_zero=True)
 
 
-def plot_mae2d(ae, times):
+def plot_mae2d(args, ae, times):
     # dimensions of mae2d:
     # (9, 4, 128, 128, 1)
     # (forecasts, leadtimes, x, y, channels)
@@ -94,10 +126,10 @@ def plot_mae2d(ae, times):
         # calculate average 2d field
         img_size = ae[l][0].shape[1:3]
         mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0)
-        plot_on_map(np.squeeze(mae), title=titlel)
+        plot_on_map(np.squeeze(mae), title=titlel, plot_dir=args.plot_dir)
 
 
-def plot_mae_timeseries(ae, times):
+def plot_mae_timeseries(args, ae, times):
 
     def process_data(ae_timeseries):
         counts=[]
@@ -137,7 +169,7 @@ def plot_mae_timeseries(ae, times):
 
         xlabels = list(map(lambda x: x.strftime('%H:%M'), mx))
 
-        plot_normal(mx, [my], mcounts, [l],title='MAE between {}..{}\n{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'), l), xlabels=xlabels)
+        plot_normal(mx, [my], mcounts, [l],title='MAE between {}..{}\n{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'), l), xlabels=xlabels, plot_dir=args.plot_dir)
 
 
 def calculate_categorical_score(category, cm, score):
@@ -166,7 +198,7 @@ def categorize(arr):
     return np.digitize(arr, [0.15, 0.85])
 
 
-def categorical_scores(predictions):
+def categorical_scores(args, predictions):
     gtd = predictions['gt']['data']
     gtt = predictions['gt']['time']
 
@@ -185,15 +217,13 @@ def categorical_scores(predictions):
 
             preds=[]
             gts=[]
-            for pred_times in predictions[l]['time']:
-#            pred_times = predictions[l]['time'][0]
+            for pred_times,pred_data in zip(predictions[l]['time'],predictions[l]['data']):
                 a = gtt.index(pred_times[0])
                 b = gtt.index(pred_times[-1])
 
                 gt_data = gtd[a:b+1]
 
-                pred_data = np.asarray(predictions[l]['data'][0]).copy()
-                pred_data = categorize(pred_data)
+                pred_data = categorize(pred_data.copy())
 
                 assert(gt_data.shape == pred_data.shape)
 
@@ -215,7 +245,7 @@ def categorical_scores(predictions):
             f = calculate_categorical_score(c, cm[l], 'FAR')
             catscores.append((p, f))
 
-        plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions\n{}'.format(len(predictions[keys[0]]['data']), l))
+        plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions\n{}'.format(len(predictions[keys[0]]['data']), l), plot_dir=args.plot_dir)
 
 
 def ssim(args, predictions):
@@ -257,5 +287,5 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0)
 
-    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(len(predictions[list(predictions.keys())[0]]['data'])), ylabel='ssim')
+    plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(len(predictions[list(predictions.keys())[0]]['data'])), ylabel='ssim', plot_dir=args.plot_dir)
 
