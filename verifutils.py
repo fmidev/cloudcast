@@ -11,9 +11,10 @@ def produce_scores(args, predictions):
     categorical_scores(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
-
+    print("All scores produced")
 
 def histogram(args, predictions):
+    print("Plotting histogram")
     datas=[]
     labels=[]
 
@@ -43,7 +44,7 @@ def remove_initial_ae(ae, times):
         for i,pred_data in enumerate(ae[l]):
             newae[l].append(np.delete(pred_data, 0, axis=0))
 
-        newae[l] = np.asarray(newae[l])
+        newae[l] = np.asarray(newae[l], dtype=np.float32)
 
     for i,t in enumerate(times):
         times[i] = t[1:]
@@ -52,6 +53,7 @@ def remove_initial_ae(ae, times):
 
 # absolute error 2d
 def ae2d(predictions):
+    print("Producing error fields")
     ret = {}
     gtt = predictions['gt']['time']
     times = []
@@ -70,13 +72,15 @@ def ae2d(predictions):
 
             assert(gt_data.shape == pred_data.shape)
 
-            mae = np.abs(gt_data - pred_data)
+            mae = np.abs(gt_data - pred_data).astype(np.float32)
             ret[l].append(mae)
 
             if first:
                 times.append(pred_times)
 
-        ret[l] = np.asarray(ret[l])
+        ret[l] = np.asarray(ret[l], dtype=np.float32)
+
+        assert(len(ret[l]) == len(times))
 
         first = False
 
@@ -91,7 +95,7 @@ def ae2d(predictions):
 
         assert(gt_data.shape == initial.shape)
 
-        mae = np.abs(gt_data - initial)
+        mae = np.abs(gt_data - initial).astype(np.float32)
         ret['persistence'].append(mae)
 
     ret['persistence'] = np.asarray(ret['persistence'])
@@ -100,15 +104,17 @@ def ae2d(predictions):
 
 
 def plot_mae_per_leadtime(args, ae):
+    print("Plotting mae per leadtime")
+
     maelts = []
     for l in ae:
         newae = np.moveaxis(ae[l], 0, 1)
         maelt = []
 
         for i,lt in enumerate(newae):
-            maelt.append(np.mean(lt))
+            maelt.append(np.mean(lt).astype(np.float32))
 
-        maelts.append(np.asarray(maelt))
+        maelts.append(np.asarray(maelt, dtype=np.float32))
 
     plot_linegraph(maelts, list(ae.keys()), title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae', plot_dir=args.plot_dir, start_from_zero=True)
 
@@ -118,6 +124,7 @@ def plot_mae2d(args, ae, times):
     # (9, 4, 128, 128, 1)
     # (forecasts, leadtimes, x, y, channels)
     # merge 0, 1 so that all mae2d fields are merged to one dimension
+    print("Plotting mae on map")
 
     title = 'MAE between {}..{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'))
 
@@ -125,47 +132,64 @@ def plot_mae2d(args, ae, times):
         titlel = '{}\n{}'.format(title, l)
         # calculate average 2d field
         img_size = ae[l][0].shape[1:3]
-        mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0)
+        mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0).astype(np.float32)
         plot_on_map(np.squeeze(mae), title=titlel, plot_dir=args.plot_dir)
 
 
 def plot_mae_timeseries(args, ae, times):
+    print("Plotting mae timeseries")
 
-    def process_data(ae_timeseries):
+    def process_data(ae, times):
+        maets={}
+
+        # produce a dict where each leadtime is a key and value is a list
+        # containing all errors for that leadtime (from different forecasts)
+
+        for i,aes in enumerate(ae):
+            assert(len(times[i]) == len(aes))
+            for j, _ae in enumerate(aes):
+                t = times[i][j]
+                try:
+                    maets[t].append(_ae)
+                except KeyError as e:
+                    maets[t] = [ _ae ]
+
+        # create x,y,count lists where x = leadtime, y = mean mae for that leadtime,
+        # count is number of forecasts for that leadtime
+
         counts=[]
         x=[]
         y=[]
-        for t in ae_timeseries.keys():
-            counts.append(len(ae_timeseries[t]))
-            y.append(np.average(ae_timeseries[t]))
+        for t in maets.keys():
+            counts.append(len(maets[t]))
+            y.append(np.average(maets[t]).astype(np.float32))
             x.append(t)
         return x, y, counts
 
-    def aggregate_to_max_hour(ae_timeseries):
-        x, y, counts = process_data(ae_timeseries)
+    def aggregate_to_max_hour(ae_timeseries, times):
+        x, y, counts = process_data(ae_timeseries, times)
+
         mcounts=[]
         mx=[]
         my=[]
         for i,t in enumerate(x):
             if t.strftime("%M") != "00":
                 continue
-            mx.append(t)
-            my.append(np.max(y[i-3:i]))
-            mcounts.append(np.sum(counts[i-3:i]))
+            try:
+                s = np.argmax(i-3, 0)
+                my.append(np.max(y[s:i]).astype(np.float32))
+                mcounts.append(np.sum(counts[s:i]).astype(np.int8))
+                mx.append(t)
+            except (ValueError, AttributeError) as e:
+                print(e)
+                pass
+
+        assert(len(mx) == len(my))
         return mx, my, mcounts
 
     for l in ae.keys():
-        maets={}
-        for i,aes in enumerate(ae[l]):
-            _times = times[i]
-            for j, _ae in enumerate(aes):
-                t = _times[j]
-                try:
-                    maets[t].append(_ae)
-                except KeyError as e:
-                    maets[t] = [ _ae ]
-
-        mx, my, mcounts = aggregate_to_max_hour(maets)
+        assert(len(times) == len(ae[l]))
+        mx, my, mcounts = aggregate_to_max_hour(ae[l], times)
 
         xlabels = list(map(lambda x: x.strftime('%H:%M'), mx))
 
@@ -173,7 +197,6 @@ def plot_mae_timeseries(args, ae, times):
 
 
 def calculate_categorical_score(category, cm, score):
-
     def calc_score(TN, FP, FN, TP, score):
         if score == 'POD':
             return TP / (TP + FN)
@@ -195,10 +218,12 @@ def categorize(arr):
     # cloudy = 2 when cloudiness > 85%
     # partly = 1 when 15% >= cloudiness >= 85%
     # clear = 0  when cloudiness < 15%
-    return np.digitize(arr, [0.15, 0.85])
+    return np.digitize(arr, [0.15, 0.85]).astype(np.int8)
 
 
 def categorical_scores(args, predictions):
+    print("Plotting categorical scores")
+
     gtd = predictions['gt']['data']
     gtt = predictions['gt']['time']
 
@@ -249,6 +274,7 @@ def categorical_scores(args, predictions):
 
 
 def ssim(args, predictions):
+    print("Plotting SSIM")
 
     ssims = []
     for l in predictions.keys():
@@ -266,12 +292,12 @@ def ssim(args, predictions):
                 for cur in gtdata[1:]:
                     prev = gtdata[i]
                     i += 1
-                    ssims[-1][-1].append(structural_similarity(np.squeeze(prev), np.squeeze(cur), data_range=1.0))
+                    ssims[-1][-1].append(structural_similarity(np.squeeze(prev), np.squeeze(cur), data_range=1.0).astype(np.float32))
 
                 start += args.prediction_len
                 stop += args.prediction_len
                 ssims[-1][-1] = np.asarray(ssims[-1][-1])
-            ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0)
+            ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
             continue
 
 
@@ -281,11 +307,11 @@ def ssim(args, predictions):
             for cur in pred_data[1:]:
                 prev = pred_data[i]
                 i += 1
-                ssims[-1][-1].append(structural_similarity(np.squeeze(prev), np.squeeze(cur), data_range=1.0))
+                ssims[-1][-1].append(structural_similarity(np.squeeze(prev), np.squeeze(cur), data_range=1.0).astype(np.float32))
 
             ssims[-1][-1] = np.asarray(ssims[-1][-1])
 
-        ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0)
+        ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
 
     plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(len(predictions[list(predictions.keys())[0]]['data'])), ylabel='ssim', plot_dir=args.plot_dir)
 

@@ -1,7 +1,6 @@
 from tensorflow.keras.models import load_model
 from model import *
 import glob
-import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
@@ -128,8 +127,9 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
 def infer(m, img):
     img = np.expand_dims(img, axis=0)
-    prediction = m.predict(img)
-    pred = np.squeeze(prediction, axis=0)
+    pred = m.predict(img)
+    pred = np.squeeze(pred, axis=0)
+
     return pred
 
 
@@ -178,6 +178,7 @@ def predict(args):
     try:
         dss = DSS[args.preprocess]
     except KeyError as e:
+        print("NEW dss for {}".format(args.preprocess))
         DSS[args.preprocess] = {}
         dss = DSS[args.preprocess]
 
@@ -298,7 +299,11 @@ def predict(args):
             predictions['climatology']['time'].append(leadtimes)
             predictions['climatology']['data'].append(clim)
 
+    if len(predictions[args.label]['data']) == 0:
+        print("Zero valid predictions for {}".format(args.label))
+        sys.exit(1)
 
+    assert(len(predictions[args.label]['data']) == len(predictions[args.label]['time']))
     return predictions
 
 
@@ -390,12 +395,51 @@ def plot_timeseries(args, predictions):
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
 
+def intersection(labels, predictions):
+    # take intersection of predicted data so that we get same amount of forecasts
+    # for same times
+    # sometimes this might differ if for example history is missing and one model
+    # needs more history than another
+
+    def _intersection(lst1, lst2):
+        lst3 = [value for value in lst1 if value in lst2]
+        return lst3
+
+    utimes = None
+
+    for i in range(len(labels)-1):
+        if utimes == None:
+            utimes = _intersection(predictions[labels[i]]['time'], predictions[labels[i+1]]['time'])
+        else:
+            utimes = _intersection(utimes, predictions[labels[i+1]]['time'])
+
+    ret = {}
+
+    for label in labels:
+        ret[label] = { 'time' : utimes, 'data' : [] }
+
+        for utime in utimes:
+            idx = predictions[label]['time'].index(utime)
+            ret[label]['data'].append(predictions[label]['data'][idx])
+
+    # copy other
+    for label in predictions:
+        if label not in labels:
+            ret[label] = predictions[label]
+
+    return ret
+
 
 if __name__ == "__main__":
     args = parse_command_line()
 
     args.label = normalize_label(args.label)
     predictions = predict_many(args)
+    predictions = intersection(args.label, predictions)
+
+    global DSS
+    DSS = None
+
 #    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
     plot_timeseries(args, predictions)
