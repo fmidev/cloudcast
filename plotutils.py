@@ -213,7 +213,6 @@ def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=Fa
         nrows += 1
         labels = ['initial'] + labels
 
-    print(f'nrows={nrows},ncols={ncols}')
     fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False, num=figure())
     fig.suptitle(title)
     for i, bigax in enumerate(bigaxes.flatten(), start=0):
