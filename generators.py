@@ -214,9 +214,6 @@ class DataSeries:
         self.single_analysis_time = single_analysis_time
         self.param = param
 
-    def read_data():
-        return np.asarray(list(self.data_series.values()))
-
     def read_data(self, times, analysis_time=None):
         datakeys = self.data_series.keys()
 
