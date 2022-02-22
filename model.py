@@ -10,6 +10,8 @@ from tensorflow import keras
 from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose, Dropout, MaxPooling2D, UpSampling2D, Cropping2D, Concatenate, ConvLSTM2D, BatchNormalization, Conv3D, Activation
 from tensorflow.keras.models import Model
 
+from fss import make_FSS_loss
+from ssim import make_SSIM_loss
 
 def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='adam', categories=None):
 
@@ -53,8 +55,15 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
 
     outputs = Conv2D(1, 1, padding='same', activation='sigmoid')(d4)
 
+    metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)]
+
+    if loss_function == 'ssim':
+        loss_function = make_SSIM_loss()
+    elif loss_function == 'fss':
+        loss_function = make_FSS_loss(10, False)
+
     model = Model(inputs, outputs)
-    model.compile(optimizer = optimizer, loss = loss_function, metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy'])
+    model.compile(optimizer = optimizer, loss = loss_function, metrics = metrics)
 
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
@@ -107,9 +116,3 @@ def convlstm(pretrained_weights=None, input_size=(256,256,1), loss_function='bin
         model.load_weights(pretrained_weights)
 
     return model
-
-
-
-# ssim loss function
-def ssim_loss(y_true, y_pred):
-  return tf.reduce_mean(tf.image.ssim(y_true, y_pred, 2.0))
