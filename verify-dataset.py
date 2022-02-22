@@ -4,6 +4,7 @@ from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import sys
+from plotutils import *
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
@@ -11,34 +12,15 @@ def parse_command_line():
 
     args = parser.parse_args()
 
-#    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-#    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
-
     return args
 
-
-def verify(args):
-    dataset = np.load(args.filename)
-
-    print(dataset.files)
-    datas = dataset['arr_0']
-    times = dataset['arr_1']
-
-    is_forecast = (len(datas.shape) == 5)
-    if not is_forecast:
-        assert(datas.shape[0] == times.shape[0])
-        print("datas and times length match: {}".format(datas.shape[0]))
-    else:
-        assert(datas.shape[0:2] == times.shape[0:2])
-        print("datas and times length match: {}".format(datas.shape[0:2]))
-       
-    print("data shape: {}".format(datas.shape))
+def print_summary_statistics(data):
     static=0
     miss=0
     allmax=-1e38
     allmin=1e38
     
-    for i,arr in enumerate(datas):
+    for i,arr in enumerate(data):
         min_ = np.min(arr)
         max_ = np.max(arr)
 
@@ -57,20 +39,73 @@ def verify(args):
             print('ERR: time {} min value: {}'.format(times[i], min_))
             sys.exit(1)
 
-    print(f"found {miss} missing, {static} static grids out of {datas.shape[0]}")
-    print(f"max: {allmax}, min: {allmin}, mean: {np.mean(datas)}")
+    print(f"found {miss} missing, {static} static grids out of {data.shape[0]}")
+    print(f"max: {allmax}, min: {allmin}, mean: {np.mean(data)}")
 
-    idx = np.random.randint(datas.shape[0])
+
+def show_example(data, times):
+    idx = np.random.randint(data.shape[0])
+    is_forecast = (len(data.shape) == 5)
+
+    plt.figure(1)
 
     if is_forecast:
-        idx2 = np.random.randint(datas[idx].shape[0])
+        idx2 = np.random.randint(data[idx].shape[0])
         print(f'showing random grid from location {idx},{idx2} (time: {times[idx][idx2]})')
-        plt.imshow(np.squeeze(datas[idx][idx2]))
+        plt.imshow(np.squeeze(data[idx][idx2]))
 
     else:
         print(f'showing random grid from location {idx} (time: {times[idx]})')
-        plt.imshow(np.squeeze(datas[idx]))
+        plt.imshow(np.squeeze(data[idx]))
 
+
+def show_histogram(data):
+
+    hists = []
+
+    hists.append(np.average(data, axis=(1,2,3)))
+    #hists.append(np.quantile(data, q=0.5, axis=(1,2,3)))
+    hists.append(np.var(data, axis=(1,2,3)))
+
+    plot_histogram(hists, ['mean', 'variance'])
+
+    #plot_histogram(hists, ['mean', 'median', 'variance'])
+
+def find_low_mean_and_variance(data, times, mean_min, mean_max, variance_min, variance_max):
+    means = np.average(data, axis=(1,2,3))
+    variances = np.var(data, axis=(1,2,3))
+    mean_low = np.where(means < mean_min)
+    mean_high = np.where(means > mean_max)
+    var_low = np.where(variances < variance_min)
+    var_high = np.where(variances > variance_max)
+
+    print('mean_low',mean_low,times[mean_low])
+    print('mean_high',mean_high)
+    print('var_low',var_low)
+    print('var_high',var_high)
+
+
+def verify(args):
+    dataset = np.load(args.filename)
+
+    print(dataset.files)
+    datas = dataset['arr_0']
+    times = dataset['arr_1']
+
+    is_forecast = (len(datas.shape) == 5)
+    if not is_forecast:
+        assert(datas.shape[0] == times.shape[0])
+        print("datas and times length match: {}".format(datas.shape[0]))
+    else:
+        assert(datas.shape[0:2] == times.shape[0:2])
+        print("datas and times length match: {}".format(datas.shape[0:2]))
+       
+    print("data shape: {}".format(datas.shape))
+
+#    print_summary_statistics(datas)
+#    show_example(datas, times)
+    show_histogram(datas)
+    find_low_mean_and_variance(datas, times, 0.3, 0.90, 0.025, 0.28)
     plt.show()
 
 if __name__ == "__main__":
