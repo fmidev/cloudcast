@@ -8,7 +8,10 @@ from gributils import *
 from s3utils import *
 from osgeo import gdal,osr
 
-INPUT_DIR = os.environ['CLOUDCAST_INPUT_DIR']
+try:
+    INPUT_DIR = os.environ['CLOUDCAST_INPUT_DIR']
+except KeyError:
+    INPUT_DIR = "s3://cloudcast"
 
 def get_model_name(args):
     return '{}-{}-{}-{}-{}-{}-{}'.format(args.model,
@@ -91,8 +94,15 @@ def read_times(times, producer='nwcsaf', analysis_time=None):
 def gdal_read_from_http(url):
     mmap_name = '/vsimem/xxx'
 
+    def s3_to_http(url):
+        if url[0:5] == 's3://':
+            tokens = url[5:].split('/')
+            tokens[0] = '{}/{}'.format(os.environ['S3_HOSTNAME'], tokens[0])
+            url = 'https://' + '/'.join(tokens)
+        return url
+
     def read_from_http(url):
-        r = requests.get(url, stream=True)
+        r = requests.get(s3_to_http(url), stream=True)
 
         if r.status_code != 200:
             print(f"Not found: {url}")

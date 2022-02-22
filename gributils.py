@@ -11,8 +11,12 @@ from s3utils import *
 DEFAULT_SIZE=(1069, 949, 1)
 
 def read_from_http(url, **kwargs):
-    r = requests.get(url, stream=True)
+    if url[0:5] == 's3://':
+        tokens = url[5:].split('/')
+        tokens[0] = '{}/{}'.format(os.environ['S3_HOSTNAME'], tokens[0])
+        url = 'https://' + '/'.join(tokens)
 
+    r = requests.get(url, stream=True)
     if r.status_code == 404:
         print(f"Not found: {url}")
         return np.full(DEFAULT_SIZE, np.NAN)
@@ -72,7 +76,7 @@ def read_grib(file_path, message_no = 0, **kwargs):
     if print_filename:
         print(f"Reading {file_path}")
 
-    if file_path[0:4] == 'http':
+    if file_path[0:4] == 'http' or file_path[0:5] == 's3://':
         return read_from_http(file_path, **kwargs)
     else:
         return read_from_file(file_path, message_no, **kwargs)

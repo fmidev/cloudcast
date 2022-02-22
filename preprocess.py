@@ -227,6 +227,9 @@ def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
 def create_environment_data(preprocess_label, normalize=False):
     global LSM, DEM
 
+    def is_http(uri):
+        return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
+
     isize = get_img_size(preprocess_label)
     img_size = '{}x{}'.format(isize[0], isize[1])
 
@@ -244,7 +247,7 @@ def create_environment_data(preprocess_label, normalize=False):
 
     print (f"Reading {lsm_file}")
 
-    if lsm_file[0:4] == 'http':
+    if is_http(lsm_file):
         raster = gdal_read_from_http(lsm_file)
     else:
         raster = gdal.Open(lsm_file)
@@ -257,7 +260,7 @@ def create_environment_data(preprocess_label, normalize=False):
 
     raster = None
 
-    if dem_file[0:4] == 'http':
+    if is_http(dem_file):
         raster = gdal_read_from_http(dem_file)
     else:
         raster = gdal.Open(dem_file)
