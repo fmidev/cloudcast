@@ -147,9 +147,9 @@ def predict(args):
 
     datas = dss.read_data(history)
 
-    if np.isnan(datas.any()):
+    if np.isnan(datas).any():
         print("Seed contains missing values, aborting")
-        return
+        return None
 
     datetime_weights = None
     lt = None
@@ -205,6 +205,8 @@ def predict(args):
 
 
 def save_gribs(args, predictions):
+    if predictions is None:
+        return
 
     alltimes = predictions['time']
     alldata = predictions['data']
