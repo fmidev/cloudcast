@@ -84,7 +84,7 @@ def create_generators_from_dataseries(**kwargs):
 
             i += n_channels + leadtime_conditioning
 
-    assert(len(datasets) == int(dataseries.shape[0] / (n_channels + n_fut)) * n_fut)
+        assert(len(datasets) == int(dataseries.shape[0] / (n_channels + n_fut)) * n_fut)
 
     np.random.shuffle(datasets)
     test_val_split = (np.floor(len(datasets) * 0.9)).astype(np.int)
