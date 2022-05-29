@@ -13,6 +13,24 @@ from tensorflow.keras.models import Model
 from fss import make_FSS_loss
 from ssim import make_SSIM_loss
 
+
+def get_loss_function(loss_function):
+    if loss_function == 'ssim':
+        return make_SSIM_loss()
+    elif loss_function.startswith('fss'):
+        values = loss_function.split("_")
+        if len(values) == 1:
+            return make_FSS_loss()
+
+        return make_FSS_loss(int(values[1]), int(values[2]))
+
+    return loss_function
+
+
+def get_metrics():
+    return ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)]
+
+
 def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='adam', categories=None):
 
     inputs = Input(input_size)
@@ -55,15 +73,8 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
 
     outputs = Conv2D(1, 1, padding='same', activation='sigmoid')(d4)
 
-    metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)]
-
-    if loss_function == 'ssim':
-        loss_function = make_SSIM_loss()
-    elif loss_function == 'fss':
-        loss_function = make_FSS_loss(10, False)
-
     model = Model(inputs, outputs)
-    model.compile(optimizer = optimizer, loss = loss_function, metrics = metrics)
+    model.compile(optimizer=optimizer, loss=get_loss_function(loss_function), metrics=get_metrics())
 
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
@@ -107,10 +118,9 @@ def convlstm(pretrained_weights=None, input_size=(256,256,1), loss_function='bin
 
     model = Model(inp, x)
 
-    if loss_function == "ssim":
-        model.compile(loss=ssim_loss, optimizer=keras.optimizers.Adam(), metrics=[ssim_loss, 'accuracy', 'MeanAbsoluteError'])
-    else:
-        model.compile(loss=loss_function, optimizer=keras.optimizers.Adam(), metrics=['accuracy', 'MeanAbsoluteError'])
+    metrics = ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_SSIM_loss(21), make_SSIM_loss(11)]
+
+    model.compile(loss=get_loss_function(loss_function), optimizer=keras.optimizers.Adam(), metrics=metrics)
 
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
