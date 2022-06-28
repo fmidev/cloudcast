@@ -113,6 +113,8 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "packingType", "grid_ccsds")
     ecc.codes_set(h, "indicatorOfUnitOfTimeRange", 0)
     ecc.codes_set(h, "forecastTime", int((forecasttime - analysistime).total_seconds()/60))
+    ecc.codes_set(h, "typeOfGeneratingProcess", 2) # deterministic forecast
+    ecc.codes_set(h, "typeOfProcessedData", 2) # analysis and forecast products
 
     data = np.flipud(data)
     ecc.codes_set_values(h, data.flatten())
