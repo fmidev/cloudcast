@@ -24,6 +24,11 @@ def read_from_http(url, **kwargs):
         print(f'HTTP error: {r.status_code}')
         sys.exit(1)
 
+    print_filename=kwargs.get('print_filename', False)
+
+    if print_filename:
+        print(f"Reading {url}")
+
     gh = ecc.codes_new_from_message(r.content)
     return read_grib_contents(gh, fileuri=url, **kwargs)
 
@@ -31,6 +36,11 @@ def read_from_http(url, **kwargs):
 def read_from_file(file_path, message_no, **kwargs):
     try:
         with open(file_path) as fp:
+            print_filename=kwargs.get('print_filename', False)
+
+            if print_filename:
+                print(f"Reading {file_path}")
+
             gh = ecc.codes_new_from_file(fp, ecc.CODES_PRODUCT_GRIB)
             return read_grib_contents(gh, fileuri=file_path, **kwargs)
     except FileNotFoundError as e:
@@ -71,11 +81,6 @@ def read_grib_contents(gh, **kwargs):
 
 
 def read_grib(file_path, message_no = 0, **kwargs):
-    print_filename=kwargs.get('print_filename', False)
-
-    if print_filename:
-        print(f"Reading {file_path}")
-
     if file_path[0:4] == 'http' or file_path[0:5] == 's3://':
         return read_from_http(file_path, **kwargs)
     else:
