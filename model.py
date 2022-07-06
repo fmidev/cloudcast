@@ -12,7 +12,7 @@ from tensorflow.keras.models import Model
 
 from fss import make_FSS_loss
 from ssim import make_SSIM_loss
-
+from ks import make_KS_loss
 
 def get_loss_function(loss_function):
     if loss_function == 'ssim':
@@ -23,15 +23,21 @@ def get_loss_function(loss_function):
             return make_FSS_loss()
 
         return make_FSS_loss(int(values[1]), int(values[2]))
+    elif loss_function.startswith('ks'):
+        values = loss_function.split("_")
+        if len(values) == 1:
+            return make_KS_loss()
+
+        return make_KS_loss(int(values[1]))
 
     return loss_function
 
 
 def get_metrics():
-    return ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)]
+    return ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)] #, make_KS_loss(3), make_KS_loss(7)]
 
 
-def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='adam', categories=None):
+def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='adam', n_categories=None):
 
     inputs = Input(input_size)
 
@@ -71,7 +77,12 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
     d3 = decoder_block(d2, s2, 128)
     d4 = decoder_block(d3, s1, 64)
 
-    outputs = Conv2D(1, 1, padding='same', activation='sigmoid')(d4)
+    if n_categories is None:
+        outputs = Conv2D(1, 1, padding='same', activation = 'sigmoid')(d4)
+    else:
+        outputs = Conv2D(n_categories, 1, padding = 'same', activation = 'softmax')(d4)
+
+    assert(n_categories is None or loss_function == 'sparse_categorical_crossentropy')
 
     model = Model(inputs, outputs)
     model.compile(optimizer=optimizer, loss=get_loss_function(loss_function), metrics=get_metrics())
