@@ -125,7 +125,7 @@ def predict(args):
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
 
-    dss = DataSeries("nwcsaf", args.preprocess)
+    dss = DataSeries("nwcsaf", args.preprocess, fill_gaps_max=1)
 
     time_gen = iter(TimeseriesGenerator(args.analysis_time, args.analysis_time, args.n_channels, args.prediction_len, step=PRED_STEP))
     environment_weights = None

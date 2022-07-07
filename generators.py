@@ -206,13 +206,61 @@ class TimeseriesGenerator:
 
 
 class DataSeries:
-    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness'):
+    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness', fill_gaps_max = 0):
         self.data_series = {}
         self.producer = producer
         self.preprocess = preprocess
         self.analysis_time = None
         self.single_analysis_time = single_analysis_time
         self.param = param
+        self.fill_gaps_max = fill_gaps_max
+
+
+    def fill_gaps(self, series, analysis_time):
+        new_series = {}
+        gaps_filled = 0
+
+        for i,s in enumerate(series):
+            ismiss = np.isnan(series[s]).any()
+
+            if not ismiss:
+                new_series[s] = series[s]
+                continue
+
+            if gaps_filled == self.fill_gaps_max:
+                print("Maximum gaps filled reached ({})".format(self.fill_gaps_max))
+                new_series[s] = series[s]
+                continue
+
+            new_first_time = None
+            if i == 0:
+                new_first_time = s - datetime.timedelta(minutes=15)
+            elif i == len(series) - 1:
+                new_first_time = list(new_series.keys())[0] - datetime.timedelta(minutes=15)
+
+            if new_first_time is not None:
+                print("Gap-filling for {}".format(s))
+                new_first_data = preprocess_single(read_time(new_first_time, self.producer, analysis_time, print_filename=True, param=self.param), self.preprocess)
+                new_series[new_first_time] = new_first_data
+
+            if i > 0 and i < len(series) - 1:
+                prev_time = list(new_series.keys())[i-1]
+                next_time = list(series.keys())[i+1]
+                prev_data = new_series[prev_time]
+                next_data = series[next_time]
+                # linear interpolation between two points
+                new_data = np.asarray([np.interp(0.5,[0,1],[x,y]) for x,y in zip(prev_data.ravel(), next_data.ravel())]).reshape(prev_data.shape)
+                print("Interpolating for {} (between {} and {})".format(s, prev_time, next_time))
+                new_series[s] = new_data
+
+            gaps_filled += 1
+        sorted_series = {}
+        for s in sorted(new_series):
+            sorted_series[s] = new_series[s]
+        new_series = sorted_series
+
+        assert(len(new_series) == len(series))
+        return new_series
 
     def read_data(self, times, analysis_time=None):
         datakeys = self.data_series.keys()
@@ -226,6 +274,9 @@ class DataSeries:
                 new_series[t] = self.data_series[t]
             else:
                 new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True, param=self.param), self.preprocess)
+
+        if self.fill_gaps_max > 0:
+            new_series = self.fill_gaps(new_series, analysis_time)
 
         self.data_series = new_series
         self.analysis_time = analysis_time
