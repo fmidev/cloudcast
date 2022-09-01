@@ -1,8 +1,8 @@
 import datetime
 import numpy as np
 from tensorflow import keras
-from fileutils import *
-from preprocess import *
+from base.fileutils import *
+from base.preprocess import *
 
 def add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess):
     if include_datetime:

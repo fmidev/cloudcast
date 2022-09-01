@@ -4,8 +4,8 @@ import sys
 import datetime
 import os
 import requests
-from gributils import *
-from s3utils import *
+from base.gributils import *
+from base.s3utils import *
 from osgeo import gdal,osr
 
 try:

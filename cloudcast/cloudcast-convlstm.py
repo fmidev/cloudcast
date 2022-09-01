@@ -4,10 +4,10 @@ import argparse
 import datetime
 from tensorflow.keras.models import save_model
 from model import *
-from preprocess import *
-from fileutils import *
-from plotutils import *
-from generators import *
+from base.preprocess import *
+from baselfileutils import *
+from base.plotutils import *
+from base.generators import *
 
 def parse_command_line():
     parser = argparse.ArgumentParser()

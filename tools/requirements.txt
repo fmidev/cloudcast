@@ -1,0 +1,5 @@
+botocore
+boto3
+eccodes
+numpy<1.23
+requests

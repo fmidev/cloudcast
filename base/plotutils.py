@@ -4,7 +4,7 @@ import matplotlib.dates as mdates
 from mpl_toolkits.basemap import Basemap
 from datetime import timedelta
 from osgeo import osr
-from s3utils import *
+from base.s3utils import *
 from io import BytesIO
 
 FIGURE=0

@@ -4,9 +4,8 @@ import datetime
 import cv2
 import os
 from scipy import ndimage
-#from PIL import Image, ImageEnhance
 from osgeo import gdal,osr
-from fileutils import get_filename, gdal_read_from_http
+from base.fileutils import get_filename, gdal_read_from_http
 
 DEM = {}
 LSM = {}

@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error, confusion_matrix
 from skimage.metrics import structural_similarity
 import matplotlib.pyplot as plt
-from plotutils import *
+from base.plotutils import *
 
 CATEGORIES =  ['cloudy', 'partly-cloudy', 'clear']
 

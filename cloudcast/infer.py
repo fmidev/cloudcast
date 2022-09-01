@@ -2,10 +2,10 @@ from tensorflow.keras.models import load_model
 import numpy as np
 import argparse
 from datetime import datetime, timedelta
-from fileutils import *
-from preprocess import *
-from generators import *
-from postprocess import *
+from base.fileutils import *
+from base.preprocess import *
+from base.generators import *
+from base.postprocess import *
 
 PRED_STEP = timedelta(minutes=15)
 

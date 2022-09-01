@@ -6,7 +6,7 @@ import os
 import requests
 import sys
 from io import BytesIO
-from s3utils import *
+from base.s3utils import *
 
 DEFAULT_SIZE=(1069, 949, 1)
 

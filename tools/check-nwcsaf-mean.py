@@ -41,7 +41,7 @@ def read_from_http(url):
     r = requests.get(url, stream=True)
     if r.status_code == 404:
         print(f"Not found: {url}")
-        return np.full(DEFAULT_SIZE, np.NAN)
+        return None
     if r.status_code != 200:
         print(f'HTTP error: {r.status_code}')
         sys.exit(1)
@@ -71,10 +71,15 @@ def write_object(bucket, key, content):
     global s3client
     
     if s3client is None:
+        hostname =  os.environ["S3_HOSTNAME"]
+
+        if not hostname.startswith("http"):
+            hostname = "https://{}".format(hostname)
+
         s3client = boto3.client('s3',
             aws_access_key_id = os.environ["S3_ACCESS_KEY_ID"],
             aws_secret_access_key = os.environ["S3_SECRET_ACCESS_KEY"],
-            endpoint_url = os.environ["S3_HOSTNAME"]
+            endpoint_url = hostname
         )
 
     print("Writing {}/{}".format(bucket, key))
@@ -108,7 +113,9 @@ def check(nowtime, plot=False):
     datas = []
 
     for d in dates:
-        datas.append(read_from_http("{}/{}.grib2".format(urlbase, format_key(d))))
+        data = read_from_http("{}/{}.grib2".format(urlbase, format_key(d)))
+        if data is not None:
+            datas.append(data)
 
     means = []
 
