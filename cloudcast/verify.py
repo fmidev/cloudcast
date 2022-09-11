@@ -2,17 +2,20 @@ from tensorflow.keras.models import load_model
 from model import *
 import glob
 import numpy as np
+import matplotlib as mpl
+# save plots as fiels when running inside a screen instance
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 import argparse
 import copy
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
-from fileutils import *
-from preprocess import *
-from plotutils import *
-from generators import *
-from verifutils import *
+from base.fileutils import *
+from base.preprocess import *
+from base.plotutils import *
+from base.generators import *
+from base.verifutils import *
 
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
@@ -218,7 +221,8 @@ def predict(args):
         history = times[:args.n_channels]
         leadtimes = times[args.n_channels:]
 
-        print("Using history {} to predict {}".format(
+        print("{}: using history {} to predict {}".format(
+            history[-1].strftime("%Y-%m-%d"),
             list(map(lambda x: '{}'.format(x.strftime('%H:%M')), history)),
             list(map(lambda x: '{}'.format(x.strftime('%H:%M')), leadtimes))
         ))
@@ -437,7 +441,6 @@ if __name__ == "__main__":
     predictions = predict_many(args)
     predictions = intersection(args.label, predictions)
 
-    global DSS
     DSS = None
 
 #    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
