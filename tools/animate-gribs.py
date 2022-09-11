@@ -4,13 +4,17 @@ import matplotlib.animation as animation
 import glob
 import sys
 import subprocess
-from gributils import *
-from plotutils import reduce_label
+from base.gributils import *
+from base.plotutils import reduce_label
+
+from matplotlib import rcParams
+
+rcParams['animation.convert_path'] = r'/usr/bin/convert'
 
 def extract_labels(directories):
     labels = []
     for d in directories:
-        labels.append(reduce_label(d.split('/')[2]))
+        labels.append(reduce_label(d.split('/')[-1]))
 
     return labels
 
@@ -18,17 +22,22 @@ def extract_labels(directories):
 def read_gribs(directories):
     alldatas = []
 
+    print("Directories: {}".format(directories))
     for directory in directories:
         gribs = glob.glob('{}/*.grib2'.format(directory))
 
         datas = []
         for gribfile in gribs:
+            print("Reading {}".format(gribfile))
             datas.append(np.squeeze(read_grib(gribfile, img_size=(128,128))))
 
         alldatas.append(datas)
 
     for x in alldatas[1:]:
         assert(len(x) == len(alldatas[0]))
+
+    print("Number of datas: {}".format(len(alldatas)))
+    assert(len(alldatas) > 0)
 
     return alldatas
 
@@ -43,23 +52,30 @@ def save_anim(filename, datas, labels):
       cols = int(0.5 + cols / rows)
  
     print(rows, cols)
-    fig, ax = plt.subplots(rows, cols,figsize=(18, 14))
+    figsize = (9, 6) # (18, 14)
+    fig, ax = plt.subplots(rows, cols,figsize=figsize)
+    ax = ax.ravel()
 
     def update(j):
         for i in range(len(datas)):
-            ax.flat[i].imshow(datas[i][j], cmap=cm.Greys_r)
-            ax.flat[i].set_title("{} {}/{}".format(labels[i], j, n_frames), fontsize=16)
-            ax.flat[i].set_axis_off()
+            ax[i].imshow(datas[i][j], cmap=cm.Greys_r)
+            ax[i].set_title("{} {}/{}".format(labels[i], j, n_frames), fontsize=16)
+            ax[i].set_axis_off()
 
-    anim = animation.FuncAnimation(fig, update, frames=np.arange(0, n_frames), interval=250, repeat_delay=500)
+    anim = animation.FuncAnimation(fig, update, frames=np.arange(0, n_frames), interval=350, repeat_delay=1000)
     anim.save(filename, dpi=80, writer='imagemagick')
+    plt.show()
     plt.close()
 
     print(f"Saved {n_frames} frame animation to file '{filename}'")
 
 
-filename = sys.argv.pop()
+if len(sys.argv) == 1:
+    print("Usage: {} anim_file_name.gif path_to_gribs path_to_gribs ...".format(sys.argv[0]))
+    sys.exit(1)
 
-labels = extract_labels(sys.argv[1:])
-datas = read_gribs(sys.argv[1:])
+
+filename = sys.argv[1]
+labels = extract_labels(sys.argv[2:])
+datas = read_gribs(sys.argv[2:])
 save_anim(filename, datas, labels)
