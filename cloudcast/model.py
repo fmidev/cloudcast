@@ -13,10 +13,13 @@ from tensorflow.keras.models import Model
 from fss import make_FSS_loss
 from ssim import make_SSIM_loss
 from ks import make_KS_loss
+from bcl1 import make_bc_l1_loss
 
 def get_loss_function(loss_function):
     if loss_function == 'ssim':
         return make_SSIM_loss()
+    elif loss_function == "bcl1":
+        return make_bc_l1_loss()
     elif loss_function.startswith('fss'):
         values = loss_function.split("_")
         if len(values) == 1:
