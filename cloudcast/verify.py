@@ -16,6 +16,7 @@ from base.preprocess import *
 from base.plotutils import *
 from base.generators import *
 from base.verifutils import *
+from base.opts import CloudCastOptions
 
 PRED_STEP = timedelta(minutes=15)
 DSS = {}
@@ -55,8 +56,6 @@ def parse_command_line():
         args.start_date = parse_time(args.single_time)
         args.stop_date = args.start_date
 
-    args.onehot_conditioning = False
-
     return args
 
 
@@ -75,9 +74,10 @@ def normalize_label(label):
 
 def infer_many(m, orig, num_predictions, **kwargs):
     datetime_weights = kwargs.get('datetime_weights', None)
-    environment_weights = kwargs.get('environment_weights', None)
+    topography_weights = kwargs.get('topography_weights', None)
+    terrain_type_weights = kwargs.get('terrain_type_weights', None)
     leadtime_conditioning = kwargs.get('leadtime_conditioning', None)
-    onehot_conditioning = kwargs.get('onehot_conditioning', False)
+    onehot_econding = kwargs.get('onehot_encoding', False)
 
     predictions = []
     hist_len = len(orig)
@@ -96,9 +96,9 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
         return seed
 
-    def append_auxiliary_weights(data, datetime_weights, environment_weights, num_prediction):
+    def append_auxiliary_weights(data, datetime_weights, topography_weights, terrain_type_weights, num_prediction):
         if leadtime_conditioning is not None:
-            if onehot_conditioning:
+            if False: # or onehot_encoding:
                 lts = np.squeeze(np.swapaxes(leadtime_conditioning[num_prediction], 0, -1))
                 data = np.concatenate((data, lts), axis=-1)
             else:
@@ -107,8 +107,11 @@ def infer_many(m, orig, num_predictions, **kwargs):
         if datetime_weights is not None:
             data = np.concatenate((data, datetime_weights[hist_len-1][0], datetime_weights[hist_len-1][1]), axis=-1)
 
-        if environment_weights is not None:
-            data = np.concatenate((data, environment_weights[0], environment_weights[1]), axis=-1)
+        if topography_weights is not None:
+            data = np.concatenate((data, topography_weights), axis=-1)
+
+        if terrain_type_weights is not None:
+            data = np.concatenate((data, terrain_type_weights), axis=-1)
 
         return data
 
@@ -120,7 +123,7 @@ def infer_many(m, orig, num_predictions, **kwargs):
             # autoregression
             data = create_hist(predictions)
 
-        alldata = append_auxiliary_weights(data, datetime_weights, environment_weights, i)
+        alldata = append_auxiliary_weights(data, datetime_weights, topography_weights, terrain_type_weights, i)
         pred = infer(m, alldata)
         predictions.append(pred)
 
@@ -150,14 +153,14 @@ def predict_from_series(m, dataseries, num):
     return comb[:num]
 
 
-def predict_many(args):
+def predict_many(args, opts_list):
     all_pred = {}
 
-    for lbl in args.label:
-        elem = copy.deepcopy(args)
-        elem.label = lbl
+    for opts in opts_list:
+#        elem = copy.deepcopy(args)
+#        elem.label = lbl
 
-        predictions = predict(elem)
+        predictions = predict(args, opts)
 
         for i,k in enumerate(predictions.keys()):
             if not k in all_pred.keys():
@@ -165,28 +168,23 @@ def predict_many(args):
 
     return all_pred
 
-def predict(args):
+def predict(args, opts):
     global DSS
 
-    args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
-    args.n_channels = int(args.n_channels)
-    args.include_datetime = eval(args.include_datetime)
-    args.include_environment_data = eval(args.include_environment_data)
-    args.leadtime_conditioning = eval(args.leadtime_conditioning)
-
-    model_file = 'models/{}'.format(get_model_name(args))
+    model_file = 'models/{}'.format(opts.get_label())
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
 
     try:
-        dss = DSS[args.preprocess]
+        dss = DSS[opts.preprocess]
     except KeyError as e:
-        print("NEW dss for {}".format(args.preprocess))
-        DSS[args.preprocess] = {}
-        dss = DSS[args.preprocess]
+        print("NEW dss for {}".format(opts.preprocess))
+        DSS[opts.preprocess] = {}
+        dss = DSS[opts.preprocess]
 
-    time_gen = TimeseriesGenerator(args.start_date, args.stop_date, args.n_channels, args.prediction_len, step=PRED_STEP)
-    environment_weights = None
+    time_gen = TimeseriesGenerator(args.start_date, args.stop_date, opts.n_channels, args.prediction_len, step=PRED_STEP)
+    topography_weights = None
+    terrain_type_weights = None
 
     nwp = []
     climatology = False
@@ -198,10 +196,10 @@ def predict(args):
             nwp.append(k)
 
     if not 'nwcsaf' in dss:
-        dss['nwcsaf'] = DataSeries("nwcsaf", args.preprocess)
+        dss['nwcsaf'] = DataSeries("nwcsaf", opts.preprocess)
 
     predictions = {
-        args.label : { 'time' : [], 'data' : [] },
+        opts.get_label() : { 'time' : [], 'data' : [] },
         'gt' : { 'time' : [], 'data' : [] },
     }
 
@@ -210,7 +208,7 @@ def predict(args):
 
     for k in nwp:
         if not k in dss:
-            dss[k] = DataSeries(k, args.preprocess)
+            dss[k] = DataSeries(k, opts.preprocess)
         predictions[k] = { 'time' : [], 'data' : [] }
 
     def diff(a, b):
@@ -218,8 +216,8 @@ def predict(args):
         return [i for i in a if i not in b]
 
     for times in time_gen:
-        history = times[:args.n_channels]
-        leadtimes = times[args.n_channels:]
+        history = times[:opts.n_channels]
+        leadtimes = times[opts.n_channels:]
 
         print("{}: using history {} to predict {}".format(
             history[-1].strftime("%Y-%m-%d"),
@@ -232,15 +230,15 @@ def predict(args):
         for k in dss:
             analysis_time = None
             _leadtimes = leadtimes.copy()
-            _leadtimes = [times[args.n_channels-1]] + leadtimes
+            _leadtimes = [times[opts.n_channels-1]] + leadtimes
             if k in ['meps','mnwc']:
-                analysis_time = times[args.n_channels].replace(minute=0)
+                analysis_time = times[opts.n_channels].replace(minute=0)
                 datas[k] = dss[k].read_data(_leadtimes, analysis_time)
             elif k == 'nwcsaf':
                 datas[k] = dss[k].read_data(times)
 
         if climatology:
-            clim = generate_clim_values((len(leadtimes),) + get_img_size(args.preprocess), int(leadtimes[0].strftime("%m")))
+            clim = generate_clim_values((len(leadtimes),) + get_img_size(opts.preprocess), int(leadtimes[0].strftime("%m")))
 
         if np.isnan(datas['nwcsaf']).any():
             print("Seed contains missing values, skipping")
@@ -256,44 +254,51 @@ def predict(args):
         datetime_weights = None
         lt = None
 
-        if args.include_datetime:
-            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(args.preprocess)), history))
+        if opts.include_datetime:
+            datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(opts.preprocess)), history))
+        if opts.include_topography and topography_weights is None:
+            topography_weights = create_topography_data(opts.preprocess, opts.model == 'convlstm')
+        if opts.include_terrain_type and terrain_type_weights is None:
+            terrain_type_weights = create_terrain_type_data(opts.preprocess, opts.model == 'convlstm')
 
-        if args.include_environment_data and environment_weights is None:
-            environment_weights = create_environment_data(args.preprocess, args.model == 'convlstm')
-        if args.leadtime_conditioning:
-            assert(args.prediction_len <= args.leadtime_conditioning)
+        if opts.leadtime_conditioning:
+            assert(args.prediction_len <= opts.leadtime_conditioning)
             lt = []
             for i in range(args.prediction_len):
-                if args.onehot_conditioning is False:
-                    lt.append(create_squeezed_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+                if opts.onehot_encoding is False:
+                    lt.append(create_squeezed_leadtime_conditioning(get_img_size(opts.preprocess), opts.leadtime_conditioning, i))
                 else:
-                    lt.append(create_onehot_leadtime_conditioning(get_img_size(args.preprocess), args.leadtime_conditioning, i))
+                    lt.append(create_onehot_leadtime_conditioning(get_img_size(opts.preprocess), opts.leadtime_conditioning, i))
 
-            if args.onehot_conditioning is False:
+            if opts.onehot_encoding is False:
                 lt = np.squeeze(np.asarray(lt), axis=1)
 
-        if args.model == "unet":
-            cc = infer_many(m, datas['nwcsaf'][:args.n_channels], args.prediction_len, datetime_weights=datetime_weights, environment_weights=environment_weights, leadtime_conditioning=lt, onehot_conditioning=args.onehot_conditioning)
+        if opts.model == "unet":
+            cc = infer_many(m, datas['nwcsaf'][:opts.n_channels], args.prediction_len, datetime_weights=datetime_weights, topography_weights=topography_weights, terrain_type_weights=terrain_type_weights, leadtime_conditioning=lt, onehot_econding=opts.onehot_encoding)
         else:
-            hist = datas['nwcsaf'][:args.n_channels]
+            hist = datas['nwcsaf'][:opts.n_channels]
 
-            if args.include_environment_data:
-                dt0 = np.tile(environment_weights[0], 6)
-                dt0 = np.swapaxes(np.expand_dims(dt0, axis=0), 0, 3)
-                dt1 = np.tile(environment_weights[1], 6)
-                dt1 = np.swapaxes(np.expand_dims(dt1, axis=0), 0, 3)
-                hist = np.concatenate((hist, dt0, dt1), axis=-1)
-                assert(np.max(dt0) <= 1 and np.max(dt1) <= 1)
+            if opts.include_topography:
+                topo = np.tile(topography_weights, 6)
+                topo = np.swapaxes(np.expand_dims(topo, axis=0), 0, 3)
+                hist = np.concatenate((hist, topo), axis=-1)
+                assert(np.max(topo) <= 1)
+
+            if opts.include_terrain_type:
+                terr = np.tile(terrain_type_weights, 6)
+                terr = np.swapaxes(np.expand_dims(terr, axis=0), 0, 3)
+                hist = np.concatenate((hist, terr), axis=-1)
+                assert(np.max(terr) <= 1)
+
             cc = predict_from_series(m, hist, args.prediction_len)
 
-        initial = np.expand_dims(np.copy(datas['nwcsaf'][args.n_channels-1]), axis=0)
+        initial = np.expand_dims(np.copy(datas['nwcsaf'][opts.n_channels-1]), axis=0)
         cc = np.concatenate((initial, cc), axis=0)
         leadtimes = [history[-1]] + leadtimes
 
         assert(cc.shape[0] == len(leadtimes))
-        predictions[args.label]['time'].append(leadtimes)
-        predictions[args.label]['data'].append(cc)
+        predictions[opts.get_label()]['time'].append(leadtimes)
+        predictions[opts.get_label()]['data'].append(cc)
 
         for k in nwp:
             predictions[k]['time'].append(leadtimes)
@@ -303,11 +308,11 @@ def predict(args):
             predictions['climatology']['time'].append(leadtimes)
             predictions['climatology']['data'].append(clim)
 
-    if len(predictions[args.label]['data']) == 0:
-        print("Zero valid predictions for {}".format(args.label))
+    if len(predictions[opts.get_label()]['data']) == 0:
+        print("Zero valid predictions for {}".format(opts.get_label()))
         sys.exit(1)
 
-    assert(len(predictions[args.label]['data']) == len(predictions[args.label]['time']))
+    assert(len(predictions[opts.get_label()]['data']) == len(predictions[opts.get_label()]['time']))
     return predictions
 
 
@@ -399,12 +404,13 @@ def plot_timeseries(args, predictions):
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
 
 
-def intersection(labels, predictions):
+def intersection(opts_list, predictions):
     # take intersection of predicted data so that we get same amount of forecasts
     # for same times
     # sometimes this might differ if for example history is missing and one model
     # needs more history than another
 
+    labels = list(map(lambda x: x.get_label(), opts_list))
     def _intersection(lst1, lst2):
         lst3 = [value for value in lst1 if value in lst2]
         return lst3
@@ -412,10 +418,12 @@ def intersection(labels, predictions):
     utimes = None
 
     for i in range(len(labels)-1):
+        label = labels[i]
+        next_label = labels[i+1]
         if utimes == None:
-            utimes = _intersection(predictions[labels[i]]['time'], predictions[labels[i+1]]['time'])
+            utimes = _intersection(predictions[label]['time'], predictions[next_label]['time'])
         else:
-            utimes = _intersection(utimes, predictions[labels[i+1]]['time'])
+            utimes = _intersection(utimes, predictions[next_label]['time'])
 
     ret = {}
 
@@ -437,9 +445,14 @@ def intersection(labels, predictions):
 if __name__ == "__main__":
     args = parse_command_line()
 
-    args.label = normalize_label(args.label)
-    predictions = predict_many(args)
-    predictions = intersection(args.label, predictions)
+    labels = normalize_label(args.label)
+    opts_list = []
+    for l in labels:
+        opts_list.append(CloudCastOptions(label=l))
+        assert(opts_list[-1].onehot_encoding is False)
+
+    predictions = predict_many(args, opts_list)
+    predictions = intersection(opts_list, predictions)
 
     DSS = None
 

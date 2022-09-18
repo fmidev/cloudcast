@@ -13,15 +13,6 @@ try:
 except KeyError:
     INPUT_DIR = "s3://cloudcast"
 
-def get_model_name(args):
-    return '{}-{}-{}-{}-{}-{}-{}'.format(args.model,
-                                args.loss_function,
-                                args.n_channels,
-                                args.include_datetime,
-                                args.include_environment_data,
-                                args.leadtime_conditioning,
-                                args.preprocess)
-
 
 def read_filenames(start_time, stop_time, producer='nwcsaf', param="effective-cloudiness"):
     print(f'Input directory: {INPUT_DIR}/{producer}')

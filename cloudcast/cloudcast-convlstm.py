@@ -8,6 +8,7 @@ from base.preprocess import *
 from baselfileutils import *
 from base.plotutils import *
 from base.generators import *
+from base.opts import CloudCastOptions
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
@@ -19,18 +20,19 @@ def parse_command_line():
     parser.add_argument("--preprocess", action='store', type=str, default='img_size=128x128')
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--include_datetime", action='store_true', default=False)
-    parser.add_argument("--include_environment_data", action='store_true', default=False)
+    parser.add_argument("--include_topography", action='store_true', default=False)
+    parser.add_argument("--include_terrain_type", action='store_true', default=False)
     parser.add_argument("--leadtime_conditioning", action='store_true', default=False)
     parser.add_argument("--dataseries_file", action='store', type=str, default='')
 
     args = parser.parse_args()
 
     if args.label is not None:
-        args.model, args.loss_function, args.n_channels, args.include_datetime, args.include_environment_data, args.leadtime_conditioning, args.preprocess = args.label.split('-')
-        args.include_datetime = eval(args.include_datetime)
-        args.include_environment_data = eval(args.include_environment_data)
-        args.leadtime_conditioning = eval(args.leadtime_conditioning)
-        args.n_channels = int(args.n_channels)
+        opts = CloudCastOptions(label=args.label)
+    else:
+        vars_ = vars(args)
+        vars_['model'] = 'convlstm'
+        opts = CloudCastOptions(**vars_)
 
     assert(args.leadtime_conditioning == False)
     assert(args.include_datetime == False)
@@ -43,13 +45,13 @@ def parse_command_line():
         args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
         args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
 
-    return args
+    return args, opts
 
 
-def fit(m, args):
+def fit(m, args, opts):
     batch_size = 1
 
-    train_gen, val_gen = create_generators(batch_size=batch_size, output_is_timeseries=True, **vars(args))
+    train_gen, val_gen = create_generators(batch_size=batch_size, opts=opts, output_is_timeseries=True, **vars(args))
 
     print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
     print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
@@ -59,7 +61,7 @@ def fit(m, args):
     except Exception as e:
         print(f"Unable to show example data series: {e}")
 
-    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(get_model_name(args)),
+    cp_cb = tf.keras.callbacks.ModelCheckpoint(filepath='checkpoints/{}/cp.ckpt'.format(opts.get_label()),
                                                  save_weights_only=True,
                                                  verbose=1)
 
@@ -71,9 +73,10 @@ def fit(m, args):
     return hist
 
 
-def save_model_info(args, duration, hist, model_dir):
+def save_model_info(args, opts, duration, hist, model_dir):
     with open('{}/info-{}.txt'.format(model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")), 'w') as fp:
         fp.write(f'{args}\n')
+        fp.write(f'{opts}\n')
         fp.write(f'duration: {duration}\n')
         fp.write(f'finished: {datetime.datetime.now()}\n')
         fp.write(f"hostname: {os.environ['HOSTNAME']}\n")
@@ -82,32 +85,34 @@ def save_model_info(args, duration, hist, model_dir):
         fp.write(f'{hist}')
 
 
-def run_model(args):
-    model_dir = 'models/{}'.format(get_model_name(args))
+def run_model(args, opts):
+    model_dir = 'models/{}'.format(opts.get_label())
 
-    pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(get_model_name(args)) if args.cont else None
+    pretrained_weights = 'checkpoints/{}/cp.ckpt'.format(opts.get_label()) if args.cont else None
 
     img_size = get_img_size(args.preprocess)
     n_channels = 1
-    if args.include_environment_data:
-        n_channels += 2
+    if args.include_topography_data:
+        n_channels += 1
+    if args.include_terrain_type_data:
+        n_channels += 1
 
     m = convlstm(pretrained_weights=pretrained_weights, input_size=img_size + (n_channels,), loss_function=args.loss_function)
 
     start = datetime.datetime.now()
 
-    hist = fit(m, args)
+    hist = fit(m, args, opts)
 
     duration = datetime.datetime.now() - start
 
     save_model(m, model_dir)
-    save_model_info(args, duration, hist.history, model_dir)
+    save_model_info(args, opts, duration, hist.history, model_dir)
     plot_hist(hist.history, model_dir)
 
     print(f"Model training finished in {duration}")
 
 
 if __name__ == "__main__":
-    args = parse_command_line()
+    args, opts = parse_command_line()
 
-    run_model(args)
+    run_model(args, opts)

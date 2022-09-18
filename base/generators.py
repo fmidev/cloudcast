@@ -4,14 +4,18 @@ from tensorflow import keras
 from base.fileutils import *
 from base.preprocess import *
 
-def add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess):
+def add_auxiliary_data(x, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess):
     if include_datetime:
         dts = create_datetime(dt, get_img_size(preprocess))
         x = np.concatenate((x, np.expand_dims(dts[0], axis=0), np.expand_dims(dts[1], axis=0)), axis=0)
 
-    if include_environment_data:
-        envs = create_environment_data(preprocess)
-        x = np.concatenate((x, np.expand_dims(envs[0], axis=0), np.expand_dims(envs[1], axis=0)), axis=0)
+    if include_topography_data:
+        topo = create_topography_data(preprocess)
+        x = np.concatenate((x, np.expand_dims(topo, axis=0)), axis=0)
+
+    if include_terrain_type_data:
+        terr = create_terrain_type_data(preprocess)
+        x = np.concatenate((x, np.expand_dims(terr, axis=0)), axis=0)
 
     return x
 
@@ -20,10 +24,11 @@ def create_generators_from_dataseries(**kwargs):
     out = kwargs.get('output_is_timeseries', False)
     leadtime_conditioning = kwargs.get('leadtime_conditioning', 0)
     include_datetime = kwargs.get('include_datetime')
-    include_environment_data = kwargs.get('include_environment_data')
+    include_topography_data = kwargs.get('include_topography')
+    include_terrain_type_data = kwargs.get('include_terrain_type')
     preprocess = kwargs.get('preprocess')
     dataseries_file = kwargs.get('dataseries_file', '')
-    onehot_conditioning = kwargs.get('onehot_conditioning', False)
+    onehot_encoding = kwargs.get('onehot_encoding', False)
 
     print(f'Reading input data from {dataseries_file}')
     dataset = np.load(dataseries_file)
@@ -37,9 +42,10 @@ def create_generators_from_dataseries(**kwargs):
     if out:
         i = 0
 
-        if include_environment_data:
-            envs = create_environment_data(preprocess, True)
-            assert(np.max(envs[0]) <= 1 and np.max(envs[1]) <= 1)
+        if include_topography_data:
+            topography_data = create_topography_data(preprocess, True)
+        if include_terrain_type_data:
+            terrain_type_data = create_terrain_type_data(preprocess, True)
 
         n_channels += 1
         while i < dataseries.shape[0] - n_channels:
@@ -47,8 +53,11 @@ def create_generators_from_dataseries(**kwargs):
             for j in range(n_channels):
                 x = dataseries[i + j]
 
-                if include_environment_data:
-                    x = np.concatenate((x, envs[0], envs[1]), axis=-1)
+                if include_topography_data:
+                    x = np.concatenate((x, topography_data), axis=-1)
+                if include_terrain_type_data:
+                    x = np.concatenate((x, terrain_type_data), axis=-1)
+
 
                 ds_data.append(x)
             datasets.append(ds_data)
@@ -66,19 +75,20 @@ def create_generators_from_dataseries(**kwargs):
             dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
 
             if leadtime_conditioning == 0:
-                hist = add_auxiliary_data(hist, include_datetime, include_environment_data, dt, preprocess)
+                hist = add_auxiliary_data(hist, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
                 y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1)
                 datasets.append(np.concatenate((hist, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
                 for j in range(0, leadtime_conditioning):
-                    if not onehot_conditioning:
+                    if not onehot_encoding:
                         leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
                     else:
                         leadtime = create_onehot_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
                     x = np.concatenate((hist, leadtime), axis=0)
-                    x = add_auxiliary_data(x, include_datetime, include_environment_data, dt, preprocess)
+                    x = add_auxiliary_data(x, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
                     y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels+j], axis=-1), axis=0), axis=-1)
+
                     datasets.append(np.concatenate((x, y), axis=0))
                     datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
 
@@ -263,13 +273,16 @@ class DataSeries:
         return new_series
 
     def read_data(self, times, analysis_time=None):
-        datakeys = self.data_series.keys()
+        datakeys = list(self.data_series.keys())
 
         if analysis_time != self.analysis_time and self.single_analysis_time:
             datakeys = []
 
         new_series = {}
-        for t in times:
+        new_times = list(set(datakeys+times))
+        new_times.sort()
+
+        for t in new_times:
             if t in datakeys:
                 new_series[t] = self.data_series[t]
             else:

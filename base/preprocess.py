@@ -10,7 +10,6 @@ from base.fileutils import get_filename, gdal_read_from_http
 DEM = {}
 LSM = {}
 
-
 def get_img_size(preprocess):
     for x in preprocess.split(','):
         k,v = x.split('=')
@@ -116,7 +115,8 @@ def preprocess_single(arr, process_label):
         elif k == 'standardize' and v == 'true':
             arr = (arr - arr.mean()) / arr.std()
         elif k == 'normalize' and v == 'true':
-            arr = (arr - np.min(arr)) / np.ptp(arr)
+            if np.min(arr) != np.max(arr):
+                arr = (arr - np.min(arr)) / np.ptp(arr)
         elif k == 'img_size':
             img_size = tuple(map(int, v.split('x')))
             arr = np.expand_dims(cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
@@ -222,9 +222,8 @@ def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
     return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3)).astype(np.float32)
 
-
-def create_environment_data(preprocess_label, normalize=False):
-    global LSM, DEM
+def create_topography_data(preprocess_label, normalize=False):
+    global DEM
 
     def is_http(uri):
         return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
@@ -233,7 +232,7 @@ def create_environment_data(preprocess_label, normalize=False):
     img_size = '{}x{}'.format(isize[0], isize[1])
 
     try:
-        return LSM[img_size], DEM[img_size]
+        return DEM[img_size]
     except KeyError as e:
         pass
 
@@ -241,19 +240,7 @@ def create_environment_data(preprocess_label, normalize=False):
 
     proc = '{},img_size={}'.format(proc, img_size)
 
-    lsm_file = get_filename(None, 'LSM')
     dem_file = get_filename(None, 'DEM')
-
-    print (f"Reading {lsm_file}")
-
-    if is_http(lsm_file):
-        raster = gdal_read_from_http(lsm_file)
-    else:
-        raster = gdal.Open(lsm_file)
-
-    LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
-    LSM[img_size] = process_lsm(LSM[img_size])
-    LSM[img_size] = preprocess_single(LSM[img_size], proc).astype(np.float32)
 
     print (f"Reading {dem_file}")
 
@@ -269,7 +256,43 @@ def create_environment_data(preprocess_label, normalize=False):
 
     raster = None
 
-    return LSM[img_size], DEM[img_size]
+    return DEM[img_size]
+
+
+def create_terrain_type_data(preprocess_label, normalize=False):
+    global LSM
+
+    def is_http(uri):
+        return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
+
+    isize = get_img_size(preprocess_label)
+    img_size = '{}x{}'.format(isize[0], isize[1])
+
+    try:
+        return LSM[img_size]
+    except KeyError as e:
+        pass
+
+    proc='normalize=true'
+
+    proc = '{},img_size={}'.format(proc, img_size)
+
+    lsm_file = get_filename(None, 'LSM')
+
+    print (f"Reading {lsm_file}")
+
+    if is_http(lsm_file):
+        raster = gdal_read_from_http(lsm_file)
+    else:
+        raster = gdal.Open(lsm_file)
+
+    LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
+    LSM[img_size] = process_lsm(LSM[img_size])
+    LSM[img_size] = preprocess_single(LSM[img_size], proc).astype(np.float32)
+
+    raster = None
+
+    return LSM[img_size]
 
 
 def generate_clim_values(shape, month):
