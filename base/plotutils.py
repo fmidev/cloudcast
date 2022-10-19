@@ -16,7 +16,7 @@ def figure():
 
 
 def savefig(plot_dir):
-    fname = '{}/figure{}.png'.format(plot_dir, FIGURE)
+    fname = '{}/figure{:02d}.png'.format(plot_dir, FIGURE)
 
     if fname[0:5] == 's3://':
         img_data = BytesIO()
@@ -35,7 +35,10 @@ def reduce_label(label):
                .replace('binary_crossentropy', 'bc') \
                .replace('MeanSquaredError', 'MSE') \
                .replace('MeanAbsoluteError', 'MAE') \
-               .replace('img_size', 'i_s')
+               .replace('-img_size=128x128', '') \
+               .replace('-oh=F', '') \
+               .replace('-lc=12', '') \
+               .replace('-hist=4', '')
 
 
 def latlonraster(img_size):
@@ -166,7 +169,7 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
     if plot_dir is not None:
         savefig(plot_dir)
 
-def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None, start_from_zero=False):
+def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None, start_from_zero=False, add_mean_value_to_label=False):
     assert(len(data) == len(labels))
     fig = plt.figure(figure(), figsize=(12,7))
     ax = plt.axes()
@@ -181,11 +184,8 @@ def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir
 
     offset = 0 if start_from_zero else 1
 
-#    if xvalues is None:
     xlabels = list(map(lambda x: step * x, range(offset, offset+len(data[0]))))
     xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
-#    else:
-#        xlabels = list(map(lambda x: '{}m'.format(int(x * 15)), xvalues))
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
@@ -193,7 +193,11 @@ def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir
         mae = np.asarray(mae)
         x = xreal[np.isfinite(mae)]
         y = mae[np.isfinite(mae)]
-        ax.plot(x, y, label=labels[i], linestyle='-', marker='o')
+
+        label = labels[i]
+        if add_mean_value_to_label:
+            label = '{} mean: {:.3f}'.format(label, np.mean(mae))
+        ax.plot(x, y, label=label, linestyle='-', marker='o')
 
     ax.set_xticks(xreal)
     ax.set_xticklabels(xlabels)

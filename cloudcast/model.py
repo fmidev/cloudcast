@@ -37,7 +37,7 @@ def get_loss_function(loss_function):
 
 
 def get_metrics():
-    return ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC", make_FSS_loss(20, 0), make_FSS_loss(10, 0), make_SSIM_loss(21), make_SSIM_loss(11)] #, make_KS_loss(3), make_KS_loss(7)]
+    return ['RootMeanSquaredError','MeanAbsoluteError','accuracy', "AUC"] #, make_FSS_loss(20, 0), make_SSIM_loss(21), make_KS_loss(21)]
 
 
 def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSquaredError', optimizer='adam', n_categories=None):

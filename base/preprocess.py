@@ -216,13 +216,13 @@ def process_lsm(LSM):
 
 def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
     b = np.ones((1,) + img_size)
-    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1).astype(np.float32)
+    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1).astype(np.short)
 
 
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
     return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3)).astype(np.float32)
 
-def create_topography_data(preprocess_label, normalize=False):
+def create_topography_data(preprocess_label):
     global DEM
 
     def is_http(uri):
@@ -259,7 +259,7 @@ def create_topography_data(preprocess_label, normalize=False):
     return DEM[img_size]
 
 
-def create_terrain_type_data(preprocess_label, normalize=False):
+def create_terrain_type_data(preprocess_label):
     global LSM
 
     def is_http(uri):
