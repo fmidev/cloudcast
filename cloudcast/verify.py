@@ -42,6 +42,7 @@ def parse_command_line():
     parser.add_argument("--include_additional", action='store', nargs='+', default=[])
     parser.add_argument("--top", action='store', type=int, default=-1, help='out of all models select the top n that perform best')
     parser.add_argument("--plot_dir", action='store', type=str, default=None, help='save plots to directory of choice')
+    parser.add_argument("--result_dir", action='store', type=str, default=None, help='save results to directory of choice')
 
     args = parser.parse_args()
 
@@ -133,7 +134,7 @@ def infer_many(m, orig, num_predictions, **kwargs):
 
 def infer(m, img):
     img = np.expand_dims(img, axis=0)
-    pred = m.predict(img)
+    pred = m.predict(img, verbose=0)
     pred = np.squeeze(pred, axis=0)
 
     return pred
@@ -196,7 +197,7 @@ def predict(args, opts):
             nwp.append(k)
 
     if not 'nwcsaf' in dss:
-        dss['nwcsaf'] = DataSeries("nwcsaf", opts.preprocess)
+        dss['nwcsaf'] = DataSeries("nwcsaf", opts.preprocess, fill_gaps_max=1, cache_data=False)
 
     predictions = {
         opts.get_label() : { 'time' : [], 'data' : [] },
@@ -208,7 +209,7 @@ def predict(args, opts):
 
     for k in nwp:
         if not k in dss:
-            dss[k] = DataSeries(k, opts.preprocess)
+            dss[k] = DataSeries(k, opts.preprocess, cache_data=False)
         predictions[k] = { 'time' : [], 'data' : [] }
 
     def diff(a, b):
@@ -242,6 +243,7 @@ def predict(args, opts):
 
         if np.isnan(datas['nwcsaf']).any():
             print("Seed contains missing values, skipping")
+            print(datas['nwcsaf'])
             continue
 
         new_times = diff(times, predictions['gt']['time'])
@@ -257,9 +259,9 @@ def predict(args, opts):
         if opts.include_datetime:
             datetime_weights = list(map(lambda x: create_datetime(x, get_img_size(opts.preprocess)), history))
         if opts.include_topography and topography_weights is None:
-            topography_weights = create_topography_data(opts.preprocess, opts.model == 'convlstm')
+            topography_weights = create_topography_data(opts.preprocess)
         if opts.include_terrain_type and terrain_type_weights is None:
-            terrain_type_weights = create_terrain_type_data(opts.preprocess, opts.model == 'convlstm')
+            terrain_type_weights = create_terrain_type_data(opts.preprocess)
 
         if opts.leadtime_conditioning:
             assert(args.prediction_len <= opts.leadtime_conditioning)
@@ -452,7 +454,8 @@ if __name__ == "__main__":
         assert(opts_list[-1].onehot_encoding is False)
 
     predictions = predict_many(args, opts_list)
-    predictions = intersection(opts_list, predictions)
+    if args.start_date != args.stop_date and len(labels) > 1:
+        predictions = intersection(opts_list, predictions)
 
     DSS = None
 

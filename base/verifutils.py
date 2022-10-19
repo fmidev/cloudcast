@@ -6,6 +6,12 @@ from base.plotutils import *
 
 CATEGORIES =  ['cloudy', 'partly-cloudy', 'clear']
 
+
+def get_time_for_file(args):
+    if args.start_date == args.stop_date:
+         return args.start_date.strftime("%Y%m%dT%H%M%S")
+    return "{}-{}".format(args.start_date.strftime("%Y%m%d"), args.stop_date.strftime("%Y%m%d"))
+
 def produce_scores(args, predictions):
     mae(args, predictions)
     categorical_scores(args, predictions)
@@ -22,6 +28,9 @@ def histogram(args, predictions):
         datas.append(predictions[l]['data'])
         labels.append(l)
 
+        if args.result_dir is not None:
+            np.save("{}/{}_{}_histogram.npy".format(args.result_dir, l, get_time_for_file(args)), np.histogram(np.asarray(datas[-1])))
+ 
     datas = np.asarray(datas)
     plot_histogram(datas, labels, plot_dir=args.plot_dir)
 
@@ -116,6 +125,9 @@ def plot_mae_per_leadtime(args, ae):
 
         maelts.append(np.asarray(maelt, dtype=np.float32))
 
+        if args.result_dir is not None:
+            np.save("{}/{}_{}_mae.npy".format(args.result_dir, l, get_time_for_file(args)), np.asarray(maelt))
+ 
     plot_linegraph(maelts, list(ae.keys()), title='MAE over {} predictions'.format(ae[l].shape[0]), ylabel='mae', plot_dir=args.plot_dir, start_from_zero=True)
 
 
@@ -126,7 +138,10 @@ def plot_mae2d(args, ae, times):
     # merge 0, 1 so that all mae2d fields are merged to one dimension
     print("Plotting mae on map")
 
-    title = 'MAE between {}..{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'))
+    if times is not None:
+        title = 'MAE between {}..{}'.format(times[0][0].strftime('%Y%m%dT%H%M'), times[-1][-1].strftime('%Y%m%dT%H%M'))
+    else:
+        title = "Mean Absolute Error 2D"
 
     for l in ae:
         titlel = '{}\n{}'.format(title, l)
@@ -135,6 +150,9 @@ def plot_mae2d(args, ae, times):
         mae = np.average(ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0).astype(np.float32)
         plot_on_map(np.squeeze(mae), title=titlel, plot_dir=args.plot_dir)
 
+        if args is not None and args.result_dir is not None:
+            np.save("{}/{}_{}_mae2d.npy".format(args.result_dir, l, get_time_for_file(args)), mae)
+ 
 
 def plot_mae_timeseries(args, ae, times):
     print("Plotting mae timeseries")
@@ -272,7 +290,9 @@ def categorical_scores(args, predictions):
 
         plot_performance_diagram(catscores, CATEGORIES, title='Performance diagram over {} predictions\n{}'.format(len(predictions[keys[0]]['data']), l), plot_dir=args.plot_dir)
 
-
+        if args.result_dir is not None:
+            np.save("{}/{}_{}_categoricalscores.npy".format(args.result_dir, l, get_time_for_file(args)), np.asarray(catscores))
+ 
 def ssim(args, predictions):
     print("Plotting SSIM")
 
@@ -313,5 +333,8 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
 
+        if args.result_dir is not None:
+            np.save("{}/{}_{}_ssim.npy".format(args.result_dir, l, get_time_for_file(args)), ssims[-1])
+ 
     plot_linegraph(ssims, list(predictions.keys()), title='Mean SSIM over {} predictions'.format(len(predictions[list(predictions.keys())[0]]['data'])), ylabel='ssim', plot_dir=args.plot_dir)
 
