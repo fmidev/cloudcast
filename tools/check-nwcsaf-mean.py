@@ -133,7 +133,7 @@ def check(nowtime, plot=False):
     valid_dates = dates
     print(f"Past {len(means)-1} frame mean of means is {window_mean:.3f} current mean is {means[-1]:.3f} diff {diff:.4f}")
 
-    if diff > 0.07:
+    if diff > 0.06:
         print("{} is suspicious".format(nowtime))
 #        with open("{}.flag".format(nowtime.strftime("%Y%m%dT%H%M%S")), 'w') as fp:
 #            fp.write("{} with mean {:.3f} previous {} mean of means {:.3f} diff {:.3f}\n".format(nowtime, means[-1], len(means), window_mean, diff))
