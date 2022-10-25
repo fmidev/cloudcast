@@ -66,21 +66,31 @@ def create_generators_from_dataseries(**kwargs):
     else:
         i = 0
 
+        # number of predictions
         n_fut = max(1, leadtime_conditioning)
-        while i < dataseries.shape[0] - (n_channels + n_fut):
-            hist = dataseries[i:i+n_channels]
-            thist = times[i:i+n_channels]
 
-            assert(len(thist) >= 1)
-            dt = datetime.datetime.strptime(thist[-1], '%Y%m%dT%H%M%S')
+        # with n_channels=4, leadtime_conditioning=6:
+        # HHHHPPPPPPHHHHPPPPPP...
+
+        # if leadtime conditioning is set, leadtime will be a part
+        # of the input tensor
+
+        while i < dataseries.shape[0] - (n_channels + n_fut):
+            # read history data
+            hist = dataseries[i:i+n_channels]
+
+            # Time of the last history data, we use that to create a time tensor
+            # if that's needed (requested)
+            dt = datetime.datetime.strptime(times[i+n_channels], '%Y%m%dT%H%M%S')
 
             if leadtime_conditioning == 0:
-                hist = add_auxiliary_data(hist, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
+                x = add_auxiliary_data(hist, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
                 y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1)
-                datasets.append(np.concatenate((hist, y), axis=0))
+                datasets.append(np.concatenate((x, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
-                for j in range(0, leadtime_conditioning):
+
+                for j in range(n_fut):
                     if not onehot_encoding:
                         leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
                     else:
@@ -216,7 +226,7 @@ class TimeseriesGenerator:
 
 
 class DataSeries:
-    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness', fill_gaps_max = 0):
+    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness', fill_gaps_max = 0, cache_data = True):
         self.data_series = {}
         self.producer = producer
         self.preprocess = preprocess
@@ -224,6 +234,7 @@ class DataSeries:
         self.single_analysis_time = single_analysis_time
         self.param = param
         self.fill_gaps_max = fill_gaps_max
+        self.cache_data = cache_data
 
 
     def fill_gaps(self, series, analysis_time):
@@ -279,7 +290,12 @@ class DataSeries:
             datakeys = []
 
         new_series = {}
-        new_times = list(set(datakeys+times))
+
+        if self.cache_data:
+            new_times = list(set(datakeys+times))
+        else:
+            new_times = times
+
         new_times.sort()
 
         for t in new_times:

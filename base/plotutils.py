@@ -169,6 +169,36 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
     if plot_dir is not None:
         savefig(plot_dir)
 
+def plot_bargraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None):
+    assert(len(data) == len(labels))
+    labels = list(map(lambda x: reduce_label(x), labels))
+
+    for i,_data in enumerate(data):
+        x = _data[1]
+        y = _data[0]
+        x = x[:-1]
+        fig = plt.figure(figure(), figsize=(10,6))
+        ax = plt.axes()
+        ax.set_xlabel('bins')
+        ax.set_ylabel(ylabel)
+
+        print(x.shape, y.shape)
+        label = labels[i]
+        #plt.stairs(x, y, label=label)
+        title = "histogram for {}".format(labels[i])
+        plt.title(title)
+
+
+        plt.hist(x, 50, weights=y)
+ #   ax.set_xticks(xreal)
+ #   ax.set_xticklabels(xlabels)
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+    if plot_dir is not None:
+        savefig(plot_dir)
+
+
+
 def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None, start_from_zero=False, add_mean_value_to_label=False):
     assert(len(data) == len(labels))
     fig = plt.figure(figure(), figsize=(12,7))
@@ -259,9 +289,13 @@ def plot_histogram(datas, labels, plot_dir=None):
     fig, axs = plt.subplots(1, len(datas), sharey=True, tight_layout=False, num=figure())
     fig.set_size_inches(12,8)
 
-    for i, data in enumerate(datas):
-        axs[i].hist(np.asarray(data).flatten(), bins=n_bins, density=True)
-        axs[i].set_title(reduce_label(labels[i]))
+    if len(datas) == 1:
+        axs.hist(np.asarray(datas[0]).flatten(), bins=n_bins, density=True)
+        axs.set_title(reduce_label(labels[0]))
+    else:
+        for i, data in enumerate(datas):
+            axs[i].hist(np.asarray(data).flatten(), bins=n_bins, density=True)
+            axs[i].set_title(reduce_label(labels[i]))
 
     if plot_dir is not None:
         savefig(plot_dir)
