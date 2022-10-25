@@ -29,7 +29,7 @@ def histogram(args, predictions):
         labels.append(l)
 
         if args.result_dir is not None:
-            np.save("{}/{}_{}_histogram.npy".format(args.result_dir, l, get_time_for_file(args)), np.histogram(np.asarray(datas[-1])))
+            np.save("{}/{}_{}_histogram.npy".format(args.result_dir, l, get_time_for_file(args)), np.histogram(np.asarray(datas[-1]), bins=50))
  
     datas = np.asarray(datas)
     plot_histogram(datas, labels, plot_dir=args.plot_dir)
