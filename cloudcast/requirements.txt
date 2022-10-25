@@ -1,7 +1,7 @@
 botocore
 boto3
 eccodes
-gdal==3.0.4
+gdal==3.4.0
 numba==0.53
 numpy<1.23
 opencv-python
