@@ -17,7 +17,7 @@ except KeyError:
 def read_filenames(start_time, stop_time, producer='nwcsaf', param="effective-cloudiness"):
     print(f'Input directory: {INPUT_DIR}/{producer}')
 
-    if INPUT_DIR[0:4] == 'http':
+    if INPUT_DIR.startswith("http") or INPUT_DIR.startswith("s3://"):
         return read_filenames_from_s3(start_time, stop_time, producer)
 
     files = sorted(glob.glob(f'{INPUT_DIR}/{producer}/**/*{param}*.grib2', recursive=True))
