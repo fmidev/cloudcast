@@ -6,7 +6,8 @@ from base.fileutils import *
 from base.plotutils import *
 from base.generators import *
 from base.opts import CloudCastOptions
-
+from base.dataseries import LazyDataSeries
+import math
 import argparse
 
 EPOCHS = 500
@@ -16,14 +17,14 @@ def parse_command_line():
     parser.add_argument("--start_date", action='store', type=str)
     parser.add_argument("--stop_date", action='store', type=str)
     parser.add_argument("--cont", action='store_true')
-    parser.add_argument("--n_channels", action='store', type=int, default=1)
+    parser.add_argument("--n_channels", action='store', type=int, default=4)
     parser.add_argument("--loss_function", action='store', type=str, default='MeanSquaredError')
     parser.add_argument("--preprocess", action='store', type=str, default='img_size=128x128')
     parser.add_argument("--label", action='store', type=str)
     parser.add_argument("--include_datetime", action='store_true', default=False)
     parser.add_argument("--include_topography", action='store_true', default=False)
     parser.add_argument("--include_terrain_type", action='store_true', default=False)
-    parser.add_argument("--leadtime_conditioning", action='store', type=int, default=0)
+    parser.add_argument("--leadtime_conditioning", action='store', type=int, default=12)
     parser.add_argument("--dataseries_file", action='store', type=str, default='')
 
     args = parser.parse_args()
@@ -46,17 +47,39 @@ def parse_command_line():
     return args, opts
 
 
-def with_generator(m, args, opts):
-    img_size = get_img_size(args.preprocess)
-
+def get_batch_size(img_size):
     if img_size[0] >= 384:
         batch_size = 3
     elif img_size[0] >= 256:
         batch_size = 8
     elif img_size[0] >= 128:
-        batch_size = 16
-    else:
         batch_size = 32
+    else:
+        batch_size = 64
+
+    return batch_size
+
+
+def with_dataset(m, args, opts):
+    img_size = get_img_size(args.preprocess)
+
+    lds = LazyDataSeries(img_size=img_size, batch_size=get_batch_size(img_size), **vars(args))
+
+    n = len(lds)
+
+    train_ds = lds.dataset.take(math.floor(n * 0.9))
+    val_ds = lds.dataset.skip(math.floor(n * 0.9))
+
+    print("Number of train dataset elements: {}".format(math.floor(n * 0.9)))
+    print("Number of validation dataset elements: {}".format(math.floor(n * 0.1)))
+
+    hist = m.fit(train_ds, epochs = EPOCHS, validation_data = val_ds, callbacks=callbacks(args, opts))
+
+
+def with_generator(m, args, opts):
+    img_size = get_img_size(args.preprocess)
+
+    batch_size = get_batch_size(img_size)
 
     train_gen, val_gen = create_generators(batch_size=batch_size, opts=opts, **vars(args))
 
@@ -111,7 +134,7 @@ def run_model(args, opts):
 
     start = datetime.datetime.now()
 
-    hist = with_generator(m, args, opts)
+    hist = with_dataset(m, args, opts)
 
     duration = datetime.datetime.now() - start
 
