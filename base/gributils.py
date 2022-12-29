@@ -52,7 +52,7 @@ def read_grib_contents(gh, **kwargs):
     ni = ecc.codes_get_long(gh, "Ni")
     nj = ecc.codes_get_long(gh, "Nj")
 
-    dtype = kwargs.get('dtype')
+    dtype = kwargs.get('dtype', 'f')
     data = ecc.codes_get_double_array(gh, "values").astype(dtype).reshape(nj, ni)
 
     img_size = kwargs.get('img_size', None)
