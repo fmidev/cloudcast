@@ -20,6 +20,8 @@ class LazyDataSeries:
         self.n_channels = int(kwargs.get("n_channels"))
         self.img_size = kwargs.get("img_size")
         self.leadtime_conditioning = int(kwargs.get("leadtime_conditioning"))
+        self.terrain_type_data = None
+        self.topography_data = None
 
         self.initialize(kwargs)
 
