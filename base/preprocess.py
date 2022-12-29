@@ -222,23 +222,22 @@ def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
     return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3)).astype(np.float32)
 
-def create_topography_data(preprocess_label):
+def is_http(uri):
+    return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
+
+def create_topography_data(img_size):
     global DEM
 
-    def is_http(uri):
-        return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
-
-    isize = get_img_size(preprocess_label)
-    img_size = '{}x{}'.format(isize[0], isize[1])
+    isize = '{}x{}'.format(img_size[0], img_size[1])
 
     try:
-        return DEM[img_size]
+        return DEM[isize]
     except KeyError as e:
         pass
 
     proc='normalize=true'
 
-    proc = '{},img_size={}'.format(proc, img_size)
+    proc = '{},img_size={}'.format(proc, isize)
 
     dem_file = get_filename(None, 'DEM')
 
@@ -251,31 +250,27 @@ def create_topography_data(preprocess_label):
     else:
         raster = gdal.Open(dem_file)
 
-    DEM[img_size] = raster.GetRasterBand(1).ReadAsArray()
-    DEM[img_size] = preprocess_single(DEM[img_size], proc).astype(np.float32)
+    DEM[isize] = raster.GetRasterBand(1).ReadAsArray()
+    DEM[isize] = preprocess_single(DEM[isize], proc).astype(np.float32)
 
     raster = None
 
-    return DEM[img_size]
+    return DEM[isize]
 
 
-def create_terrain_type_data(preprocess_label):
+def create_terrain_type_data(img_size):
     global LSM
 
-    def is_http(uri):
-        return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
-
-    isize = get_img_size(preprocess_label)
-    img_size = '{}x{}'.format(isize[0], isize[1])
+    isize = '{}x{}'.format(img_size[0], img_size[1])
 
     try:
-        return LSM[img_size]
+        return LSM[isize]
     except KeyError as e:
         pass
 
     proc='normalize=true'
 
-    proc = '{},img_size={}'.format(proc, img_size)
+    proc = '{},img_size={}'.format(proc, isize)
 
     lsm_file = get_filename(None, 'LSM')
 
@@ -286,9 +281,9 @@ def create_terrain_type_data(preprocess_label):
     else:
         raster = gdal.Open(lsm_file)
 
-    LSM[img_size] = raster.GetRasterBand(1).ReadAsArray()
-    LSM[img_size] = process_lsm(LSM[img_size])
-    LSM[img_size] = preprocess_single(LSM[img_size], proc).astype(np.float32)
+    LSM[isize] = raster.GetRasterBand(1).ReadAsArray()
+    LSM[isize] = process_lsm(LSM[isize])
+    LSM[isize] = preprocess_single(LSM[isize], proc).astype(np.float32)
 
     raster = None
 

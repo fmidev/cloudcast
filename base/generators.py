@@ -10,11 +10,11 @@ def add_auxiliary_data(x, include_datetime, include_topography_data, include_ter
         x = np.concatenate((x, np.expand_dims(dts[0], axis=0), np.expand_dims(dts[1], axis=0)), axis=0)
 
     if include_topography_data:
-        topo = create_topography_data(preprocess)
+        topo = create_topography_data(get_img_size(preprocess))
         x = np.concatenate((x, np.expand_dims(topo, axis=0)), axis=0)
 
     if include_terrain_type_data:
-        terr = create_terrain_type_data(preprocess)
+        terr = create_terrain_type_data(get_img_size(preprocess))
         x = np.concatenate((x, np.expand_dims(terr, axis=0)), axis=0)
 
     return x
@@ -43,9 +43,9 @@ def create_generators_from_dataseries(**kwargs):
         i = 0
 
         if include_topography_data:
-            topography_data = create_topography_data(preprocess, True)
+            topography_data = create_topography_data(get_img_size(preprocess))
         if include_terrain_type_data:
-            terrain_type_data = create_terrain_type_data(preprocess, True)
+            terrain_type_data = create_terrain_type_data(get_img_size(preprocess))
 
         n_channels += 1
         while i < dataseries.shape[0] - n_channels:
