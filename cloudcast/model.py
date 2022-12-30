@@ -15,6 +15,25 @@ from ssim import make_SSIM_loss
 from ks import make_KS_loss
 from bcl1 import make_bc_l1_loss
 
+from tensorflow.keras import mixed_precision
+
+def get_compute_capability():
+    details = tf.config.experimental.get_device_details(tf.config.experimental.list_physical_devices()[1])
+    cc = details['compute_capability']
+
+    return cc
+
+cc = get_compute_capability()
+
+if int(cc[0]) >= 7:
+    policy = mixed_precision.Policy('mixed_float16')
+    mixed_precision.set_global_policy(policy)
+
+policy = tf.keras.mixed_precision.global_policy()
+
+print('Compute dtype: %s' % policy.compute_dtype)
+print('Variable dtype: %s' % policy.variable_dtype)
+
 def get_loss_function(loss_function):
     if loss_function == 'ssim':
         return make_SSIM_loss()
@@ -80,10 +99,13 @@ def unet(pretrained_weights=None, input_size=(256,256,1), loss_function='MeanSqu
     d3 = decoder_block(d2, s2, 128)
     d4 = decoder_block(d3, s1, 64)
 
+    # Force datatype of output layer to float32; float16 is not numerically
+    # stable enough in this layer
+
     if n_categories is None:
-        outputs = Conv2D(1, 1, padding='same', activation = 'sigmoid')(d4)
+        outputs = Conv2D(1, 1, padding='same', activation = 'sigmoid', dtype='float32')(d4)
     else:
-        outputs = Conv2D(n_categories, 1, padding = 'same', activation = 'softmax')(d4)
+        outputs = Conv2D(n_categories, 1, padding = 'same', activation = 'softmax', dtype='float32')(d4)
 
     assert(n_categories is None or loss_function == 'sparse_categorical_crossentropy')
 
