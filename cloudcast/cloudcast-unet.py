@@ -67,13 +67,12 @@ def with_dataset(m, args, opts):
     lds = LazyDataSeries(img_size=img_size, batch_size=get_batch_size(img_size), **vars(args))
 
     n = len(lds)
-    num_sets = lds.leadtime_conditioning * int(n / (lds.n_channels + lds.leadtime_conditioning))
 
-    train_ds = lds.dataset.take(math.floor(num_sets * 0.9))
-    val_ds = lds.dataset.skip(math.floor(num_sets * 0.9))
+    train_ds = lds.dataset.take(math.floor(n * 0.9))
+    val_ds = lds.dataset.skip(math.floor(n * 0.9))
 
-    print("Number of train dataset elements: {}".format(math.floor(num_sets * 0.9)))
-    print("Number of validation dataset elements: {}".format(math.floor(num_sets * 0.1)))
+    print("Number of train dataset elements: {}".format(math.floor(n * 0.9)))
+    print("Number of validation dataset elements: {}".format(math.floor(n * 0.1)))
 
     hist = m.fit(train_ds, epochs = EPOCHS, validation_data = val_ds, callbacks=callbacks(args, opts))
 
