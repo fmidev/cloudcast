@@ -26,6 +26,7 @@ def parse_command_line():
     parser.add_argument("--include_terrain_type", action='store_true', default=False)
     parser.add_argument("--leadtime_conditioning", action='store', type=int, default=12)
     parser.add_argument("--dataseries_file", action='store', type=str, default='')
+    parser.add_argument("--dataseries_directory", action='store', type=str, default='')
 
     args = parser.parse_args()
 
@@ -36,8 +37,8 @@ def parse_command_line():
         vars_['model'] = 'unet'
         opts = CloudCastOptions(**vars_)
 
-    if (not args.start_date and not args.stop_date) and not args.dataseries_file:
-        print("Either start_date,stop_date or dataseries_file needs to be defined")
+    if (not args.start_date and not args.stop_date) and not args.dataseries_file and not args.dataseries_directory:
+        print("Either start_date,stop_date or dataseries_file or dataseries_directory needs to be defined")
         sys.exit(1)
 
     if args.start_date and args.stop_date:

@@ -13,28 +13,69 @@ from base.gributils import read_gribs
 from base.fileutils import read_filenames
 
 
+def read_times_from_preformatted_files(dirname):
+    toc = {}
+    for f in glob.glob("{}/*-times.npy".format(dirname)):
+        arr = np.load(f)
+        times = list(map(lambda x: datetime.strptime(x, "%Y%m%dT%H%M%S"), arr))
+
+        for i, t in enumerate(times):
+            toc[t] = {"filename": f.replace("-times", ""), "index": i, "time": t}
+
+    times = list(toc.keys())
+
+    times.sort()
+    print("Read {} times from {}".format(len(times), dirname))
+    return times, toc
+
+
+def read_datas_from_preformatted_files(dirname, toc, times):
+    datas = []
+
+    for t in times:
+        e = toc[t]
+        idx = e["index"]
+        filename = e["filename"]
+        datafile = np.load(filename, mmap_mode="r")
+        datas.append(datafile[idx])
+    return datas, times
+
+
 class LazyDataSeries:
     def __init__(self, **kwargs):
-        self.files = read_filenames(kwargs.get("start_date"), kwargs.get("stop_date"))
         self.batch_size = int(kwargs.get("batch_size"))
         self.n_channels = int(kwargs.get("n_channels"))
         self.img_size = kwargs.get("img_size")
         self.leadtime_conditioning = int(kwargs.get("leadtime_conditioning"))
         self.terrain_type_data = None
         self.topography_data = None
+        self.include_datetime = kwargs.get("include_datetime", False)
+        self.dataseries_directory = kwargs.get("dataseries_directory", None)
+
+        if self.dataseries_directory is not None:
+            self.elements, self.toc = read_times_from_preformatted_files(
+                self.dataseries_directory
+            )
+
+        else:
+            start_date = kwargs.get("start_date")
+            stop_date = kwargs.get("stop_date")
+
+            self.elements = read_filenames(start_date, stop_date)
 
         self.initialize(kwargs)
 
     def __len__(self):
-        return len(self.files)
+        return len(self.elements)
 
     def initialize(self, kwargs):
+
         x_dim_len = self.n_channels
 
-        if self.leadtime_conditioning > 0:
-            x_dim_len += 1
+        if self.include_datetime:
+            x_dim_len += 2
 
-        if kwargs.get("include_datetime", False):
+        if int(kwargs.get("leadtime_conditioning", 0)) > 0:
             leadtimes = np.asarray(
                 [
                     create_squeezed_leadtime_conditioning(
@@ -45,13 +86,14 @@ class LazyDataSeries:
             )
             self.leadtimes = np.squeeze(leadtimes, 1)
 
-            x_dim_len += 2
+            x_dim_len += 1
 
         if kwargs.get("include_topography", False):
             self.topography_data = np.expand_dims(
                 create_topography_data(self.img_size), axis=0
             )
             x_dim_len += 1
+
         if kwargs.get("include_terrain_type", False):
             self.terrain_type_data = np.expand_dims(
                 create_terrain_type_data(self.img_size), axis=0
@@ -61,42 +103,92 @@ class LazyDataSeries:
         self.dataset = tf.data.Dataset.from_generator(
             self.gen,
             output_signature=(
-                tf.TensorSpec(shape=self.img_size + (x_dim_len,), dtype=tf.float32),
-                tf.TensorSpec(shape=self.img_size + (1,), dtype=tf.float32),
+                tf.TensorSpec(
+                    shape=self.img_size + (x_dim_len,), dtype=tf.float32, name="x"
+                ),
+                tf.TensorSpec(shape=self.img_size + (1,), dtype=tf.float32, name="y"),
             ),
         )
 
-        self.dataset = self.dataset.batch(self.batch_size).cache().prefetch(AUTOTUNE)
+        def resize(x, y, img_size):
+            # resize all dimension to correct shape, if they are not already
+            if x.shape[1] != img_size[0] or x.shape[2] != img_size[1]:
+                x = tf.image.resize(x, img_size)
+                y = tf.image.resize(y, img_size)
 
+            return (x, y)
+
+        def flip(x, y, n):
+            # flip first n dimensions as they contain the payload data
+            # concatenate the flipped data with the rest
+            x = tf.concat([tf.image.flip_up_down(x[..., 0:n]), x[..., n:]], axis=-1)
+            y = tf.image.flip_up_down(y)
+            return (x, y)
+
+        def normalize(x, y):
+            # normalize input data (x) to 0..1
+            # scale output data to 0..1
+            mean, variance = tf.nn.moments(x, axes=[0, 1], keepdims=True)
+            x = (x - mean) / tf.sqrt(variance + tf.keras.backend.epsilon())
+            y = y * 0.01
+            return (x, y)
+
+        if self.dataseries_directory is None:
+            self.dataset = (
+                self.dataset.map(lambda x, y: resize(x, y, self.img_size))
+                .map(lambda x, y: flip(x, y, self.n_channels))
+                .map(lambda x, y: normalize(x, y))
+                .batch(self.batch_size)
+                .prefetch(AUTOTUNE)
+            )
+        self.dataset = self.dataset.batch(self.batch_size).prefetch(AUTOTUNE)
 
     def gen(self):
         hist_start = 0
 
         assert self.leadtime_conditioning > 0  # temporary
-        while hist_start < len(self.files):
-            x_files = self.files[hist_start : hist_start + self.n_channels]
-            y_files = self.files[
+        while hist_start + self.n_channels + self.leadtime_conditioning < len(
+            self.elements
+        ):
+            x_elems = self.elements[hist_start : hist_start + self.n_channels]
+            y_elems = self.elements[
                 hist_start
                 + self.n_channels : hist_start
                 + self.n_channels
                 + self.leadtime_conditioning
             ]
 
-            x = read_gribs(x_files, img_size=self.img_size)
-            y = read_gribs(y_files, img_size=self.img_size)
+            if self.dataseries_directory is None:
+                x = read_gribs(x_elems, dtype=np.single, disable_preprocess=True)
+                y = read_gribs(y_elems, dtype=np.single, disable_preprocess=True)
 
-            ts = datetime.strptime(
-                x_files[-1].split("/")[-1].split("_")[0], "%Y%m%dT%H%M%S"
-            )
+                x = tf.image.resize(x, self.img_size)
+                y = tf.image.resize(y, self.img_size)
 
-            tod, toy = create_datetime(ts, self.img_size)
-            tod = np.expand_dims(tod, axis=0)
-            toy = np.expand_dims(toy, axis=0)
+                ts = datetime.strptime(
+                    x_elems[-1].split("/")[-1].split("_")[0], "%Y%m%dT%H%M%S"
+                )
+            else:
+                x, times = read_datas_from_preformatted_files(
+                    self.dataseries_directory, self.toc, x_elems
+                )
+                y, _ = read_datas_from_preformatted_files(
+                    self.dataseries_directory, self.toc, y_elems
+                )
 
-            for i in range(len(y_files)):
+                ts = times[-1]
+
+            if self.include_datetime:
+                tod, toy = create_datetime(ts, self.img_size)
+                tod = np.expand_dims(tod, axis=0)
+                toy = np.expand_dims(toy, axis=0)
+
+            for i in range(len(y)):
                 lt = np.expand_dims(self.leadtimes[i], axis=0)
-                x_ = np.concatenate((x, lt, tod, toy), axis=0)
+                x_ = np.concatenate((x, lt), axis=0)
 
+                if self.include_datetime:
+                    x_ = np.concatenate((x_, tod, toy), axis=0)
                 if self.topography_data is not None:
                     x_ = np.concatenate((x_, self.topography_data), axis=0)
                 if self.terrain_type_data is not None:
