@@ -66,7 +66,9 @@ class LazyDataSeries:
         self.initialize(kwargs)
 
     def __len__(self):
-        return len(self.elements)
+        return self.leadtime_conditioning * int(
+            len(self.elements) / (self.n_channels + self.leadtime_conditioning)
+        )
 
     def initialize(self, kwargs):
 
