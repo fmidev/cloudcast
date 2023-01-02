@@ -287,7 +287,7 @@ def create_terrain_type_data(img_size):
 
     raster = None
 
-    return LSM[img_size]
+    return LSM[isize]
 
 
 def generate_clim_values(shape, month):
