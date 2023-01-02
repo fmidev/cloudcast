@@ -5,6 +5,8 @@ import cv2
 import os
 import requests
 import sys
+import time
+#import tensorflow as tf
 from io import BytesIO
 from base.s3utils import *
 
@@ -51,33 +53,35 @@ def read_from_file(file_path, message_no, **kwargs):
 def read_grib_contents(gh, **kwargs):
     ni = ecc.codes_get_long(gh, "Ni")
     nj = ecc.codes_get_long(gh, "Nj")
+    cat = ecc.codes_get_long(gh, "parameterCategory")
+    num = ecc.codes_get_long(gh, "parameterNumber")
 
-    dtype = kwargs.get('dtype', 'f')
+    dtype = kwargs.get('dtype', np.single)
+
     data = ecc.codes_get_double_array(gh, "values").astype(dtype).reshape(nj, ni)
+
+    disable_preprocess = kwargs.get('disable_preprocess', False)
+
+    if disable_preprocess:
+        return np.expand_dims(data, axis=2)
 
     img_size = kwargs.get('img_size', None)
     if img_size is not None:
         data = np.expand_dims(cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
-
+        #data = tf.image.resize(np.expand_dims(data, -1), img_size).numpy().astype(dtype)
     if ecc.codes_get(gh, "jScansPositively"):
         data = np.flipud(data) # image data is +x-y
 
     ecc.codes_release(gh)
 
-    if np.max(data) == 9999.0 and np.min(data) == 9999.0:
+    if np.max(data) == 9999.0: # and np.min(data) == 9999.0:
         data[data == 9999.0] = np.NAN
         return np.expand_dims(data, axis=-1)
 
-    if dtype != np.uint8 and np.max(data) > 1.1:
+    if dtype != np.uint8 and cat == 6 and num == 192:
         data = data / 100.0
 
-    if np.min(data) < -0.01 or np.max(data) > 1.01:
-        print("Invalid data found from '{}': min={} max={}".format(kwargs['fileuri'], np.min(data), np.max(data)))
-        sys.exit(1)
-
-    data = np.expand_dims(data, axis=2)
-
-    return data
+    return np.expand_dims(data, axis=2)
 
 
 def read_grib(file_path, message_no = 0, **kwargs):
