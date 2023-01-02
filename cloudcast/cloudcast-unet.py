@@ -71,7 +71,7 @@ def with_dataset(m, args, opts):
     train_ds = lds.dataset.take(math.floor(n * 0.9))
     val_ds = lds.dataset.skip(math.floor(n * 0.9))
 
-    print("Number of train dataset elements: {}".format(math.floor(n * 0.9)))
+    print("Number of sets: {} number of train dataset elements: {}".format(math.floor(n * 0.9 / lds.batch_size), math.floor(n * 0.9)))
     print("Number of validation dataset elements: {}".format(math.floor(n * 0.1)))
 
     hist = m.fit(train_ds, epochs = EPOCHS, validation_data = val_ds, callbacks=callbacks(args, opts))
