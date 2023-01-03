@@ -67,9 +67,10 @@ def with_dataset(m, args, opts):
     lds = LazyDataSeries(img_size=img_size, batch_size=get_batch_size(img_size), **vars(args))
 
     n = len(lds)
+    tv_split = (n / lds.leadtime_conditioning) * 0.9
 
-    train_ds = lds.dataset.take(math.floor(n * 0.9))
-    val_ds = lds.dataset.skip(math.floor(n * 0.9))
+    train_ds = lds.get_dataset(take=tv_split)
+    val_ds = lds.get_dataset(skip=tv_split)
 
     print("Number of sets: {} number of train dataset elements: {}".format(math.floor(n * 0.9 / lds.batch_size), math.floor(n * 0.9)))
     print("Number of validation dataset elements: {}".format(math.floor(n * 0.1)))
