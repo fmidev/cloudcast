@@ -67,7 +67,7 @@ def with_dataset(m, args, opts):
     lds = LazyDataSeries(img_size=img_size, batch_size=get_batch_size(img_size), **vars(args))
 
     n = len(lds)
-    tv_split = (n / lds.leadtime_conditioning) * 0.9
+    tv_split = math.floor((n / lds.leadtime_conditioning) * 0.9)
 
     train_ds = lds.get_dataset(take=tv_split)
     val_ds = lds.get_dataset(skip=tv_split)
