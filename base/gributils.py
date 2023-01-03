@@ -6,27 +6,29 @@ import os
 import requests
 import sys
 import time
-#import tensorflow as tf
+
+# import tensorflow as tf
 from io import BytesIO
 from base.s3utils import *
 
-DEFAULT_SIZE=(1069, 949, 1)
+DEFAULT_SIZE = (1069, 949, 1)
+
 
 def read_from_http(url, **kwargs):
-    if url[0:5] == 's3://':
-        tokens = url[5:].split('/')
-        tokens[0] = '{}/{}'.format(os.environ['S3_HOSTNAME'], tokens[0])
-        url = 'https://' + '/'.join(tokens)
+    if url[0:5] == "s3://":
+        tokens = url[5:].split("/")
+        tokens[0] = "{}/{}".format(os.environ["S3_HOSTNAME"], tokens[0])
+        url = "https://" + "/".join(tokens)
 
     r = requests.get(url, stream=True)
     if r.status_code == 404:
         print(f"Not found: {url}")
         return np.full(DEFAULT_SIZE, np.NAN)
     if r.status_code != 200:
-        print(f'HTTP error: {r.status_code}')
+        print(f"HTTP error: {r.status_code}")
         sys.exit(1)
 
-    print_filename=kwargs.get('print_filename', False)
+    print_filename = kwargs.get("print_filename", False)
 
     if print_filename:
         print(f"Reading {url}")
@@ -38,7 +40,7 @@ def read_from_http(url, **kwargs):
 def read_from_file(file_path, message_no, **kwargs):
     try:
         with open(file_path) as fp:
-            print_filename=kwargs.get('print_filename', False)
+            print_filename = kwargs.get("print_filename", False)
 
             if print_filename:
                 print(f"Reading {file_path}")
@@ -56,25 +58,27 @@ def read_grib_contents(gh, **kwargs):
     cat = ecc.codes_get_long(gh, "parameterCategory")
     num = ecc.codes_get_long(gh, "parameterNumber")
 
-    dtype = kwargs.get('dtype', np.single)
+    dtype = kwargs.get("dtype", np.single)
 
     data = ecc.codes_get_double_array(gh, "values").astype(dtype).reshape(nj, ni)
 
-    disable_preprocess = kwargs.get('disable_preprocess', False)
+    disable_preprocess = kwargs.get("disable_preprocess", False)
 
     if disable_preprocess:
         return np.expand_dims(data, axis=2)
 
-    img_size = kwargs.get('img_size', None)
+    img_size = kwargs.get("img_size", None)
     if img_size is not None:
-        data = np.expand_dims(cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
-        #data = tf.image.resize(np.expand_dims(data, -1), img_size).numpy().astype(dtype)
+        data = np.expand_dims(
+            cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2
+        )
+        # data = tf.image.resize(np.expand_dims(data, -1), img_size).numpy().astype(dtype)
     if ecc.codes_get(gh, "jScansPositively"):
-        data = np.flipud(data) # image data is +x-y
+        data = np.flipud(data)  # image data is +x-y
 
     ecc.codes_release(gh)
 
-    if np.max(data) == 9999.0: # and np.min(data) == 9999.0:
+    if np.max(data) == 9999.0:  # and np.min(data) == 9999.0:
         data[data == 9999.0] = np.NAN
         return np.expand_dims(data, axis=-1)
 
@@ -84,26 +88,26 @@ def read_grib_contents(gh, **kwargs):
     return np.expand_dims(data, axis=2)
 
 
-def read_grib(file_path, message_no = 0, **kwargs):
-    if file_path[0:4] == 'http' or file_path[0:5] == 's3://':
+def read_grib(file_path, message_no=0, **kwargs):
+    if file_path[0:4] == "http" or file_path[0:5] == "s3://":
         return read_from_http(file_path, **kwargs)
     else:
         return read_from_file(file_path, message_no, **kwargs)
 
 
 def save_grib(data, filepath, analysistime, forecasttime):
-    assert(filepath[-5:] == 'grib2')
+    assert filepath[-5:] == "grib2"
 
-    number = 164 if filepath.find('unet') != -1 else 192
+    number = 164 if filepath.find("unet") != -1 else 192
 
     h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
     ecc.codes_set(h, "gridType", "lambert")
-    ecc.codes_set(h, 'shapeOfTheEarth', 5)
-    ecc.codes_set(h, 'Nx', data.shape[1])
-    ecc.codes_set(h, 'Ny', data.shape[0])
-    ecc.codes_set(h, 'DxInMetres', 2370000 / (data.shape[1]-1))
-    ecc.codes_set(h, 'DyInMetres', 2670000 / (data.shape[0]-1))
-    ecc.codes_set(h, 'jScansPositively', 1)
+    ecc.codes_set(h, "shapeOfTheEarth", 5)
+    ecc.codes_set(h, "Nx", data.shape[1])
+    ecc.codes_set(h, "Ny", data.shape[0])
+    ecc.codes_set(h, "DxInMetres", 2370000 / (data.shape[1] - 1))
+    ecc.codes_set(h, "DyInMetres", 2670000 / (data.shape[0] - 1))
+    ecc.codes_set(h, "jScansPositively", 1)
     ecc.codes_set(h, "latitudeOfFirstGridPointInDegrees", 50.319616)
     ecc.codes_set(h, "longitudeOfFirstGridPointInDegrees", 0.27828)
     ecc.codes_set(h, "Latin1InDegrees", 63.3)
@@ -111,8 +115,8 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "LoVInDegrees", 15)
     ecc.codes_set(h, "latitudeOfSouthernPoleInDegrees", -90)
     ecc.codes_set(h, "longitudeOfSouthernPoleInDegrees", 0)
-    ecc.codes_set(h, "dataDate", int(analysistime.strftime('%Y%m%d')))
-    ecc.codes_set(h, "dataTime", int(analysistime.strftime('%H%M')))
+    ecc.codes_set(h, "dataDate", int(analysistime.strftime("%Y%m%d")))
+    ecc.codes_set(h, "dataTime", int(analysistime.strftime("%H%M")))
     ecc.codes_set(h, "centre", 86)
     ecc.codes_set(h, "generatingProcessIdentifier", 251)
     ecc.codes_set(h, "discipline", 192)
@@ -121,14 +125,16 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
     ecc.codes_set(h, "packingType", "grid_ccsds")
     ecc.codes_set(h, "indicatorOfUnitOfTimeRange", 0)
-    ecc.codes_set(h, "forecastTime", int((forecasttime - analysistime).total_seconds()/60))
-    ecc.codes_set(h, "typeOfGeneratingProcess", 2) # deterministic forecast
-    ecc.codes_set(h, "typeOfProcessedData", 2) # analysis and forecast products
+    ecc.codes_set(
+        h, "forecastTime", int((forecasttime - analysistime).total_seconds() / 60)
+    )
+    ecc.codes_set(h, "typeOfGeneratingProcess", 2)  # deterministic forecast
+    ecc.codes_set(h, "typeOfProcessedData", 2)  # analysis and forecast products
 
     data = np.flipud(data)
     ecc.codes_set_values(h, data.flatten())
 
-    if filepath[0:5] == 's3://':
+    if filepath[0:5] == "s3://":
         bio = BytesIO()
         ecc.codes_write(h, bio)
 
@@ -139,10 +145,10 @@ def save_grib(data, filepath, analysistime, forecasttime):
         except FileExistsError as e:
             pass
 
-        with open(filepath, 'wb') as fp:
+        with open(filepath, "wb") as fp:
             ecc.codes_write(h, fp)
 
-    print(f'Wrote file {filepath}')
+    print(f"Wrote file {filepath}")
 
     ecc.codes_release(h)
 

@@ -7,7 +7,8 @@ from osgeo import osr
 from base.s3utils import *
 from io import BytesIO
 
-FIGURE=0
+FIGURE = 0
+
 
 def figure():
     global FIGURE
@@ -16,9 +17,9 @@ def figure():
 
 
 def savefig(plot_dir):
-    fname = '{}/figure{:02d}.png'.format(plot_dir, FIGURE)
+    fname = "{}/figure{:02d}.png".format(plot_dir, FIGURE)
 
-    if fname[0:5] == 's3://':
+    if fname[0:5] == "s3://":
         img_data = BytesIO()
         plt.savefig(img_data)
         img_data.seek(0)
@@ -26,19 +27,21 @@ def savefig(plot_dir):
     else:
         plt.savefig(fname)
 
-    print(f'Saved {fname}')
+    print(f"Saved {fname}")
 
 
 def reduce_label(label):
-   return label.replace('True','T') \
-               .replace('False','F') \
-               .replace('binary_crossentropy', 'bc') \
-               .replace('MeanSquaredError', 'MSE') \
-               .replace('MeanAbsoluteError', 'MAE') \
-               .replace('-img_size=128x128', '') \
-               .replace('-oh=F', '') \
-               .replace('-lc=12', '') \
-               .replace('-hist=4', '')
+    return (
+        label.replace("True", "T")
+        .replace("False", "F")
+        .replace("binary_crossentropy", "bc")
+        .replace("MeanSquaredError", "MSE")
+        .replace("MeanAbsoluteError", "MAE")
+        .replace("-img_size=128x128", "")
+        .replace("-oh=F", "")
+        .replace("-lc=12", "")
+        .replace("-hist=4", "")
+    )
 
 
 def latlonraster(img_size):
@@ -55,21 +58,23 @@ def latlonraster(img_size):
 
     src = osr.SpatialReference()
     tgt = osr.SpatialReference()
-    src.ImportFromProj4("+proj=lcc +lat_0=0 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+    src.ImportFromProj4(
+        "+proj=lcc +lat_0=0 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+    )
     tgt.ImportFromEPSG(4326)
 
     transform = osr.CoordinateTransformation(src, tgt)
 
-    if img_size == (128,128):
+    if img_size == (128, 128):
         x = np.linspace(-1072595.173, 1299904.795, 128)
         y = np.linspace(9675899.728, 7003399.760, 128)
-    elif img_size == (256,256):
+    elif img_size == (256, 256):
         x = np.linspace(-1067961.384, 1304538.584, 256)
         y = np.linspace(9681119.454, 7008619.486, 256)
-    elif img_size == (384,384):
+    elif img_size == (384, 384):
         x = np.linspace(-1066416.788, 1306083.052, 384)
         y = np.linspace(9682859.235, 7010359.395, 384)
-    elif img_size == (512,512):
+    elif img_size == (512, 512):
         x = np.linspace(-1065644.490, 1306855.478, 512)
         y = np.linspace(9683729.573, 7011229.349, 512)
     else:
@@ -82,7 +87,7 @@ def latlonraster(img_size):
         lon.append([])
         lat.append([])
         for x_ in x:
-            lat_,lon_, _ = transform.TransformPoint(x_, y_)
+            lat_, lon_, _ = transform.TransformPoint(x_, y_)
             lon[-1].append(lon_)
             lat[-1].append(lat_)
 
@@ -90,54 +95,67 @@ def latlonraster(img_size):
 
 
 def plot_on_map(data, title=None, plot_dir=None):
-    plt.figure(figure(), figsize=(10,8))
-    m = Basemap(llcrnrlon=-0.5,llcrnrlat=49.,urcrnrlon=57.5,urcrnrlat=72.3,
-            ellps='WGS84',resolution='l',area_thresh=1000.,projection='lcc',\
-            lat_1=63.,lat_2=63,lat_0=63,lon_0=15.)
+    plt.figure(figure(), figsize=(10, 8))
+    m = Basemap(
+        llcrnrlon=-0.5,
+        llcrnrlat=49.0,
+        urcrnrlon=57.5,
+        urcrnrlat=72.3,
+        ellps="WGS84",
+        resolution="l",
+        area_thresh=1000.0,
+        projection="lcc",
+        lat_1=63.0,
+        lat_2=63,
+        lat_0=63,
+        lon_0=15.0,
+    )
 
     lons, lats = latlonraster(data.shape)
 
     x, y = m(lons, lats)
-    cs = m.pcolormesh(x,y,data,shading='auto') #,cmap=plt.cm.Greys)
+    cs = m.pcolormesh(x, y, data, shading="auto")  # ,cmap=plt.cm.Greys)
 
     m.drawcoastlines()
     m.drawmapboundary()
-    m.drawparallels(np.arange(-90.,120.,30.),labels=[1,0,0,0])
-    m.drawmeridians(np.arange(-180.,180.,15.),labels=[0,0,0,1])
+    m.drawparallels(np.arange(-90.0, 120.0, 30.0), labels=[1, 0, 0, 0])
+    m.drawmeridians(np.arange(-180.0, 180.0, 15.0), labels=[0, 0, 0, 1])
 
-    plt.colorbar(cs,orientation='vertical', shrink=0.5)
+    plt.colorbar(cs, orientation="vertical", shrink=0.5)
     plt.title(title)
 
     if plot_dir is not None:
         savefig(plot_dir)
 
+
 def plot_convlstm(ground_truth, predictions, mnwc):
     plt.figure(figure())
 
-    fig, axes = plt.subplots(3, ground_truth.shape[0], figsize=(16, 7), constrained_layout=True)
+    fig, axes = plt.subplots(
+        3, ground_truth.shape[0], figsize=(16, 7), constrained_layout=True
+    )
 
     for idx, ax in enumerate(axes[0]):
-        ax.imshow(np.squeeze(ground_truth[idx]), cmap='gray_r')
-        ax.set_title(f'ground truth frame {idx}')
-        ax.axis('off')
+        ax.imshow(np.squeeze(ground_truth[idx]), cmap="gray_r")
+        ax.set_title(f"ground truth frame {idx}")
+        ax.axis("off")
 
     for idx, ax in enumerate(axes[1]):
-        ax.imshow(np.squeeze(predictions[idx]), cmap='gray_r')
-        ax.set_title(f'prediction frame {idx}')
-        ax.axis('off')
+        ax.imshow(np.squeeze(predictions[idx]), cmap="gray_r")
+        ax.set_title(f"prediction frame {idx}")
+        ax.axis("off")
 
     for idx, ax in enumerate(axes[2]):
-        ax.imshow(np.squeeze(mnwc[idx]), cmap='gray_r')
-        ax.set_title(f'mnwc frame {idx}')
-        ax.axis('off')
-
+        ax.imshow(np.squeeze(mnwc[idx]), cmap="gray_r")
+        ax.set_title(f"mnwc frame {idx}")
+        ax.axis("off")
 
     plt.show()
 
 
 def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
-    assert(len(labels) == len(y))
-    fig = plt.figure(figure(), figsize=(12,7))
+    assert len(labels) == len(y)
+    fig = plt.figure(figure(), figsize=(12, 7))
     ax1 = plt.axes()
     box = ax1.get_position()
     ax1.set_position([box.x0, box.y0, box.width * 0.7, box.height])
@@ -146,21 +164,21 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
-    color = 'tab:grey'
+    color = "tab:grey"
 
-    ax1.set_xlabel('time')
-    ax1.set_ylabel('count')
-    ax1.scatter(x, y2, color=color, marker='x', label='counts')
-    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.set_xlabel("time")
+    ax1.set_ylabel("count")
+    ax1.scatter(x, y2, color=color, marker="x", label="counts")
+    ax1.tick_params(axis="y", labelcolor=color)
 
     ax2 = ax1.twinx()
 
-    for i,y_ in enumerate(y):
+    for i, y_ in enumerate(y):
         y_ = np.asarray(y_)
-#        x = xreal[np.isfinite(y_)]
-        #y = mae[np.isfinite(mae)]
-        ax2.plot(x, y_, label=labels[i], linestyle='-', marker='o')
-        ax2.set_ylabel('mean absolute error')
+        #        x = xreal[np.isfinite(y_)]
+        # y = mae[np.isfinite(mae)]
+        ax2.plot(x, y_, label=labels[i], linestyle="-", marker="o")
+        ax2.set_ylabel("mean absolute error")
 
     plt.title(title)
     plt.gcf().autofmt_xdate()
@@ -169,43 +187,51 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
     if plot_dir is not None:
         savefig(plot_dir)
 
+
 def plot_bargraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None):
-    assert(len(data) == len(labels))
+    assert len(data) == len(labels)
     labels = list(map(lambda x: reduce_label(x), labels))
 
-    for i,_data in enumerate(data):
+    for i, _data in enumerate(data):
         x = _data[1]
         y = _data[0]
         x = x[:-1]
-        fig = plt.figure(figure(), figsize=(10,6))
+        fig = plt.figure(figure(), figsize=(10, 6))
         ax = plt.axes()
-        ax.set_xlabel('bins')
+        ax.set_xlabel("bins")
         ax.set_ylabel(ylabel)
 
         print(x.shape, y.shape)
         label = labels[i]
-        #plt.stairs(x, y, label=label)
+        # plt.stairs(x, y, label=label)
         title = "histogram for {}".format(labels[i])
         plt.title(title)
 
-
         plt.hist(x, 50, weights=y)
- #   ax.set_xticks(xreal)
- #   ax.set_xticklabels(xlabels)
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    #   ax.set_xticks(xreal)
+    #   ax.set_xticklabels(xlabels)
+    ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
     if plot_dir is not None:
         savefig(plot_dir)
 
 
-
-def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None, start_from_zero=False, add_mean_value_to_label=False):
-    assert(len(data) == len(labels))
-    fig = plt.figure(figure(), figsize=(12,7))
+def plot_linegraph(
+    data,
+    labels,
+    title=None,
+    xvalues=None,
+    ylabel=None,
+    plot_dir=None,
+    start_from_zero=False,
+    add_mean_value_to_label=False,
+):
+    assert len(data) == len(labels)
+    fig = plt.figure(figure(), figsize=(12, 7))
     ax = plt.axes()
-    ax.set_xlabel('leadtime')
+    ax.set_xlabel("leadtime")
     ax.set_ylabel(ylabel)
-    step=timedelta(minutes=15)
+    step = timedelta(minutes=15)
 
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
@@ -214,56 +240,72 @@ def plot_linegraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir
 
     offset = 0 if start_from_zero else 1
 
-    xlabels = list(map(lambda x: step * x, range(offset, offset+len(data[0]))))
-    xlabels = list(map(lambda x: '{}m'.format(int(x.total_seconds() / 60)), xlabels))
+    xlabels = list(map(lambda x: step * x, range(offset, offset + len(data[0]))))
+    xlabels = list(map(lambda x: "{}m".format(int(x.total_seconds() / 60)), xlabels))
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
-    for i,mae in enumerate(data):
+    for i, mae in enumerate(data):
         mae = np.asarray(mae)
         x = xreal[np.isfinite(mae)]
         y = mae[np.isfinite(mae)]
 
         label = labels[i]
         if add_mean_value_to_label:
-            label = '{} mean: {:.3f}'.format(label, np.mean(mae))
-        ax.plot(x, y, label=label, linestyle='-', marker='o')
+            label = "{} mean: {:.3f}".format(label, np.mean(mae))
+        ax.plot(x, y, label=label, linestyle="-", marker="o")
 
     ax.set_xticks(xreal)
     ax.set_xticklabels(xlabels)
     plt.title(title)
 
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
     if plot_dir is not None:
         savefig(plot_dir)
 
-def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=False, plot_dir=None):
-    assert(len(datas) == len(labels))
+
+def plot_stamps(
+    datas, labels, title=None, initial_data=None, start_from_zero=False, plot_dir=None
+):
+    assert len(datas) == len(labels)
 
     nrows = len(datas)
     ncols = datas[0].shape[0]
     if initial_data is not None:
         nrows += 1
-        labels = ['initial'] + labels
+        labels = ["initial"] + labels
 
-    fig, bigaxes = plt.subplots(nrows=nrows, ncols=1, figsize=((ncols*2),nrows*2), constrained_layout=False, squeeze=False, num=figure())
+    fig, bigaxes = plt.subplots(
+        nrows=nrows,
+        ncols=1,
+        figsize=((ncols * 2), nrows * 2),
+        constrained_layout=False,
+        squeeze=False,
+        num=figure(),
+    )
     fig.suptitle(title)
     for i, bigax in enumerate(bigaxes.flatten(), start=0):
         bigax.set_title(labels[i])
-        bigax.tick_params(labelcolor=(1.,1.,1., 0.0), top='off', bottom='off', left='off', right='off')
+        bigax.tick_params(
+            labelcolor=(1.0, 1.0, 1.0, 0.0),
+            top="off",
+            bottom="off",
+            left="off",
+            right="off",
+        )
         bigax._frameon = False
-        bigax.axis('off')
+        bigax.axis("off")
 
-    num=1
-    write_time=nrows-1
+    num = 1
+    write_time = nrows - 1
 
     if initial_data is not None:
         ax = fig.add_subplot(nrows, ncols, num)
-        ax.imshow(np.squeeze(initial_data), cmap='gray_r')
-        ax.axis('off')
-        num=ncols+1
-        write_time=nrows-2
+        ax.imshow(np.squeeze(initial_data), cmap="gray_r")
+        ax.axis("off")
+        num = ncols + 1
+        write_time = nrows - 2
 
     offset = 0 if start_from_zero else 1
 
@@ -271,23 +313,25 @@ def plot_stamps(datas, labels, title=None, initial_data=None, start_from_zero=Fa
         for j in range(datas[i].shape[0]):
             ax = fig.add_subplot(nrows, ncols, num)
             num += 1
-            ax.imshow(np.squeeze(datas[i][j]), cmap='gray_r')
-            ax.axis('off')
+            ax.imshow(np.squeeze(datas[i][j]), cmap="gray_r")
+            ax.axis("off")
             if i == write_time:
-                ax.set_title(f'{(j+offset)*15}m', y=0, pad=-25)
+                ax.set_title(f"{(j+offset)*15}m", y=0, pad=-25)
 
-    fig.set_facecolor('w')
+    fig.set_facecolor("w")
 
     if plot_dir is not None:
         savefig(plot_dir)
 
 
 def plot_histogram(datas, labels, plot_dir=None):
-    assert(len(datas) == len(labels))
+    assert len(datas) == len(labels)
     n_bins = 50
 
-    fig, axs = plt.subplots(1, len(datas), sharey=True, tight_layout=False, num=figure())
-    fig.set_size_inches(12,8)
+    fig, axs = plt.subplots(
+        1, len(datas), sharey=True, tight_layout=False, num=figure()
+    )
+    fig.set_size_inches(12, 8)
 
     if len(datas) == 1:
         axs.hist(np.asarray(datas[0]).flatten(), bins=n_bins, density=True)
@@ -300,28 +344,48 @@ def plot_histogram(datas, labels, plot_dir=None):
     if plot_dir is not None:
         savefig(plot_dir)
 
-def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], markers=['s','o','v'], title='Performance diagram', plot_dir=None):
 
-    plt.figure(figure(), figsize=(9,8))
+def plot_performance_diagram(
+    data,
+    labels,
+    colors=["red", "blue", "chartreuse"],
+    markers=["s", "o", "v"],
+    title="Performance diagram",
+    plot_dir=None,
+):
+
+    plt.figure(figure(), figsize=(9, 8))
     legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
-    csi_cmap = 'Blues'
+    csi_cmap = "Blues"
     ticks = np.arange(0, 1.1, 0.1)
     grid_ticks = np.arange(0, 1.01, 0.01)
-    xlabel="Success Ratio (1-FAR)"
-    ylabel="Probability of Detection"
-    csi_label="Critical Success Index"
+    xlabel = "Success Ratio (1-FAR)"
+    ylabel = "Probability of Detection"
+    csi_label = "Critical Success Index"
     sr_g, pod_g = np.meshgrid(grid_ticks, grid_ticks)
     bias = pod_g / sr_g
     csi = 1.0 / (1.0 / sr_g + 1.0 / pod_g - 1.0)
-    csi_contour = plt.contourf(sr_g, pod_g, csi, np.arange(0.1, 1.1, 0.1), extend="max", cmap=csi_cmap)
-    b_contour = plt.contour(sr_g, pod_g, bias, [0.5, 1, 1.5, 2, 4], colors="k", linestyles="dashed")
-    plt.clabel(b_contour, fmt="%1.1f", manual=[(0.2, 0.9), (0.4, 0.9), (0.6, 0.9), (0.7, 0.7)])
+    csi_contour = plt.contourf(
+        sr_g, pod_g, csi, np.arange(0.1, 1.1, 0.1), extend="max", cmap=csi_cmap
+    )
+    b_contour = plt.contour(
+        sr_g, pod_g, bias, [0.5, 1, 1.5, 2, 4], colors="k", linestyles="dashed"
+    )
+    plt.clabel(
+        b_contour, fmt="%1.1f", manual=[(0.2, 0.9), (0.4, 0.9), (0.6, 0.9), (0.7, 0.7)]
+    )
 
     for r, d in enumerate(data):
         pod = d[0]
         far = d[1]
-        plt.plot(1 - far, pod, marker=markers[r], linewidth=12, color=colors[r], 
-                 label=labels[r].replace("_dist", "").replace("-", " ").replace("_", " "))
+        plt.plot(
+            1 - far,
+            pod,
+            marker=markers[r],
+            linewidth=12,
+            color=colors[r],
+            label=labels[r].replace("_dist", "").replace("-", " ").replace("_", " "),
+        )
 
     cbar = plt.colorbar(csi_contour)
     cbar.set_label(csi_label, fontsize=14)
@@ -330,48 +394,48 @@ def plot_performance_diagram(data, labels, colors=['red','blue','chartreuse'], m
     plt.xticks(ticks)
     plt.yticks(ticks)
     plt.title(title, fontsize=14)
-    plt.text(0.48,0.6,"Frequency Bias",fontdict=dict(fontsize=14, rotation=45))
+    plt.text(0.48, 0.6, "Frequency Bias", fontdict=dict(fontsize=14, rotation=45))
     plt.legend()
 
     if plot_dir is not None:
         savefig(plot_dir)
 
 
-def plot_hist(hist, model_dir = None, show=False, save_path=None, name_files=False):
+def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False):
 
     if save_path is None:
         save_path = model_dir
 
-    plt.plot(hist['accuracy'])
-    plt.plot(hist['val_accuracy'])
-    plt.title(f'training accuracy for\n{model_dir}')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
+    plt.plot(hist["accuracy"])
+    plt.plot(hist["val_accuracy"])
+    plt.title(f"training accuracy for\n{model_dir}")
+    plt.ylabel("accuracy")
+    plt.xlabel("epoch")
+    plt.legend(["train", "val"], loc="upper left")
 
     if show:
         plt.show()
     else:
         filename = "accuracy.png"
         if name_files:
-            filename = '{}_{}'.format(model_dir, filename)
+            filename = "{}_{}".format(model_dir, filename)
 
-        plt.savefig('{}/{}'.format(save_path, filename))
-        print('Wrote file {}/{}'.format(save_path, filename))
+        plt.savefig("{}/{}".format(save_path, filename))
+        print("Wrote file {}/{}".format(save_path, filename))
     plt.close()
-    plt.plot(hist['loss'])
-    plt.plot(hist['val_loss'])
-    plt.title(f'training loss for\n{model_dir}')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper left')
+    plt.plot(hist["loss"])
+    plt.plot(hist["val_loss"])
+    plt.title(f"training loss for\n{model_dir}")
+    plt.ylabel("loss")
+    plt.xlabel("epoch")
+    plt.legend(["train", "val"], loc="upper left")
 
     if show:
         plt.show()
     else:
         filename = "loss.png"
         if name_files:
-            filename = '{}_{}'.format(model_dir, filename)
+            filename = "{}_{}".format(model_dir, filename)
 
-        plt.savefig('{}/{}'.format(save_path, filename))
-        print('Wrote file {}/{}'.format(save_path, filename))
+        plt.savefig("{}/{}".format(save_path, filename))
+        print("Wrote file {}/{}".format(save_path, filename))

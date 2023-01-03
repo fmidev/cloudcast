@@ -4,28 +4,29 @@ import datetime
 import cv2
 import os
 from scipy import ndimage
-from osgeo import gdal,osr
+from osgeo import gdal, osr
 from base.fileutils import get_filename, gdal_read_from_http
 
 DEM = {}
 LSM = {}
 
+
 def get_img_size(preprocess):
-    for x in preprocess.split(','):
-        k,v = x.split('=')
-        if k == 'img_size':
-            return tuple(map(int, v.split('x')))
+    for x in preprocess.split(","):
+        k, v = x.split("=")
+        if k == "img_size":
+            return tuple(map(int, v.split("x")))
     return None
 
 
 def reproject(arr, area):
-    if area == 'Scandinavia':
+    if area == "Scandinavia":
         return arr
 
-    assert(area == 'SouthernFinland')
+    assert area == "SouthernFinland"
 
-    ORIGINAL_EXTENT = [-1063327.181, 1338296.270, 1309172.819, -1334203.730 ]
-    ORIGINAL_GEOTRANSFORM = [ ORIGINAL_EXTENT[0], 2500, 0, ORIGINAL_EXTENT[1], 0, -2500 ]
+    ORIGINAL_EXTENT = [-1063327.181, 1338296.270, 1309172.819, -1334203.730]
+    ORIGINAL_GEOTRANSFORM = [ORIGINAL_EXTENT[0], 2500, 0, ORIGINAL_EXTENT[1], 0, -2500]
 
     ORIGINAL_WKT2 = """
 PROJCRS["unknown",
@@ -67,10 +68,14 @@ PROJCRS["unknown",
             LENGTHUNIT["metre",1,
                 ID["EPSG",9001]]]]
     """
-    NEW_EXTENT = [220000, 220000, 860000, -420000] if area == 'SouthernFinland' else None
+    NEW_EXTENT = (
+        [220000, 220000, 860000, -420000] if area == "SouthernFinland" else None
+    )
 
-    driver = gdal.GetDriverByName('MEM')
-    arr_ds = driver.Create('', xsize=arr.shape[1], ysize=arr.shape[0], bands=1, eType=gdal.GDT_Float32)
+    driver = gdal.GetDriverByName("MEM")
+    arr_ds = driver.Create(
+        "", xsize=arr.shape[1], ysize=arr.shape[0], bands=1, eType=gdal.GDT_Float32
+    )
 
     srs = osr.SpatialReference()
     srs.ImportFromWkt(ORIGINAL_WKT2)
@@ -79,13 +84,14 @@ PROJCRS["unknown",
 
     band = arr_ds.GetRasterBand(1).WriteArray(np.squeeze(arr))
 
-    ds = gdal.Translate('/vsimem/q', arr_ds, projWin = NEW_EXTENT)
+    ds = gdal.Translate("/vsimem/q", arr_ds, projWin=NEW_EXTENT)
 
-    assert(ds != None)
+    assert ds != None
     arr = ds.ReadAsArray()
     arr = np.expand_dims(arr, axis=2)
     ds = None
     return arr
+
 
 def to_binary_mask(arr):
     arr[arr < 0.1] = 0.0
@@ -93,42 +99,45 @@ def to_binary_mask(arr):
 
     return arr
 
+
 def to_classes(arr, num_classes):
     return (np.around((100.0 * arr) / num_classes, decimals=0) * num_classes) / 100.0
+
 
 def preprocess_many(imgs, process_label):
     return np.asarray(list(map(lambda x: preprocess_single(x, process_label), imgs)))
 
 
 def preprocess_single(arr, process_label):
-    for proc in process_label.split(','):
-        k,v = proc.split('=')
-        if k == 'conv':
+    for proc in process_label.split(","):
+        k, v = proc.split("=")
+        if k == "conv":
             v = int(v)
-            kern = np.ones((v,v), np.float32) / (v * v)
+            kern = np.ones((v, v), np.float32) / (v * v)
             kern = np.expand_dims(kern, axis=2)
-            arr = ndimage.convolve(arr, kern, mode='constant', cval=0.0)
-        elif k == 'to_binary_mask' and v == 'true':
+            arr = ndimage.convolve(arr, kern, mode="constant", cval=0.0)
+        elif k == "to_binary_mask" and v == "true":
             arr = to_binary_mask(arr)
-        elif k == 'classes':
+        elif k == "classes":
             arr = to_classes(arr, int(v))
-        elif k == 'standardize' and v == 'true':
+        elif k == "standardize" and v == "true":
             arr = (arr - arr.mean()) / arr.std()
-        elif k == 'normalize' and v == 'true':
+        elif k == "normalize" and v == "true":
             if np.min(arr) != np.max(arr):
                 arr = (arr - np.min(arr)) / np.ptp(arr)
-        elif k == 'img_size':
-            img_size = tuple(map(int, v.split('x')))
-            arr = np.expand_dims(cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2)
-        elif k == 'area': # and v != 'Scandinavia':
+        elif k == "img_size":
+            img_size = tuple(map(int, v.split("x")))
+            arr = np.expand_dims(
+                cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2
+            )
+        elif k == "area":  # and v != 'Scandinavia':
             arr = reproject(arr, v)
 
     return arr
 
 
-
 def time_of_year_and_day(datetime):
-    day = 24*60*60
+    day = 24 * 60 * 60
     year = 365.2425 * day
 
     tod = np.sin(datetime.timestamp() * (2 * np.pi / day))
@@ -147,13 +156,25 @@ def sun_declination_angle(datetime):
     if daydoy < 0:
         daydoy += 365
 
-    declination = -np.asin(0.39779 *
-                           np.cos(0.98565 / 360 * 2 * np.pi * (daydoy + 10) + 1.914 / 360 * 2 * np.pi *
-                             np.sin(0.98565 / 360 * 2 * np.pi * (daydoy - 2))
-                           )
-                          ) * 360 / 2 / np.pi
+    declination = (
+        -np.asin(
+            0.39779
+            * np.cos(
+                0.98565 / 360 * 2 * np.pi * (daydoy + 10)
+                + 1.914
+                / 360
+                * 2
+                * np.pi
+                * np.sin(0.98565 / 360 * 2 * np.pi * (daydoy - 2))
+            )
+        )
+        * 360
+        / 2
+        / np.pi
+    )
 
     return declination
+
 
 def create_datetime(datetime, img_size):
     tod, toy = time_of_year_and_day(datetime)
@@ -216,32 +237,38 @@ def process_lsm(LSM):
 
 def create_onehot_leadtime_conditioning(img_size, depth, active_layer):
     b = np.ones((1,) + img_size)
-    return np.expand_dims(np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1).astype(np.short)
+    return np.expand_dims(
+        np.expand_dims(np.expand_dims(np.eye(depth)[active_layer], -1), 1) * b, axis=-1
+    ).astype(np.short)
 
 
 def create_squeezed_leadtime_conditioning(img_size, depth, active_leadtime):
-    return np.expand_dims(np.full(img_size, active_leadtime / depth), axis=(0,3)).astype(np.float32)
+    return np.expand_dims(
+        np.full(img_size, active_leadtime / depth), axis=(0, 3)
+    ).astype(np.float32)
+
 
 def is_http(uri):
-    return True if uri[0:4] == 'http' or uri[0:5] == 's3://' else False
+    return True if uri[0:4] == "http" or uri[0:5] == "s3://" else False
+
 
 def create_topography_data(img_size):
     global DEM
 
-    isize = '{}x{}'.format(img_size[0], img_size[1])
+    isize = "{}x{}".format(img_size[0], img_size[1])
 
     try:
         return DEM[isize]
     except KeyError as e:
         pass
 
-    proc='normalize=true'
+    proc = "normalize=true"
 
-    proc = '{},img_size={}'.format(proc, isize)
+    proc = "{},img_size={}".format(proc, isize)
 
-    dem_file = get_filename(None, 'DEM')
+    dem_file = get_filename(None, "DEM")
 
-    print (f"Reading {dem_file}")
+    print(f"Reading {dem_file}")
 
     raster = None
 
@@ -261,20 +288,20 @@ def create_topography_data(img_size):
 def create_terrain_type_data(img_size):
     global LSM
 
-    isize = '{}x{}'.format(img_size[0], img_size[1])
+    isize = "{}x{}".format(img_size[0], img_size[1])
 
     try:
         return LSM[isize]
     except KeyError as e:
         pass
 
-    proc='normalize=true'
+    proc = "normalize=true"
 
-    proc = '{},img_size={}'.format(proc, isize)
+    proc = "{},img_size={}".format(proc, isize)
 
-    lsm_file = get_filename(None, 'LSM')
+    lsm_file = get_filename(None, "LSM")
 
-    print (f"Reading {lsm_file}")
+    print(f"Reading {lsm_file}")
 
     if is_http(lsm_file):
         raster = gdal_read_from_http(lsm_file)
@@ -291,13 +318,13 @@ def create_terrain_type_data(img_size):
 
 
 def generate_clim_values(shape, month):
-    assert(month >= 1 and month <= 12)
+    assert month >= 1 and month <= 12
     month -= 1
 
-    d = np.load(get_filename(None, 'clim'))
-    m = d['arr_0'][month]
-    x = m[...,0]
-    y = m[...,1]
+    d = np.load(get_filename(None, "clim"))
+    m = d["arr_0"][month]
+    x = m[..., 0]
+    y = m[..., 1]
 
     lst = []
 

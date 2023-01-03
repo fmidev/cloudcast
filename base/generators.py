@@ -4,10 +4,20 @@ from tensorflow import keras
 from base.fileutils import *
 from base.preprocess import *
 
-def add_auxiliary_data(x, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess):
+
+def add_auxiliary_data(
+    x,
+    include_datetime,
+    include_topography_data,
+    include_terrain_type_data,
+    dt,
+    preprocess,
+):
     if include_datetime:
         dts = create_datetime(dt, get_img_size(preprocess))
-        x = np.concatenate((x, np.expand_dims(dts[0], axis=0), np.expand_dims(dts[1], axis=0)), axis=0)
+        x = np.concatenate(
+            (x, np.expand_dims(dts[0], axis=0), np.expand_dims(dts[1], axis=0)), axis=0
+        )
 
     if include_topography_data:
         topo = create_topography_data(get_img_size(preprocess))
@@ -19,25 +29,26 @@ def add_auxiliary_data(x, include_datetime, include_topography_data, include_ter
 
     return x
 
-def create_generators_from_dataseries(**kwargs):
-    n_channels = int(kwargs.get('n_channels', 1))
-    out = kwargs.get('output_is_timeseries', False)
-    leadtime_conditioning = kwargs.get('leadtime_conditioning', 0)
-    include_datetime = kwargs.get('include_datetime')
-    include_topography_data = kwargs.get('include_topography')
-    include_terrain_type_data = kwargs.get('include_terrain_type')
-    preprocess = kwargs.get('preprocess')
-    dataseries_file = kwargs.get('dataseries_file', '')
-    onehot_encoding = kwargs.get('onehot_encoding', False)
 
-    print(f'Reading input data from {dataseries_file}')
+def create_generators_from_dataseries(**kwargs):
+    n_channels = int(kwargs.get("n_channels", 1))
+    out = kwargs.get("output_is_timeseries", False)
+    leadtime_conditioning = kwargs.get("leadtime_conditioning", 0)
+    include_datetime = kwargs.get("include_datetime")
+    include_topography_data = kwargs.get("include_topography")
+    include_terrain_type_data = kwargs.get("include_terrain_type")
+    preprocess = kwargs.get("preprocess")
+    dataseries_file = kwargs.get("dataseries_file", "")
+    onehot_encoding = kwargs.get("onehot_encoding", False)
+
+    print(f"Reading input data from {dataseries_file}")
     dataset = np.load(dataseries_file)
-    dataseries = dataset['arr_0']
-    times = dataset['arr_1']
+    dataseries = dataset["arr_0"]
+    times = dataset["arr_1"]
 
     datasets = []
 
-    print('Creating generators')
+    print("Creating generators")
 
     if out:
         i = 0
@@ -58,7 +69,6 @@ def create_generators_from_dataseries(**kwargs):
                 if include_terrain_type_data:
                     x = np.concatenate((x, terrain_type_data), axis=-1)
 
-
                 ds_data.append(x)
             datasets.append(ds_data)
             i += n_channels
@@ -77,34 +87,62 @@ def create_generators_from_dataseries(**kwargs):
 
         while i < dataseries.shape[0] - (n_channels + n_fut):
             # read history data
-            hist = dataseries[i:i+n_channels]
+            hist = dataseries[i : i + n_channels]
 
             # Time of the last history data, we use that to create a time tensor
             # if that's needed (requested)
-            dt = datetime.datetime.strptime(times[i+n_channels], '%Y%m%dT%H%M%S')
+            dt = datetime.datetime.strptime(times[i + n_channels], "%Y%m%dT%H%M%S")
 
             if leadtime_conditioning == 0:
-                x = add_auxiliary_data(hist, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
-                y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels], axis=-1), axis=0), axis=-1)
+                x = add_auxiliary_data(
+                    hist,
+                    include_datetime,
+                    include_topography_data,
+                    include_terrain_type_data,
+                    dt,
+                    preprocess,
+                )
+                y = np.expand_dims(
+                    np.expand_dims(
+                        np.squeeze(dataseries[i + n_channels], axis=-1), axis=0
+                    ),
+                    axis=-1,
+                )
                 datasets.append(np.concatenate((x, y), axis=0))
                 datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
             else:
 
                 for j in range(n_fut):
                     if not onehot_encoding:
-                        leadtime = create_squeezed_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
+                        leadtime = create_squeezed_leadtime_conditioning(
+                            get_img_size(preprocess), leadtime_conditioning, j
+                        )
                     else:
-                        leadtime = create_onehot_leadtime_conditioning(get_img_size(preprocess), leadtime_conditioning, j)
+                        leadtime = create_onehot_leadtime_conditioning(
+                            get_img_size(preprocess), leadtime_conditioning, j
+                        )
                     x = np.concatenate((hist, leadtime), axis=0)
-                    x = add_auxiliary_data(x, include_datetime, include_topography_data, include_terrain_type_data, dt, preprocess)
-                    y = np.expand_dims(np.expand_dims(np.squeeze(dataseries[i+n_channels+j], axis=-1), axis=0), axis=-1)
+                    x = add_auxiliary_data(
+                        x,
+                        include_datetime,
+                        include_topography_data,
+                        include_terrain_type_data,
+                        dt,
+                        preprocess,
+                    )
+                    y = np.expand_dims(
+                        np.expand_dims(
+                            np.squeeze(dataseries[i + n_channels + j], axis=-1), axis=0
+                        ),
+                        axis=-1,
+                    )
 
                     datasets.append(np.concatenate((x, y), axis=0))
                     datasets[-1] = np.squeeze(np.swapaxes(datasets[-1], 0, 3))
 
             i += n_channels + leadtime_conditioning
 
-        assert(len(datasets) == int(dataseries.shape[0] / (n_channels + n_fut)) * n_fut)
+        assert len(datasets) == int(dataseries.shape[0] / (n_channels + n_fut)) * n_fut
 
     np.random.shuffle(datasets)
     test_val_split = (np.floor(len(datasets) * 0.9)).astype(np.int)
@@ -114,10 +152,9 @@ def create_generators_from_dataseries(**kwargs):
     return train, val
 
 
-
 def create_generators(**kwargs):
 
-    dataseries_file = kwargs.get('dataseries_file', '')
+    dataseries_file = kwargs.get("dataseries_file", "")
 
     if dataseries_file:
         return create_generators_from_dataseries(**kwargs)
@@ -126,13 +163,11 @@ def create_generators(**kwargs):
 
 
 class EffectiveCloudinessGenerator(keras.utils.Sequence):
-
     def __init__(self, dataset, **kwargs):
         self.dataset = dataset
-        self.batch_size = int(kwargs.get('batch_size', 32))
+        self.batch_size = int(kwargs.get("batch_size", 32))
         self.initial = True
-        self.output_is_timeseries = kwargs.get('output_is_timeseries', False)
-
+        self.output_is_timeseries = kwargs.get("output_is_timeseries", False)
 
     def __len__(self):
         return (np.floor(len(self.dataset) / self.batch_size)).astype(np.int)
@@ -157,11 +192,10 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         y = np.asarray(y)
 
         if self.initial:
-            print(f'Batch shapes: x {x.shape} y {y.shape}')
+            print(f"Batch shapes: x {x.shape} y {y.shape}")
             self.initial = False
 
         return x, y
-
 
     def create_unet_input(self, i):
         batch_ds = self.dataset[i * self.batch_size : (i + 1) * self.batch_size]
@@ -170,18 +204,17 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
         y = []
 
         for i in batch_ds:
-            x.append(i[...,:-1])
-            y.append(np.expand_dims(i[...,-1], axis=-1))
+            x.append(i[..., :-1])
+            y.append(np.expand_dims(i[..., -1], axis=-1))
 
         x = np.asarray(x)
         y = np.asarray(y)
 
         if self.initial:
-            print(f'Batch shapes: x {x.shape} y {y.shape}')
+            print(f"Batch shapes: x {x.shape} y {y.shape}")
             self.initial = False
 
         return x, y
-
 
 
 # datetime ring buffer
@@ -201,7 +234,14 @@ class EffectiveCloudinessGenerator(keras.utils.Sequence):
 
 
 class TimeseriesGenerator:
-    def __init__(self, start_date, stop_date, history_len, pred_len, step=datetime.timedelta(minutes=15)):
+    def __init__(
+        self,
+        start_date,
+        stop_date,
+        history_len,
+        pred_len,
+        step=datetime.timedelta(minutes=15),
+    ):
         self.date = start_date
         self.stop_date = stop_date
         self.history_len = history_len
@@ -209,7 +249,7 @@ class TimeseriesGenerator:
         self.step = step
         self.times = [start_date - (history_len - 1) * step]
         self.create()
-        assert(start_date is not None and stop_date is not None)
+        assert start_date is not None and stop_date is not None
 
     def __iter__(self):
         while True:
@@ -226,7 +266,15 @@ class TimeseriesGenerator:
 
 
 class DataSeries:
-    def __init__(self, producer, preprocess = None, single_analysis_time = True, param = 'effective-cloudiness', fill_gaps_max = 0, cache_data = True):
+    def __init__(
+        self,
+        producer,
+        preprocess=None,
+        single_analysis_time=True,
+        param="effective-cloudiness",
+        fill_gaps_max=0,
+        cache_data=True,
+    ):
         self.data_series = {}
         self.producer = producer
         self.preprocess = preprocess
@@ -236,12 +284,11 @@ class DataSeries:
         self.fill_gaps_max = fill_gaps_max
         self.cache_data = cache_data
 
-
     def fill_gaps(self, series, analysis_time):
         new_series = {}
         gaps_filled = 0
 
-        for i,s in enumerate(series):
+        for i, s in enumerate(series):
             ismiss = np.isnan(series[s]).any()
 
             if not ismiss:
@@ -257,21 +304,41 @@ class DataSeries:
             if i == 0:
                 new_first_time = s - datetime.timedelta(minutes=15)
             elif i == len(series) - 1:
-                new_first_time = list(new_series.keys())[0] - datetime.timedelta(minutes=15)
+                new_first_time = list(new_series.keys())[0] - datetime.timedelta(
+                    minutes=15
+                )
 
             if new_first_time is not None:
                 print("Gap-filling for {}".format(s))
-                new_first_data = preprocess_single(read_time(new_first_time, self.producer, analysis_time, print_filename=True, param=self.param), self.preprocess)
+                new_first_data = preprocess_single(
+                    read_time(
+                        new_first_time,
+                        self.producer,
+                        analysis_time,
+                        print_filename=True,
+                        param=self.param,
+                    ),
+                    self.preprocess,
+                )
                 new_series[new_first_time] = new_first_data
 
             if i > 0 and i < len(series) - 1:
-                prev_time = list(new_series.keys())[i-1]
-                next_time = list(series.keys())[i+1]
+                prev_time = list(new_series.keys())[i - 1]
+                next_time = list(series.keys())[i + 1]
                 prev_data = new_series[prev_time]
                 next_data = series[next_time]
                 # linear interpolation between two points
-                new_data = np.asarray([np.interp(0.5,[0,1],[x,y]) for x,y in zip(prev_data.ravel(), next_data.ravel())]).reshape(prev_data.shape)
-                print("Interpolating for {} (between {} and {})".format(s, prev_time, next_time))
+                new_data = np.asarray(
+                    [
+                        np.interp(0.5, [0, 1], [x, y])
+                        for x, y in zip(prev_data.ravel(), next_data.ravel())
+                    ]
+                ).reshape(prev_data.shape)
+                print(
+                    "Interpolating for {} (between {} and {})".format(
+                        s, prev_time, next_time
+                    )
+                )
                 new_series[s] = new_data
 
             gaps_filled += 1
@@ -280,7 +347,7 @@ class DataSeries:
             sorted_series[s] = new_series[s]
         new_series = sorted_series
 
-        assert(len(new_series) == len(series))
+        assert len(new_series) == len(series)
         return new_series
 
     def read_data(self, times, analysis_time=None):
@@ -292,7 +359,7 @@ class DataSeries:
         new_series = {}
 
         if self.cache_data:
-            new_times = list(set(datakeys+times))
+            new_times = list(set(datakeys + times))
         else:
             new_times = times
 
@@ -302,7 +369,16 @@ class DataSeries:
             if t in datakeys:
                 new_series[t] = self.data_series[t]
             else:
-                new_series[t] = preprocess_single(read_time(t, self.producer, analysis_time, print_filename=True, param=self.param), self.preprocess)
+                new_series[t] = preprocess_single(
+                    read_time(
+                        t,
+                        self.producer,
+                        analysis_time,
+                        print_filename=True,
+                        param=self.param,
+                    ),
+                    self.preprocess,
+                )
 
         if self.fill_gaps_max > 0:
             new_series = self.fill_gaps(new_series, analysis_time)
@@ -311,4 +387,3 @@ class DataSeries:
         self.analysis_time = analysis_time
 
         return np.asarray(list(self.data_series.values()))
-

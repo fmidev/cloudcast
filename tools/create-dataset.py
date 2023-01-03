@@ -7,84 +7,113 @@ from base.fileutils import *
 from base.preprocess import *
 from base.plotutils import *
 
+
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", action='store', type=str, required=True)
-    parser.add_argument("--stop_date", action='store', type=str, required=True)
-    parser.add_argument("--preprocess", action='store', type=str, required=True)
-    parser.add_argument("--producer", action='store', type=str, default='nwcsaf')
-    parser.add_argument("--param", action='store', type=str, default='effective-cloudiness')
-    parser.add_argument("--packing_type", action='store', type=str, default='npz')
-    parser.add_argument("--dtype", action='store', type=str, default='float32')
-    parser.add_argument("directory", action='store')
+    parser.add_argument("--start_date", action="store", type=str, required=True)
+    parser.add_argument("--stop_date", action="store", type=str, required=True)
+    parser.add_argument("--preprocess", action="store", type=str, required=True)
+    parser.add_argument("--producer", action="store", type=str, default="nwcsaf")
+    parser.add_argument(
+        "--param", action="store", type=str, default="effective-cloudiness"
+    )
+    parser.add_argument("--packing_type", action="store", type=str, default="npz")
+    parser.add_argument("--dtype", action="store", type=str, default="float32")
+    parser.add_argument("directory", action="store")
 
     args = parser.parse_args()
 
-    args.start_date = datetime.datetime.strptime(args.start_date, '%Y-%m-%d')
-    args.stop_date = datetime.datetime.strptime(args.stop_date, '%Y-%m-%d')
+    args.start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d")
+    args.stop_date = datetime.datetime.strptime(args.stop_date, "%Y-%m-%d")
 
-    if args.packing_type not in ('npz','npy'):
+    if args.packing_type not in ("npz", "npy"):
         raise Exception("Packing type must be one of: npz, npy")
 
-    dtypes = ['float32', 'float16', 'uint8']
+    dtypes = ["float32", "float16", "uint8"]
     if args.dtype not in dtypes:
         raise Exception("dtype must be one of: {}".format(dtypes))
 
     return args
 
+
 def create_filename(args):
-    return '{}/{}-{}-{}-{}-{}-{}.{}'.format(args.directory, args.producer, args.param, args.start_date.strftime('%Y%m%d'), args.stop_date.strftime('%Y%m%d'), args.preprocess, args.dtype, args.packing_type)
+    return "{}/{}-{}-{}-{}-{}-{}.{}".format(
+        args.directory,
+        args.producer,
+        args.param,
+        args.start_date.strftime("%Y%m%d"),
+        args.stop_date.strftime("%Y%m%d"),
+        args.preprocess,
+        args.dtype,
+        args.packing_type,
+    )
 
 
 def save_to_file(datas, times, filename):
-    if filename[-3:] == 'npz':
+    if filename[-3:] == "npz":
         np.savez(filename, datas, times)
-        print(f'Saved to file {filename}')
-    elif filename[-3:] == 'npy':
-        timename = filename.replace('.npy', '-times.npy')
-        np.save(filename,  datas)
+        print(f"Saved to file {filename}")
+    elif filename[-3:] == "npy":
+        timename = filename.replace(".npy", "-times.npy")
+        np.save(filename, datas)
         np.save(timename, times)
-        print(f'Saved to files {filename} and {timename}')
+        print(f"Saved to files {filename} and {timename}")
+
 
 def create_timeseries(args):
-    filenames = read_filenames(args.start_date, args.stop_date, args.producer, args.param)
+    filenames = read_filenames(
+        args.start_date, args.stop_date, args.producer, args.param
+    )
 
     if len(filenames) == 0:
         sys.exit(1)
 
-    times = np.asarray(list(map(lambda x: os.path.basename(x).split('_')[0], filenames)))
+    times = np.asarray(
+        list(map(lambda x: os.path.basename(x).split("_")[0], filenames))
+    )
 
-    datas = read_gribs(filenames, img_size=get_img_size(args.preprocess), dtype=np.dtype(args.dtype))
-    
-    print('Created data shape: {}'.format(datas.shape))
+    datas = read_gribs(
+        filenames, img_size=get_img_size(args.preprocess), dtype=np.dtype(args.dtype)
+    )
+
+    print("Created data shape: {}".format(datas.shape))
 
     save_to_file(datas, times, create_filename(args))
 
+
 def create_forecast(args):
-    filenames = read_filenames(args.start_date, args.stop_date, args.producer, args.param)
+    filenames = read_filenames(
+        args.start_date, args.stop_date, args.producer, args.param
+    )
     filenames.sort()
 
-    times = np.asarray(list(map(lambda x: os.path.basename(x).split('-')[0], filenames)))
+    times = np.asarray(
+        list(map(lambda x: os.path.basename(x).split("-")[0], filenames))
+    )
 
     atime = None
     atimes = []
 
     for t in times:
-        _at, _lt = t.split('+')
-        _at = datetime.datetime.strptime(_at, '%Y%m%d%H%M')
+        _at, _lt = t.split("+")
+        _at = datetime.datetime.strptime(_at, "%Y%m%d%H%M")
 
         if atime is None or atime != _at:
             atime = _at
             atimes.append([])
-        _lt = _lt.strip('m')
-        _h, _m = _lt.split('h')
-        step = datetime.timedelta(minutes = int(_m) + 60 * int(_h))
-        atimes[-1].append((atime + step).strftime('%Y%m%dT%H%M%S'))
+        _lt = _lt.strip("m")
+        _h, _m = _lt.split("h")
+        step = datetime.timedelta(minutes=int(_m) + 60 * int(_h))
+        atimes[-1].append((atime + step).strftime("%Y%m%dT%H%M%S"))
 
-    if args.producer == 'meps':
+    if args.producer == "meps":
         for t in atimes:
             if len(t) != 7:
-                print('Error: expecting 7 times per forecast, got {}: {}'.format(len(t), t))
+                print(
+                    "Error: expecting 7 times per forecast, got {}: {}".format(
+                        len(t), t
+                    )
+                )
                 sys.exit(1)
 
     atimes = np.asarray(atimes)
@@ -92,14 +121,15 @@ def create_forecast(args):
     # reshape to match times, ie [num_forecasts, num_leadtimes, h, w, channels]
     datas = datas.reshape((atimes.shape) + datas.shape[1:])
 
-    print('Created data shape: {}'.format(datas.shape))
+    print("Created data shape: {}".format(datas.shape))
 
     save_to_file(datas, atimes, create_filename(args))
+
 
 if __name__ == "__main__":
     args = parse_command_line()
 
-    if args.producer == 'nwcsaf':
+    if args.producer == "nwcsaf":
         create_timeseries(args)
     else:
         create_forecast(args)
