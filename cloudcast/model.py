@@ -1,8 +1,7 @@
 import numpy as np
 import os
 import skimage.io as io
-import skimage.transform as trans
-import numpy as np
+import re
 
 import tensorflow as tf
 
@@ -29,34 +28,44 @@ from ks import make_KS_loss
 from bcl1 import make_bc_l1_loss
 
 from tensorflow.keras import mixed_precision
+from tensorflow.python.client import device_lib
+
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x for x in local_device_protos if x.device_type == "GPU"]
 
 
 def get_compute_capability():
-    details = tf.config.experimental.get_device_details(
-        tf.config.experimental.list_physical_devices()[1]
-    )
-    cc = details["compute_capability"]
+    gpus = get_available_gpus()
+
+    cc = []
+    for g in gpus:
+        cc_ = re.search("compute capability: (\d.\d)", g.physical_device_desc).group(1)
+        e = cc_.split(".")
+        cc.append((e[0], e[1]))
 
     return cc
 
 
 cc = get_compute_capability()
 
-if int(cc[0]) >= 7:
+if len(cc) > 0 and int(cc[0][0]) >= 7:
     policy = mixed_precision.Policy("mixed_float16")
     mixed_precision.set_global_policy(policy)
 
 policy = tf.keras.mixed_precision.global_policy()
 
-print("Compute dtype: %s" % policy.compute_dtype)
-print("Variable dtype: %s" % policy.variable_dtype)
+print("Compute dtype: {}".format(policy.compute_dtype))
+print("Variable dtype: {}".format(policy.variable_dtype))
+print("Number of GPUs: {}".format(len(get_available_gpus())))
 
 
 def get_loss_function(loss_function):
     if loss_function == "ssim":
         return make_SSIM_loss()
     elif loss_function == "bcl1":
-        return make_bc_l1_loss()
+        return make_bc_l1_loss(len(get_available_gpus()))
     elif loss_function.startswith("fss"):
         values = loss_function.split("_")
         if len(values) == 1:
@@ -82,7 +91,7 @@ def get_metrics():
     ]  # , make_FSS_loss(20, 0), make_SSIM_loss(21), make_KS_loss(21)]
 
 
-def unet(
+def unet_(
     pretrained_weights=None,
     input_size=(256, 256, 1),
     loss_function="MeanSquaredError",
@@ -143,6 +152,7 @@ def unet(
     assert n_categories is None or loss_function == "sparse_categorical_crossentropy"
 
     model = Model(inputs, outputs)
+
     model.compile(
         optimizer=optimizer,
         loss=get_loss_function(loss_function),
@@ -153,6 +163,25 @@ def unet(
         model.load_weights(pretrained_weights)
 
     return model
+
+
+def unet(
+    pretrained_weights=None,
+    input_size=(256, 256, 1),
+    loss_function="MeanSquaredError",
+    optimizer="adam",
+    n_categories=None,
+    strategy=None,
+):
+
+    with strategy.scope():
+        return unet_(
+            pretrained_weights=pretrained_weights,
+            input_size=input_size,
+            loss_function=loss_function,
+            optimizer=optimizer,
+            n_categories=n_categories,
+        )
 
 
 def convlstm(

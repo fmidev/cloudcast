@@ -62,8 +62,11 @@ def parse_command_line():
     return args, opts
 
 
-def get_batch_size(img_size):
-    if img_size[0] >= 384:
+def get_batch_size(img_size, ms):
+    if img_size[0] == 768:
+        # executed only on power gpus
+        batch_size = 14
+    elif img_size[0] >= 384:
         batch_size = 3
     elif img_size[0] >= 256:
         batch_size = 8
@@ -72,15 +75,17 @@ def get_batch_size(img_size):
     else:
         batch_size = 64
 
+    batch_size *= ms.num_replicas_in_sync
+
     return batch_size
 
 
-def with_dataset(m, args, opts):
+def with_dataset(m, args, opts, ms):
     img_size = get_img_size(args.preprocess)
 
     lds = LazyDataSeries(
         img_size=img_size,
-        batch_size=get_batch_size(img_size),
+        batch_size=get_batch_size(img_size, ms),
         reuse_y_as_x=True,
         **vars(args),
     )
@@ -91,7 +96,10 @@ def with_dataset(m, args, opts):
     tv_split = math.floor((n / lds.leadtime_conditioning) * r)
 
     train_ds = lds.get_dataset(take=tv_split)
+    train_ds = ms.experimental_distribute_dataset(train_ds)
+
     val_ds = lds.get_dataset(skip=tv_split)
+    val_ds = ms.experimental_distribute_dataset(val_ds)
 
     train_ds_set_len = math.floor((n * r) / lds.batch_size)
     val_ds_set_len = math.floor((n * (1 - r)) / lds.batch_size)
@@ -173,16 +181,18 @@ def run_model(args, opts):
         else:
             n_channels += 1
 
+    ms = tf.distribute.MirroredStrategy()
     m = unet(
         pretrained_weights,
         input_size=img_size + (n_channels,),
         loss_function=args.loss_function,
         optimizer="adam",
+        strategy=ms,
     )
 
     start = datetime.datetime.now()
 
-    hist = with_dataset(m, args, opts)
+    hist = with_dataset(m, args, opts, ms)
 
     duration = datetime.datetime.now() - start
 
