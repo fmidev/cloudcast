@@ -88,7 +88,7 @@ def with_dataset(m, args, opts, ms):
 
     lds = LazyDataSeries(
         img_size=img_size,
-        batch_size=get_batch_size(img_size),
+        batch_size=get_batch_size(img_size, ms),
         operating_mode="TRAIN",
         **vars(args),
     )
