@@ -15,7 +15,6 @@ EPOCHS = 500
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", action="store", type=str)
     parser.add_argument("--stop_date", action="store", type=str)
     parser.add_argument("--cont", action="store_true")
     parser.add_argument("--n_channels", action="store", type=int, default=4)
@@ -30,8 +29,12 @@ def parse_command_line():
     parser.add_argument("--include_topography", action="store_true", default=False)
     parser.add_argument("--include_terrain_type", action="store_true", default=False)
     parser.add_argument("--leadtime_conditioning", action="store", type=int, default=12)
-    parser.add_argument("--dataseries_file", action="store", type=str, default="")
-    parser.add_argument("--dataseries_directory", action="store", type=str, default="")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--start_date", action="store", type=str)
+    group.add_argument("--dataseries_file", action="store", type=str, default="")
+    group.add_argument("--dataseries_directory", action="store", type=str, default=None)
+
 
     args = parser.parse_args()
 
@@ -96,27 +99,6 @@ def with_dataset(m, args, opts):
         train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=callbacks(args, opts)
     )
 
-
-def with_generator(m, args, opts):
-    img_size = get_img_size(args.preprocess)
-
-    batch_size = get_batch_size(img_size)
-
-    train_gen, val_gen = create_generators(
-        batch_size=batch_size, opts=opts, **vars(args)
-    )
-
-    print("Number of train dataset elements: {}".format(len(train_gen.dataset)))
-    print("Number of validation dataset elements: {}".format(len(val_gen.dataset)))
-
-    hist = m.fit(
-        train_gen,
-        epochs=EPOCHS,
-        validation_data=val_gen,
-        callbacks=callbacks(args, opts),
-    )
-
-    return hist
 
 
 def callbacks(args, opts):

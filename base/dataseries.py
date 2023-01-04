@@ -13,7 +13,7 @@ from base.gributils import read_gribs
 from base.fileutils import read_filenames
 
 
-def read_times_from_preformatted_files(dirname):
+def read_times_from_preformatted_files_directory(dirname):
     toc = {}
     for f in glob.glob("{}/*-times.npy".format(dirname)):
         arr = np.load(f)
@@ -29,7 +29,7 @@ def read_times_from_preformatted_files(dirname):
     return times, toc
 
 
-def read_datas_from_preformatted_files(dirname, toc, times):
+def read_datas_from_preformatted_files_directory(dirname, toc, times):
     datas = []
 
     for t in times:
@@ -38,7 +38,26 @@ def read_datas_from_preformatted_files(dirname, toc, times):
         filename = e["filename"]
         datafile = np.load(filename, mmap_mode="r")
         datas.append(datafile[idx])
+
     return datas, times
+
+
+def read_times_from_preformatted_file(filename):
+    ds = np.load(dataseries_file)
+    data = ds["arr_0"]
+    times = ds["arr_1"]
+
+    return data, times
+
+
+def read_datas_from_preformatted_file(all_times, all_data, req_times):
+    datas = []
+
+    for t in req_times:
+        index = all_times[t.strftime("%Y%m%sT%H%M%S")]
+        datas.append(all_data[index])
+
+    return datas, req_times
 
 
 class LazyDataSeries:
@@ -50,12 +69,18 @@ class LazyDataSeries:
         self.terrain_type_data = None
         self.topography_data = None
         self.include_datetime = kwargs.get("include_datetime", False)
+        self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
 
         assert self.leadtime_conditioning > 0  # temporary
 
-        if self.dataseries_directory is not None:
-            self.elements, self.toc = read_times_from_preformatted_files(
+        if self.dataseries_file is not None:
+            self.elemets, self.data = read_times_from_preformatted_files(
+                self.dataseries_file
+            )
+
+        elif self.dataseries_directory is not None:
+            self.elements, self.toc = read_times_from_preformatted_files_directory(
                 self.dataseries_directory
             )
 
@@ -118,7 +143,27 @@ class LazyDataSeries:
                     + self.leadtime_conditioning
                 ]
 
-                if self.dataseries_directory is None:
+                if self.dataseries_files is not None:
+                    x, times = read_datas_from_preformatted_file(
+                        self.elements, self.data, x_elems
+                    )
+                    y, _ = read_datas_from_preformatted_file(
+                        self.elements, self.data, y_elems
+                    )
+
+                    ts = times[-1]
+
+                elif self.dataseries_directory is not None:
+                    x, times = read_datas_from_preformatted_files_directory(
+                        self.dataseries_directory, self.toc, x_elems
+                    )
+                    y, _ = read_datas_from_preformatted_files_directory(
+                        self.dataseries_directory, self.toc, y_elems
+                    )
+
+                    ts = times[-1]
+
+                else:
                     x = read_gribs(x_elems, dtype=np.single, disable_preprocess=True)
                     y = read_gribs(y_elems, dtype=np.single, disable_preprocess=True)
 
@@ -128,15 +173,6 @@ class LazyDataSeries:
                     ts = datetime.strptime(
                         x_elems[-1].split("/")[-1].split("_")[0], "%Y%m%dT%H%M%S"
                     )
-                else:
-                    x, times = read_datas_from_preformatted_files(
-                        self.dataseries_directory, self.toc, x_elems
-                    )
-                    y, _ = read_datas_from_preformatted_files(
-                        self.dataseries_directory, self.toc, y_elems
-                    )
-
-                    ts = times[-1]
 
                 if self.include_datetime:
                     tod, toy = create_datetime(ts, self.img_size)
