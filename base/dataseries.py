@@ -75,7 +75,7 @@ class LazyDataSeries:
         assert self.leadtime_conditioning > 0  # temporary
 
         if self.dataseries_file is not None:
-            self.elemets, self.data = read_times_from_preformatted_files(
+            self.elements, self.data = read_times_from_preformatted_file(
                 self.dataseries_file
             )
 
@@ -143,7 +143,7 @@ class LazyDataSeries:
                     + self.leadtime_conditioning
                 ]
 
-                if self.dataseries_files is not None:
+                if self.dataseries_file is not None:
                     x, times = read_datas_from_preformatted_file(
                         self.elements, self.data, x_elems
                     )

@@ -32,7 +32,7 @@ def parse_command_line():
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--start_date", action="store", type=str)
-    group.add_argument("--dataseries_file", action="store", type=str, default="")
+    group.add_argument("--dataseries_file", action="store", type=str, default=None)
     group.add_argument("--dataseries_directory", action="store", type=str, default=None)
 
 

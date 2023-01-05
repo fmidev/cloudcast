@@ -197,14 +197,10 @@ def predict(args):
         )
 
     if opts.include_topography and topography_weights is None:
-        topography_weights = create_topography_data(
-            opts.preprocess, opts.model == "convlstm"
-        )
+        topography_weights = create_topography_data(get_img_size(opts.preprocess))
 
     if opts.include_terrain_type and terrain_type_weights is None:
-        terrain_typey_weights = create_terrain_type_data(
-            opts.preprocess, opts.model == "convlstm"
-        )
+        terrain_typey_weights = create_terrain_type_data(get_img_size(opts.preprocess))
 
     if opts.leadtime_conditioning:
         assert args.prediction_len <= opts.leadtime_conditioning
