@@ -99,6 +99,7 @@ def with_dataset(m, args, opts):
         train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=callbacks(args, opts)
     )
 
+    return hist
 
 
 def callbacks(args, opts):
