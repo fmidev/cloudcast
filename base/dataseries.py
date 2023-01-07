@@ -71,6 +71,25 @@ class LazyDataSeries:
         self.include_datetime = kwargs.get("include_datetime", False)
         self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
+        self.reuse_y_as_x = kwargs.get("reuse_y_as_x", True)
+
+        # reuse_y_as_x is True:
+        # first set   second set
+        # AB CDEF     BC DEFG
+        # -->         -->
+        # AB C        BC D
+        # AB D        BC E
+        # AB E        BC F
+        # AB F        BD G
+
+        # reuse_y_as_x is False:
+        # first set   second set
+        # AB CDEF     GH IJKL
+        # -->         -->
+        # AB C        GH I
+        # AB D        GH J
+        # AB E        GH K
+        # AB F        GH L
 
         assert self.leadtime_conditioning > 0  # temporary
 
@@ -89,10 +108,14 @@ class LazyDataSeries:
             stop_date = kwargs.get("stop_date")
 
             self.elements = read_filenames(start_date, stop_date)
+            self.elements.sort()
 
         self.initialize(kwargs)
 
     def __len__(self):
+        if self.reuse_y_as_x:
+            return len(self._indexes) * self.leadtime_conditioning
+
         return self.leadtime_conditioning * int(
             len(self.elements) / (self.n_channels + self.leadtime_conditioning)
         )
@@ -120,15 +143,22 @@ class LazyDataSeries:
                 create_terrain_type_data(self.img_size), axis=0
             )
 
-        n_source = int(
-            len(self.elements) / (self.n_channels + self.leadtime_conditioning)
-        )
-        self._indexes = np.asarray(
-            [
-                x * (self.n_channels + self.leadtime_conditioning)
-                for x in range(n_source)
-            ]
-        )
+        if self.reuse_y_as_x:
+            self._indexes = np.arange(
+                0, len(self.elements) - self.n_channels - self.leadtime_conditioning
+            )
+
+        else:
+            n_source = int(
+                len(self.elements) / (self.n_channels + self.leadtime_conditioning)
+            )
+            self._indexes = np.asarray(
+                [
+                    x * (self.n_channels + self.leadtime_conditioning)
+                    for x in range(n_source)
+                ]
+            )
+
         np.random.shuffle(self._indexes)
 
     def get_dataset(self, take=None, skip=None):
@@ -164,8 +194,18 @@ class LazyDataSeries:
                     ts = times[-1]
 
                 else:
-                    x = read_gribs(x_elems, dtype=np.single, disable_preprocess=True)
-                    y = read_gribs(y_elems, dtype=np.single, disable_preprocess=True)
+                    x = read_gribs(
+                        x_elems,
+                        dtype=np.single,
+                        disable_preprocess=True,
+                        print_filename=False,
+                    )
+                    y = read_gribs(
+                        y_elems,
+                        dtype=np.single,
+                        disable_preprocess=True,
+                        print_filename=False,
+                    )
 
                     x = tf.image.resize(x, self.img_size)
                     y = tf.image.resize(y, self.img_size)

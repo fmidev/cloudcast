@@ -29,12 +29,12 @@ def parse_command_line():
     parser.add_argument("--include_topography", action="store_true", default=False)
     parser.add_argument("--include_terrain_type", action="store_true", default=False)
     parser.add_argument("--leadtime_conditioning", action="store", type=int, default=12)
+    parser.add_argument("--steps_per_epoch_ratio", action="store", default=1.0)
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--start_date", action="store", type=str)
     group.add_argument("--dataseries_file", action="store", type=str, default=None)
     group.add_argument("--dataseries_directory", action="store", type=str, default=None)
-
 
     args = parser.parse_args()
 
@@ -79,24 +79,37 @@ def with_dataset(m, args, opts):
     img_size = get_img_size(args.preprocess)
 
     lds = LazyDataSeries(
-        img_size=img_size, batch_size=get_batch_size(img_size), **vars(args)
+        img_size=img_size,
+        batch_size=get_batch_size(img_size),
+        reuse_y_as_x=True,
+        **vars(args),
     )
 
     n = len(lds)
-    tv_split = math.floor((n / lds.leadtime_conditioning) * 0.9)
+    # train-val split ratio
+    r = 0.85
+    tv_split = math.floor((n / lds.leadtime_conditioning) * r)
 
     train_ds = lds.get_dataset(take=tv_split)
     val_ds = lds.get_dataset(skip=tv_split)
 
+    train_ds_set_len = math.floor(n * r / lds.batch_size)
+    val_ds_set_len = math.floor(n * (1 - r))
+
     print(
         "Number of sets: {} number of train dataset elements: {}".format(
-            math.floor(n * 0.9 / lds.batch_size), math.floor(n * 0.9)
+            train_ds_set_len, math.floor(n * r)
         )
     )
-    print("Number of validation dataset elements: {}".format(math.floor(n * 0.1)))
+    print("Number of validation dataset elements: {}".format(val_ds_set_len))
 
     hist = m.fit(
-        train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=callbacks(args, opts)
+        train_ds,
+        epochs=EPOCHS,
+        validation_data=val_ds,
+        callbacks=callbacks(args, opts),
+        steps_per_epoch=train_ds_set_len * args.step_per_epoch_ratio,
+        validation_steps=val_ds_set_len * args.step_per_epoch_ratio,
     )
 
     return hist
@@ -140,9 +153,10 @@ def save_model_info(args, opts, duration, hist, model_dir):
 def run_model(args, opts):
     model_dir = "models/{}".format(opts.get_label())
 
-    pretrained_weights = (
-        "checkpoints/{}/cp.ckpt".format(opts.get_label()) if args.cont else None
-    )
+    pretrained_weights = None
+    if args.cont:
+        pretrained_weights = "checkpoints/{}/cp.ckpt".format(opts.get_label())
+        print("Reading old weights from '{}'".format(pretrained_weights))
 
     img_size = get_img_size(opts.preprocess)
     n_channels = int(opts.n_channels)

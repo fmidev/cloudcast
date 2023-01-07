@@ -11,7 +11,7 @@ from osgeo import gdal, osr
 try:
     INPUT_DIR = os.environ["CLOUDCAST_INPUT_DIR"]
 except KeyError:
-    INPUT_DIR = "s3://cloudcast"
+    INPUT_DIR = "s3://cc_archive"
 
 
 def read_filenames(
