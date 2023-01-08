@@ -43,18 +43,23 @@ def read_datas_from_preformatted_files_directory(dirname, toc, times):
 
 
 def read_times_from_preformatted_file(filename):
-    ds = np.load(dataseries_file)
+    ds = np.load(filename)
     data = ds["arr_0"]
     times = ds["arr_1"]
+    times = list(map(lambda x: datetime.strptime(x, "%Y%m%dT%H%M%S"), times))
 
-    return data, times
+    toc = {}
+    for i, t in enumerate(times):
+        toc[t] = {"index": i, "time": t}
+
+    return times, data, toc
 
 
-def read_datas_from_preformatted_file(all_times, all_data, req_times):
+def read_datas_from_preformatted_file(all_times, all_data, req_times, toc):
     datas = []
 
     for t in req_times:
-        index = all_times[t.strftime("%Y%m%sT%H%M%S")]
+        index = toc[t]["index"]
         datas.append(all_data[index])
 
     return datas, req_times
@@ -94,7 +99,7 @@ class LazyDataSeries:
         assert self.leadtime_conditioning > 0  # temporary
 
         if self.dataseries_file is not None:
-            self.elements, self.data = read_times_from_preformatted_file(
+            self.elements, self.data, self.toc = read_times_from_preformatted_file(
                 self.dataseries_file
             )
 
@@ -175,10 +180,10 @@ class LazyDataSeries:
 
                 if self.dataseries_file is not None:
                     x, times = read_datas_from_preformatted_file(
-                        self.elements, self.data, x_elems
+                        self.elements, self.data, x_elems, self.toc
                     )
                     y, _ = read_datas_from_preformatted_file(
-                        self.elements, self.data, y_elems
+                        self.elements, self.data, y_elems, self.toc
                     )
 
                     ts = times[-1]

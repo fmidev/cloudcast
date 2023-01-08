@@ -108,8 +108,8 @@ def with_dataset(m, args, opts):
         epochs=EPOCHS,
         validation_data=val_ds,
         callbacks=callbacks(args, opts),
-        steps_per_epoch=train_ds_set_len * args.step_per_epoch_ratio,
-        validation_steps=val_ds_set_len * args.step_per_epoch_ratio,
+        steps_per_epoch=train_ds_set_len * args.steps_per_epoch_ratio,
+        validation_steps=val_ds_set_len * args.steps_per_epoch_ratio,
     )
 
     return hist
