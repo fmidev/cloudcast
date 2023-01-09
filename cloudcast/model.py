@@ -69,6 +69,18 @@ def get_loss_function(loss_function):
             return make_KS_loss()
 
         return make_KS_loss(int(values[1]))
+    elif loss_function == "coss":
+        ngpu = len(get_available_gpus())
+
+        def coss(yt, yp):
+            lf = tf.keras.losses.CosineSimilarity(
+                reduction=tf.keras.losses.Reduction.NONE
+            )
+            loss = lf(tf.expand_dims(yt, -1), tf.expand_dims(yp, -1))
+            loss = tf.reduce_mean(loss) * (1.0 / ngpu)
+            return loss
+
+        return coss
 
     return loss_function
 
