@@ -2,6 +2,7 @@ import tensorflow as tf
 
 
 def make_KS_loss(mask_size=3):  # choose any mask size for calculating densities
+    @tf.function
     def D(X):
         x1 = tf.sort(X[0])
         x2 = tf.sort(X[1])

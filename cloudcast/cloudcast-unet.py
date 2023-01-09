@@ -93,8 +93,8 @@ def with_dataset(m, args, opts):
     train_ds = lds.get_dataset(take=tv_split)
     val_ds = lds.get_dataset(skip=tv_split)
 
-    train_ds_set_len = math.floor(n * r / lds.batch_size)
-    val_ds_set_len = math.floor(n * (1 - r))
+    train_ds_set_len = math.floor((n * r) / lds.batch_size)
+    val_ds_set_len = math.floor((n * (1 - r)) / lds.batch_size)
 
     print(
         "Number of sets: {} number of train dataset elements: {}".format(
