@@ -15,35 +15,56 @@ import tensorflow as tf
 
 
 def make_FSS_loss(
-    mask_size, want_discretization=0
+    mask_size, bins=None, fuzzy=False
 ):  # choose any mask size for calculating densities
-    want_hard_discretization = want_discretization == 2
-    want_soft_discretization = want_discretization == 1
+    def my_round(val):
+        m = tf.constant(10, dtype=val.dtype)
+        return tf.round(val * m) / m
 
-    def my_FSS_loss(y_true, y_pred):
+    def norm(x):
+        # normalise x to range [-1,1]
+        min_ = tf.math.reduce_min(x)
+        max_ = tf.math.reduce_max(x)
+
+        if min_ == 1.0 and max_ == 1.0:
+            return x
+
+        # return -1.0 + (tf.math.subtract(x, min_) * 2) / ((max_ - min_) + tf.keras.backend.epsilon())
+        nom = (x - min_) * 2.0
+        denom = max_ - min_
+        return nom / (denom + tf.keras.backend.epsilon()) - 1.0
+
+    def my_FSS_loss(y_true, y_pred, binval, fuzzy=False):
 
         # First: DISCRETIZE y_true and y_pred to have only binary values 0/1
         # (or close to those for soft discretization)
 
         # This example assumes that y_true, y_pred have the shape (None, N, N, 1).
-        cutoff = 0.1  # choose the cut off value for discretization
 
-        if want_hard_discretization:
-            # Hard discretization:
-            # can use that in metric, but not in loss
-            y_true_binary = tf.where(y_true > cutoff, 1.0, 0.0)
-            y_pred_binary = tf.where(y_pred > cutoff, 1.0, 0.0)
-
-        elif want_soft_discretization == 1:
-            # Soft discretization
-            c = 10  # make sigmoid function steep
-            y_true_binary = tf.math.sigmoid(c * (y_true - cutoff))
-            y_pred_binary = tf.math.sigmoid(c * (y_pred - cutoff))
-
+        # Round true value and prediction into nearest single decimal
+        if fuzzy:
+            y_true_rounded = tf.where(
+                tf.math.logical_and(y_true >= binval[0], y_true < binval[1]), 1.0, 0.0
+            )
+            y_pred_rounded = tf.where(
+                tf.math.logical_and(y_pred >= binval[0], y_pred < binval[1]), 1.0, 0.0
+            )
         else:
-            assert want_discretization == 0
-            y_true_binary = y_true
-            y_pred_binary = y_pred
+            y_true_rounded = my_round(y_true)
+            y_pred_rounded = my_round(y_pred)
+
+        y_true_binary = tf.cast((y_true_rounded == binval), y_true.dtype)
+        y_pred_binary = tf.cast((y_pred_rounded == binval), y_pred.dtype)
+
+        # If neither y_true nor y_pred have values in this bin, fss is undetermined
+        if tf.reduce_sum(y_true_binary) == 0 and tf.reduce_sum(y_pred_binary) == 0:
+            return None
+
+        # Soft discretization
+
+        c = 8  # make sigmoid function steep
+        y_true_binary = tf.math.sigmoid(c * norm(y_true_binary))
+        y_pred_binary = tf.math.sigmoid(c * norm(y_pred_binary))
 
         # Done with discretization.
         # To calculate densities: apply average pooling to y_true.
@@ -103,15 +124,26 @@ def make_FSS_loss(
         # Avoid division by zero if MSE_n_ref == 0
         # MSE_n_ref = 0 only if both input images contain only zeros.
         # In that case both images match exactly, i.e. we should return 0.
-        my_epsilon = tf.keras.backend.epsilon()  # this is 10^(-7)
-        if want_hard_discretization:
-            if MSE_n_ref == 0:
-                return MSE_n
-            else:
-                return MSE_n / MSE_n_ref
+        return MSE_n / (MSE_n_ref + tf.keras.backend.epsilon())
+
+    def run_loss(y_true, y_pred, bins=bins, fuzzy=False):
+        if bins is None:
+            bins = tf.cast(tf.linspace(0, 1, 11), y_true.dtype)
+
+        loss = []
+        if fuzzy:
+            for i, binval in enumerate(bins[1:]):
+                loss.append(
+                    my_FSS_loss(y_true, y_pred, (bins[i - 1], binval), fuzzy=fuzzy)
+                )
         else:
-            return MSE_n / (MSE_n_ref + my_epsilon)
+            for binval in bins:
+                l = my_FSS_loss(y_true, y_pred, binval, fuzzy=fuzzy)
+                if l is not None:
+                    loss.append(l)
+
+        return tf.reduce_mean(tf.convert_to_tensor(loss))
 
     my_FSS_loss.__name__ = "FSS_mask_size-{}".format(mask_size)
 
-    return my_FSS_loss
+    return run_loss

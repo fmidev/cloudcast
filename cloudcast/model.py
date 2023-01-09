@@ -75,9 +75,13 @@ def get_loss_function(loss_function):
     elif loss_function.startswith("fss"):
         values = loss_function.split("_")
         if len(values) == 1:
-            return make_FSS_loss()
+            return make_FSS_loss(5)
 
-        return make_FSS_loss(int(values[1]), int(values[2]))
+        mask = int(values[1])
+        bins = values[2].split(',')
+        bins = list(map(lambda x: float(x), bins))
+        fuzzy = eval(values[3])
+        return make_FSS_loss(mask, bins, fuzzy)
     elif loss_function.startswith("ks"):
         values = loss_function.split("_")
         if len(values) == 1:
