@@ -29,7 +29,9 @@ def parse_command_line():
     parser.add_argument("--include_topography", action="store_true", default=False)
     parser.add_argument("--include_terrain_type", action="store_true", default=False)
     parser.add_argument("--leadtime_conditioning", action="store", type=int, default=12)
-    parser.add_argument("--steps_per_epoch_ratio", action="store", default=1.0)
+    parser.add_argument(
+        "--reuse_y_as_x", action=argparse.BooleanOptionalAction, default=True
+    )
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--start_date", action="store", type=str)
@@ -81,35 +83,36 @@ def with_dataset(m, args, opts):
     lds = LazyDataSeries(
         img_size=img_size,
         batch_size=get_batch_size(img_size),
-        reuse_y_as_x=True,
         **vars(args),
     )
 
+    # number of samples
     n = len(lds)
     # train-val split ratio
     r = 0.85
-    tv_split = math.floor((n / lds.leadtime_conditioning) * r)
-
-    train_ds = lds.get_dataset(take=tv_split)
-    val_ds = lds.get_dataset(skip=tv_split)
-
-    train_ds_set_len = math.floor((n * r) / lds.batch_size)
-    val_ds_set_len = math.floor((n * (1 - r)) / lds.batch_size)
+    # training dataset
+    train_ds = lds.get_dataset(take_ratio=r)
+    # validation dataset
+    val_ds = lds.get_dataset(skip_ratio=r)
+    # number of train data set steps (step = one batch)
+    train_ds_steps = int((n * r) / lds.batch_size)
+    # number of val data set steps
+    val_ds_steps = int((n * (1 - r)) / lds.batch_size)
 
     print(
-        "Number of sets: {} number of train dataset elements: {}".format(
-            train_ds_set_len, math.floor(n * r)
+        "Total number of train dataset samples: {:d} number of steps: {:d} (batch_size: {:d})".format(
+            int(n * r), train_ds_steps, lds.batch_size
         )
     )
-    print("Number of validation dataset elements: {}".format(val_ds_set_len))
+
+    print(
+        "Total number of validation samples: {:d} number of steps: {:d}".format(
+            int(n * (1 - r)), val_ds_steps
+        )
+    )
 
     hist = m.fit(
-        train_ds,
-        epochs=EPOCHS,
-        validation_data=val_ds,
-        callbacks=callbacks(args, opts),
-        steps_per_epoch=train_ds_set_len * args.steps_per_epoch_ratio,
-        validation_steps=val_ds_set_len * args.steps_per_epoch_ratio,
+        train_ds, epochs=EPOCHS, validation_data=val_ds, callbacks=callbacks(args, opts)
     )
 
     return hist

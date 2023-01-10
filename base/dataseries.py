@@ -118,6 +118,8 @@ class LazyDataSeries:
         self.initialize(kwargs)
 
     def __len__(self):
+        """Return number of samples"""
+
         if self.reuse_y_as_x:
             return len(self._indexes) * self.leadtime_conditioning
 
@@ -166,7 +168,7 @@ class LazyDataSeries:
 
         np.random.shuffle(self._indexes)
 
-    def get_dataset(self, take=None, skip=None):
+    def get_dataset(self, take_ratio=None, skip_ratio=None):
         def gen(indexes):
 
             for hist_start in indexes:
@@ -268,11 +270,13 @@ class LazyDataSeries:
 
         indexes = None
 
-        if take is not None:
-            indexes = self._indexes[0:take]
+        if take_ratio is not None:
+            l = int(len(self._indexes) * take_ratio)
+            indexes = self._indexes[0:l]
 
-        if skip is not None:
-            indexes = self._indexes[skip:]
+        if skip_ratio is not None:
+            l = int(len(self._indexes) * skip_ratio)
+            indexes = self._indexes[l:]
 
         if indexes is None:
             indexes = np.copy(self._indexes)
@@ -301,5 +305,5 @@ class LazyDataSeries:
                 .map(lambda x, y: normalize(x, y, self.n_channels))
             )
 
-        dataset = dataset.batch(self.batch_size).prefetch(AUTOTUNE)
+        dataset = dataset.batch(self.batch_size, drop_remainder=True).prefetch(AUTOTUNE)
         return dataset
