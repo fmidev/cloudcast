@@ -16,14 +16,15 @@ class CloudCastOptions:
             self.include_terrain_type = kwargs.get("include_terrain_type", False)
             self.onehot_encoding = kwargs.get("onehot_encoding", False)
             self.leadtime_conditioning = kwargs.get("leadtime_conditioning", 0)
+            self.include_sun_elevation_angle = kwargs.get(
+                "include_sun_elevation_angle", False
+            )
 
     def __str__(self):
         return self.get_label()
 
     def from_label(self, label):
         elems = label.split("-")
-
-        assert len(elems) == 9
 
         self.model = elems[0]
         self.loss_function = elems[1]
@@ -33,10 +34,17 @@ class CloudCastOptions:
         self.include_terrain_type = eval(elems[5].split("=")[1])
         self.leadtime_conditioning = int(elems[6].split("=")[1])
         self.onehot_encoding = eval(elems[7].split("=")[1])
-        self.preprocess = elems[8]
+
+        if len(elems) == 9:
+            self.include_sun_elevation_angle = False
+            self.preprocess = elems[8]
+
+        elif len(elems) == 10:
+            self.include_sun_elevation_angle = eval(elems[8].split("=")[1])
+            self.preprocess = elems[9]
 
     def get_label(self):
-        return "{}-{}-hist={}-dt={}-topo={}-terrain={}-lc={}-oh={}-{}".format(
+        return "{}-{}-hist={}-dt={}-topo={}-terrain={}-lc={}-oh={}-sun={}-{}".format(
             self.model,
             self.loss_function,
             self.n_channels,
@@ -45,6 +53,7 @@ class CloudCastOptions:
             self.include_terrain_type,
             self.leadtime_conditioning,
             self.onehot_encoding,
+            self.include_sun_elevation_angle,
             self.preprocess,
         )
 

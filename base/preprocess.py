@@ -9,6 +9,7 @@ from base.fileutils import get_filename, gdal_read_from_http
 
 DEM = {}
 LSM = {}
+GRID = None
 
 
 def get_img_size(preprocess):
@@ -93,6 +94,39 @@ PROJCRS["unknown",
     return arr
 
 
+def create_lonlat_grid(shape):
+    """Create a longitude/latitude grid from MEPS2500D area"""
+
+    x_len = 2370000
+    y_len = 2670000
+
+    dx = x_len / (shape[0] - 1)
+    dy = y_len / (shape[1] - 1)
+
+    src = osr.SpatialReference()
+    tgt = osr.SpatialReference()
+    src.ImportFromProj4(
+        "+proj=lcc +lat_0=63.3 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +x_0=1063327.1809 +y_0=1334203.7299 +ellps=WGS84 +units=m +no_defs"
+    )
+    tgt.ImportFromEPSG(4326)
+
+    transform = osr.CoordinateTransformation(src, tgt)
+    coords = []
+    # start bottom left
+    for j in range(shape[1]):
+        for i in range(shape[0]):
+            p = transform.TransformPoint(i * dx, j * dy)
+            lat = p[0]
+            lon = p[1]
+
+            assert lon > -20 and lon < 55
+            assert lat > 45 and lat < 77
+
+            coords.append((lon, lat))
+
+    return np.flipud(np.asarray(coords).reshape(shape + (2,)))
+
+
 def to_binary_mask(arr):
     arr[arr < 0.1] = 0.0
     arr[arr > 0] = 1.0
@@ -146,34 +180,83 @@ def time_of_year_and_day(datetime):
     return tod, toy
 
 
-def sun_declination_angle(datetime):
-    # from mos-tools
-    jday = datetime.timetuple().tm_yday
-    hour = int(datetime.strftime("%H"))
+def sun_declination_angle(ts):
+    J = int(ts.strftime("%-j"))
+    H = int(ts.strftime("%H"))
+    M = int(ts.strftime("%M"))
+    N = J + (H / 24.0) + (M / 60.0)
+    decl = -23.44 * np.cos(np.deg2rad(360.0 / 365 * (N + 10)))
 
-    daydoy = jday + hour / 24.0 - 32
+    return decl
 
-    if daydoy < 0:
-        daydoy += 365
 
-    declination = (
-        -np.asin(
-            0.39779
-            * np.cos(
-                0.98565 / 360 * 2 * np.pi * (daydoy + 10)
-                + 1.914
-                / 360
-                * 2
-                * np.pi
-                * np.sin(0.98565 / 360 * 2 * np.pi * (daydoy - 2))
-            )
+def equation_of_time(ts):
+    J = int(ts.strftime("%-j"))
+    B = 360.0 * (J - 81) / 365
+    B = np.deg2rad(B)
+    E = 9.87 * np.sin(2 * B) - 7.53 * np.cos(B) - 1.5 * np.sin(B)
+
+    return E
+
+
+def solar_hour_angle(ts, E, longitude):
+    # need time zone to calculate solar hour
+    # "normal" time zone cannot be used as it's a political
+    # concept
+    # use a straightforward longitude-based time zone
+    dTZ = longitude / 15
+
+    LSTM = 15 * dTZ
+    TC = 4 * (25 - LSTM) + E  # minutes
+
+    # local solar time
+    LST = ts + datetime.timedelta(minutes=TC)
+    LST = LST + datetime.timedelta(minutes=dTZ * 60)
+    LST_H = int(LST.strftime("%H")) + int(LST.strftime("%M")) / 60.0
+
+    # solar hour angle
+    HRA = 15 * (LST_H - 12)
+    return HRA
+
+
+def sun_elevation_angle(decl, HRA, latitude):
+    latitude = np.deg2rad(latitude)
+    decl = np.deg2rad(decl)
+    HRA = np.deg2rad(HRA)
+
+    return np.rad2deg(
+        np.arcsin(
+            np.sin(latitude) * np.sin(decl)
+            + np.cos(latitude) * np.cos(decl) * np.cos(HRA)
         )
-        * 360
-        / 2
-        / np.pi
     )
 
-    return declination
+
+def create_sun_elevation_angle(ts, img_size):
+    global GRID
+    if GRID is None:
+        GRID = create_lonlat_grid(img_size)
+
+    decl = sun_declination_angle(ts)
+    E = equation_of_time(ts)
+
+    ret = []
+    for c in GRID.reshape(img_size[0] * img_size[1], 2):
+        HRA = solar_hour_angle(ts, E, c[0])
+        angle = sun_elevation_angle(decl, HRA, c[1])
+        ret.append(angle)
+    ret = np.expand_dims(np.asarray(ret).reshape(img_size), axis=-1)
+    return ret
+
+
+def sun_elevation_angle_wrapper(ts, longitude, latitude):
+
+    decl = sun_declination_angle(ts)
+    E = equation_of_time(ts)
+    HRA = solar_hour_angle(ts, E, longitude)
+    angle = sun_elevation_angle(decl, HRA, latitude)
+
+    return angle
 
 
 def create_datetime(datetime, img_size):

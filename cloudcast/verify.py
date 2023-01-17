@@ -214,6 +214,8 @@ def predict_many(args, opts_list):
 def predict(args, opts):
     global DSS
 
+    img_size = get_img_size(opts.preprocess)
+
     model_file = "models/{}".format(opts.get_label())
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
@@ -292,7 +294,7 @@ def predict(args, opts):
 
         if climatology:
             clim = generate_clim_values(
-                (len(leadtimes),) + get_img_size(opts.preprocess),
+                (len(leadtimes),) + img_size,
                 int(leadtimes[0].strftime("%m")),
             )
 
@@ -309,18 +311,24 @@ def predict(args, opts):
             predictions["gt"]["data"].append(datas["nwcsaf"][i])
 
         datetime_weights = None
+        sun_angle_weights = None
         lt = None
 
         if opts.include_datetime:
             datetime_weights = list(
-                map(
-                    lambda x: create_datetime(x, get_img_size(opts.preprocess)), history
-                )
+                map(lambda x: create_datetime(x, img_size), history)
             )
         if opts.include_topography and topography_weights is None:
             topography_weights = create_topography_data(opts.preprocess)
         if opts.include_terrain_type and terrain_type_weights is None:
             terrain_type_weights = create_terrain_type_data(opts.preprocess)
+        if opts.include_sun_elevation_angle:
+            sun_angle_weights = list(
+                map(
+                    lambda x: create_sun_elevation_angle(x, img_size),
+                    history,
+                )
+            )
 
         if opts.leadtime_conditioning:
             assert args.prediction_len <= opts.leadtime_conditioning
@@ -352,6 +360,7 @@ def predict(args, opts):
                 terrain_type_weights=terrain_type_weights,
                 leadtime_conditioning=lt,
                 onehot_econding=opts.onehot_encoding,
+                sun_angle_weights=sun_angle_weights,
             )
         else:
             hist = datas["nwcsaf"][: opts.n_channels]

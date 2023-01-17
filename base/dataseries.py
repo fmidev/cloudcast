@@ -8,6 +8,7 @@ from base.preprocess import (
     create_terrain_type_data,
     create_squeezed_leadtime_conditioning,
     create_datetime,
+    create_sun_elevation_angle,
 )
 from base.gributils import read_gribs
 from base.fileutils import read_filenames
@@ -74,6 +75,9 @@ class LazyDataSeries:
         self.terrain_type_data = None
         self.topography_data = None
         self.include_datetime = kwargs.get("include_datetime", False)
+        self.include_sun_elevation_angle = kwargs.get(
+            "include_sun_elevation_angle", False
+        )
         self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
         self.reuse_y_as_x = kwargs.get("reuse_y_as_x", True)
@@ -226,6 +230,10 @@ class LazyDataSeries:
                     tod = np.expand_dims(tod, axis=0)
                     toy = np.expand_dims(toy, axis=0)
 
+                if self.include_sun_elevation_angle:
+                    angle = create_sun_elevation_angle(ts, self.img_size)
+                    angle = np.expand_dims(angle, axis=0)
+
                 for i in range(len(y)):
                     lt = np.expand_dims(self.leadtimes[i], axis=0)
                     x_ = np.concatenate((x, lt), axis=0)
@@ -236,6 +244,9 @@ class LazyDataSeries:
                         x_ = np.concatenate((x_, self.topography_data), axis=0)
                     if self.terrain_type_data is not None:
                         x_ = np.concatenate((x_, self.terrain_type_data), axis=0)
+                    if self.include_sun_elevation_angle:
+                        x_ = np.concatenate((x_, angle), axis=0)
+
                     x_ = np.squeeze(np.swapaxes(x_, 0, 3))
                     y_ = y[i]
 
@@ -286,6 +297,7 @@ class LazyDataSeries:
         x_dim_len += 2 if self.include_datetime else 0
         x_dim_len += 1 if self.topography_data is not None else 0
         x_dim_len += 1 if self.terrain_type_data is not None else 0
+        x_dim_len += 1 if self.include_sun_elevation_angle else 0
 
         dataset = tf.data.Dataset.from_generator(
             gen,

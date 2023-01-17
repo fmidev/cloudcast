@@ -29,8 +29,9 @@ def parse_command_line():
     parser.add_argument("--include_topography", action="store_true", default=False)
     parser.add_argument("--include_terrain_type", action="store_true", default=False)
     parser.add_argument("--leadtime_conditioning", action="store", type=int, default=12)
+    parser.add_argument("--reuse_y_as_x", action="store_true", default=False)
     parser.add_argument(
-        "--reuse_y_as_x", action=argparse.BooleanOptionalAction, default=True
+        "--include_sun_elevation_angle", action="store_true", default=False
     )
 
     group = parser.add_mutually_exclusive_group()
@@ -175,6 +176,8 @@ def run_model(args, opts):
             n_channels += leadtime_conditioning
         else:
             n_channels += 1
+    if opts.include_sun_elevation_angle:
+        n_channels += 1
 
     m = unet(
         pretrained_weights,
