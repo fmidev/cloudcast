@@ -13,6 +13,11 @@ try:
 except KeyError:
     INPUT_DIR = "s3://cc_archive"
 
+try:
+    STATIC_DATA_DIR = os.environ["CLOUDCAST_STATIC_INPUT_DIR"]
+except KeyError:
+    STATIC_DATA_DIR = INPUT_DIR
+
 
 def read_filenames(
     start_time, stop_time, producer="nwcsaf", param="effective-cloudiness"
@@ -76,11 +81,11 @@ def get_filename(
             param,
         )
     if producer == "DEM":
-        return "{}/static/DEM-cloudcast.tif".format(INPUT_DIR)
+        return "{}/static/DEM-cloudcast.tif".format(STATIC_DATA_DIR)
     if producer == "LSM":
-        return "{}/static/LSM-cloudcast.tif".format(INPUT_DIR)
+        return "{}/static/LSM-cloudcast.tif".format(STATIC_DATA_DIR)
     if producer == "clim":
-        return "{}/static/climatology-monthly-128x128.npz".format(INPUT_DIR)
+        return "{}/static/climatology-monthly-128x128.npz".format(STATIC_DATA_DIR)
 
 
 def read_time(
