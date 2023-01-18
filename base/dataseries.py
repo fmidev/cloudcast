@@ -77,6 +77,7 @@ class LazyDataSeries:
         self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
         self.reuse_y_as_x = kwargs.get("reuse_y_as_x", True)
+        self.shuffle_data = kwargs.get("shuffle_data", True)
 
         # reuse_y_as_x is True:
         # first set   second set
@@ -166,7 +167,8 @@ class LazyDataSeries:
                 ]
             )
 
-        np.random.shuffle(self._indexes)
+        if self.shuffle_data:
+            np.random.shuffle(self._indexes)
 
     def get_dataset(self, take_ratio=None, skip_ratio=None):
         def gen(indexes):
