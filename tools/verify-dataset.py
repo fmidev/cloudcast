@@ -4,19 +4,23 @@ from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import sys
-from plotutils import *
+from base.plotutils import *
 
 def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("filename", action='store')
+    parser.add_argument("--show_example", action='store_true', default=False)
+    parser.add_argument("--show_histogram", action='store_true', default=False)
 
     args = parser.parse_args()
 
     return args
 
-def print_summary_statistics(data):
+def print_summary_statistics(data, times):
     static=0
     miss=0
+    nans=0
+    infs=0
     allmax=-1e38
     allmin=1e38
     
@@ -29,17 +33,22 @@ def print_summary_statistics(data):
             print('miss:',times[i])
         if min_ == max_:
             static += 1
-            print('static:',min_,max_,times[i])
+            print('static min=max={}, time={}'.format(max_,times[i]))
+        if np.isnan(arr).sum() > 0:
+            print("data contains nans: {}".format(np.isnan(arr).sum()))
+            nans += 1
+        if np.isinf(arr).sum() > 0:
+            print("data contains inf: {}".format(np.isnan(arr).sum()))
+            infs += 1
         if allmax < max_:
             allmax = max_
         if allmin > min_:
             allmin = min_
-
         if min_ < -0.1: 
             print('ERR: time {} min value: {}'.format(times[i], min_))
             sys.exit(1)
 
-    print(f"found {miss} missing, {static} static grids out of {data.shape[0]}")
+    print(f"out of {data.shape[0]} grids were: missing={miss}, static={static} nans={nans} infs={infs}")
     print(f"max: {allmax}, min: {allmin}, mean: {np.mean(data)}")
 
 
@@ -58,6 +67,8 @@ def show_example(data, times):
         print(f'showing random grid from location {idx} (time: {times[idx]})')
         plt.imshow(np.squeeze(data[idx]))
 
+    plt.show()
+
 
 def show_histogram(data):
 
@@ -69,7 +80,8 @@ def show_histogram(data):
 
     plot_histogram(hists, ['mean', 'variance'])
 
-    #plot_histogram(hists, ['mean', 'median', 'variance'])
+    plt.show()
+
 
 def find_low_mean_and_variance(data, times, mean_min, mean_max, variance_min, variance_max):
     means = np.average(data, axis=(1,2,3))
@@ -85,12 +97,30 @@ def find_low_mean_and_variance(data, times, mean_min, mean_max, variance_min, va
     print('var_high',var_high)
 
 
-def verify(args):
+def load_npz(filename):
     dataset = np.load(args.filename)
 
-    print(dataset.files)
     datas = dataset['arr_0']
     times = dataset['arr_1']
+
+    return datas,times
+
+def load_npy(filename):
+    times_filename = '{}-times.npy'.format(filename[:-4])
+
+    datas = np.load(filename)
+    times = np.load(times_filename)
+
+    return datas,times
+
+
+def verify(args):
+    print(args.filename)
+    if args.filename[-3:] == 'npz':
+        datas, times = load_npz(args.filename)
+    else:
+        assert(args.filename[-3:] == 'npy')
+        datas, times = load_npy(args.filename)
 
     is_forecast = (len(datas.shape) == 5)
     if not is_forecast:
@@ -102,11 +132,12 @@ def verify(args):
        
     print("data shape: {}".format(datas.shape))
 
-#    print_summary_statistics(datas)
-#    show_example(datas, times)
-    show_histogram(datas)
-    find_low_mean_and_variance(datas, times, 0.3, 0.90, 0.025, 0.28)
-    plt.show()
+    print_summary_statistics(datas, times)
+    if args.show_example:
+        show_example(datas, times)
+    if args.show_histogram:
+        show_histogram(datas)
+#    find_low_mean_and_variance(datas, times, 0.3, 0.90, 0.025, 0.28)
 
 if __name__ == "__main__":
     args = parse_command_line()
