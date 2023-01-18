@@ -253,8 +253,9 @@ def is_http(uri):
 
 
 def create_topography_data(img_size):
-    global DEM
+    assert(type(img_size) == tuple)
 
+    global DEM
     isize = "{}x{}".format(img_size[0], img_size[1])
 
     try:
@@ -286,6 +287,8 @@ def create_topography_data(img_size):
 
 
 def create_terrain_type_data(img_size):
+    assert(type(img_size) == tuple)
+
     global LSM
 
     isize = "{}x{}".format(img_size[0], img_size[1])
