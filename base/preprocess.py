@@ -245,7 +245,10 @@ def create_sun_elevation_angle(ts, img_size):
         HRA = solar_hour_angle(ts, E, c[0])
         angle = sun_elevation_angle(decl, HRA, c[1])
         ret.append(angle)
-    ret = np.expand_dims(np.asarray(ret).reshape(img_size), axis=-1)
+
+    ret = np.asarray(ret).reshape(img_size)
+    ret = preprocess_single(ret, "normalize=true")
+    ret = np.expand_dims(ret, axis=-1)
     return ret
 
 
