@@ -31,12 +31,12 @@ def read_filenames(
         glob.glob(f"{INPUT_DIR}/{producer}/**/*{param}*.grib2", recursive=True)
     )
 
-    start_date = int(start_time.strftime("%Y%m%d"))
-    stop_date = int(stop_time.strftime("%Y%m%d"))
+    start_date = start_time.strftime("%Y%m%dT%H%M%S")
+    stop_date = stop_time.strftime("%Y%m%dT%H%M%S")
     filenames = []
 
     for f in files:
-        datetime = int(f.split("/")[-1][0:8])
+        datetime = f.split("/")[-1][0:14]
         if datetime >= start_date and datetime < stop_date:
             filenames.append(f)
 
