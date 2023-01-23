@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.data import AUTOTUNE
 import numpy as np
 import glob
-from datetime import datetime
+from datetime import datetime, timedelta
 from base.preprocess import (
     create_topography_data,
     create_terrain_type_data,
@@ -101,6 +101,12 @@ class LazyDataSeries:
         self.reuse_y_as_x = kwargs.get("reuse_y_as_x", False)
         self.shuffle_data = kwargs.get("shuffle_data", True)
         self.debug = kwargs.get("enable_debug", False)
+        self.filenames = kwargs.get("filenames", None)
+        self.infer_mode = kwargs.get("infer_mode", False)
+
+        if self.infer_mode:
+            self.shuffle_data = False
+            self.batch_size = 1
 
         # reuse_y_as_x is True:
         # first set   second set
@@ -147,7 +153,10 @@ class LazyDataSeries:
             )
 
         else:
-            self.elements = read_filenames(self.start_date, self.stop_date)
+            if self.filenames is not None:
+                self.elements = self.filenames
+            else:
+                self.elements = read_filenames(self.start_date, self.stop_date)
             self.elements.sort()
 
         if self.leadtime_conditioning > 0:
@@ -171,7 +180,10 @@ class LazyDataSeries:
                 create_terrain_type_data(self.img_size), axis=0
             )
 
-        if self.reuse_y_as_x:
+        if self.infer_mode:
+            self._indexes = [0]
+
+        elif self.reuse_y_as_x:
             self._indexes = np.arange(
                 0, len(self.elements) - self.n_channels - self.leadtime_conditioning
             )
@@ -232,22 +244,26 @@ class LazyDataSeries:
                         disable_preprocess=True,
                         print_filename=self.debug,
                     )
-                    y = read_gribs(
-                        y_elems,
-                        dtype=np.single,
-                        disable_preprocess=True,
-                        print_filename=self.debug,
-                    )
 
                     x = tf.image.resize(x, self.img_size)
-                    y = tf.image.resize(y, self.img_size)
 
                     xtimes = list(
                         map(lambda x: x.split("/")[-1].split("_")[0], x_elems)
                     )
-                    ytimes = list(
-                        map(lambda x: x.split("/")[-1].split("_")[0], y_elems)
-                    )
+
+                    if self.infer_mode is False:
+                        y = read_gribs(
+                            y_elems,
+                            dtype=np.single,
+                            disable_preprocess=True,
+                            print_filename=self.debug,
+                        )
+
+                        y = tf.image.resize(y, self.img_size)
+
+                        ytimes = list(
+                            map(lambda x: x.split("/")[-1].split("_")[0], y_elems)
+                        )
 
                     ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
 
@@ -256,7 +272,7 @@ class LazyDataSeries:
                     tod = np.expand_dims(tod, axis=0)
                     toy = np.expand_dims(toy, axis=0)
 
-                for i in range(len(y)):
+                for i in range(self.leadtime_conditioning):
                     lt = np.expand_dims(self.leadtimes[i], axis=0)
                     x_ = np.concatenate((x, lt), axis=0)
 
@@ -272,13 +288,22 @@ class LazyDataSeries:
                         x_ = np.concatenate((x_, angle), axis=0)
 
                     x_ = np.squeeze(np.swapaxes(x_, 0, 3))
-                    y_ = y[i]
 
-                    yield (
-                        x_,
-                        y_,
-                        np.asarray(xtimes + [ytimes[i]]),
-                    )
+                    if self.infer_mode:
+                        y_time = (ts + timedelta(minutes=i * 15)).strftime(
+                            "%Y%m%dT%H%M%S"
+                        )
+                        yield x_, np.full(self.img_size + (1,), np.NaN), (
+                            xtimes + [y_time]
+                        )
+                    else:
+                        y_ = y[i]
+
+                        yield (
+                            x_,
+                            y_,
+                            np.asarray(xtimes + [ytimes[i]]),
+                        )
 
         def flip(x, y, t, n):
             # flip first n dimensions as they contain the payload data

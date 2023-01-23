@@ -65,6 +65,7 @@ def read_grib_contents(gh, **kwargs):
     disable_preprocess = kwargs.get("disable_preprocess", False)
 
     if disable_preprocess:
+        ecc.codes_release(gh)
         return np.expand_dims(data, axis=2)
 
     img_size = kwargs.get("img_size", None)

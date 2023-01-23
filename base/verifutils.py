@@ -217,24 +217,24 @@ def plot_mae_timeseries(args, ae, times):
 
     def aggregate_to_max_hour(ae_timeseries, times):
         x, y, counts = process_data(ae_timeseries, times)
-
-        mcounts = []
-        mx = []
-        my = []
-        for i, t in enumerate(x):
-            if t.strftime("%M") != "00":
-                continue
-            try:
-                s = np.argmax(i - 3, 0)
-                my.append(np.max(y[s:i]).astype(np.float32))
-                mcounts.append(np.sum(counts[s:i]).astype(np.int8))
-                mx.append(t)
-            except (ValueError, AttributeError) as e:
-                print(e)
-                pass
-
-        assert len(mx) == len(my)
-        return mx, my, mcounts
+        return x,y,counts
+#        mcounts = []
+#        mx = []
+#        my = []
+#        for i, t in enumerate(x):
+#            if t.strftime("%M") != "00":
+#                continue
+#            try:
+#                s = np.argmax(i - 3, 0)
+#                my.append(np.max(y[s:i]).astype(np.float32))
+#                mcounts.append(np.sum(counts[s:i]).astype(np.int8))
+#                mx.append(t)
+#            except (ValueError, AttributeError) as e:
+#                print(e)
+#                pass
+#
+#        assert len(mx) == len(my)
+#        return mx, my, mcounts
 
     for l in ae.keys():
         assert len(times) == len(ae[l])
