@@ -119,6 +119,8 @@ def predict(args, opts):
 
     img_size = get_img_size(opts.preprocess)
 
+    img_size = get_img_size(opts.preprocess)
+
     model_file = "models/{}".format(opts.get_label())
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)

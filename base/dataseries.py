@@ -93,7 +93,6 @@ class LazyDataSeries:
         self.batch_size = int(kwargs.get("batch_size", 1))
         self.terrain_type_data = None
         self.topography_data = None
-
         self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
         self.start_date = kwargs.get("start_date", None)
