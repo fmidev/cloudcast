@@ -4,12 +4,13 @@ import glob
 import numpy as np
 import matplotlib as mpl
 import tensorflow_datasets as tfds
+import time
 
 # save plots as fiels when running inside a screen instance
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 import argparse
-import copy
+
 from dateutil import parser as dateparser
 from datetime import datetime, timedelta
 from sklearn.metrics import mean_absolute_error
@@ -109,9 +110,14 @@ def predict_many(args, opts_list):
 
 
 def predict(args, opts):
+    start = time.time()
+
     lds = LazyDataSeries(
         opts=opts,
+        training_mode=False,
         shuffle_data=False,
+        reuse_y_as_x=True,
+        enable_cache=True,
         **vars(args),
     )
 
@@ -119,81 +125,50 @@ def predict(args, opts):
 
     img_size = get_img_size(opts.preprocess)
 
-    img_size = get_img_size(opts.preprocess)
-
     model_file = "models/{}".format(opts.get_label())
     print(f"Loading {model_file}")
     m = load_model(model_file, compile=False)
-
-    #    nwp = []
-    #    climatology = False
-
-    #    for k in args.include_additional:
-    #        if k == "climatology":
-    #            climatology = True
-    #        else:
-    #            nwp.append(k)
-
-    #    if not "nwcsaf" in dss:
-    #        dss["nwcsaf"] = DataSeries(
-    #            "nwcsaf", opts.preprocess, fill_gaps_max=1, cache_data=False
-    #        )
 
     predictions = {
         opts.get_label(): {"time": [], "data": []},
         "gt": {"time": [], "data": []},
     }
 
-    atime = None
     forecast = []
     times = []
+
+    assert opts.leadtime_conditioning == 12
 
     for t in tfds.as_numpy(d):
         x = t[0]
         y = t[1]
         xy_times = np.squeeze(t[2])
+        xy_times = list(map(lambda x: x.decode("utf8"), xy_times))
 
-        print(
-            "Using {} to predict {}".format(
-                list(map(lambda x: x.decode("utf8"), xy_times[:-1])),
-                xy_times[-1].decode("utf8"),
-            )
-        )
+        print("Using {} to predict {}".format(xy_times[:-1], xy_times[-1]))
 
-        if atime is None:
-            atime = xy_times[-2]
-
-        if atime != xy_times[-2]:
-            if len(forecast) > 0:
-                predictions[opts.get_label()]["time"].append(times)
-                predictions[opts.get_label()]["data"].append(np.asarray(forecast))
-                assert len(forecast) == 13
+        if len(forecast) > 0 and len(forecast) % 13 == 0:
+            predictions[opts.get_label()]["time"].append(times.copy())
+            predictions[opts.get_label()]["data"].append(np.array(forecast))
 
             times.clear()
             forecast.clear()
-            atime = xy_times[-2]
 
         if len(forecast) == 0:
             # ground truth as leadtime zero
             x0 = np.expand_dims(np.squeeze(x[..., lds.n_channels - 1], 0), axis=-1)
+            t0 = datetime.datetime.strptime(xy_times[-2], "%Y%m%dT%H%M%S")
+
             forecast.append(x0)
-            times.append(
-                datetime.datetime.strptime(
-                    xy_times[-2].decode("utf-8"), "%Y%m%dT%H%M%S"
-                )
-            )
-            predictions["gt"]["time"].append(
-                datetime.datetime.strptime(
-                    xy_times[-2].decode("utf-8"), "%Y%m%dT%H%M%S"
-                )
-            )
-            predictions["gt"]["data"].append(x0)
+            times.append(t0)
+
+            if t0 not in predictions["gt"]["time"]:
+                predictions["gt"]["time"].append(t0)
+                predictions["gt"]["data"].append(x0)
 
         prediction = m.predict(x, verbose=0)
         prediction = np.squeeze(prediction, axis=0)
-        prediction_time = datetime.datetime.strptime(
-            xy_times[-1].decode("utf-8"), "%Y%m%dT%H%M%S"
-        )
+        prediction_time = datetime.datetime.strptime(xy_times[-1], "%Y%m%dT%H%M%S")
         forecast.append(prediction)
         times.append(prediction_time)
 
@@ -202,10 +177,16 @@ def predict(args, opts):
             predictions["gt"]["data"].append(np.squeeze(y, axis=0))
 
     if len(forecast) == 13:
-        predictions[opts.get_label()]["time"].append(times)
-        predictions[opts.get_label()]["data"].append(np.asarray(forecast))
+        predictions[opts.get_label()]["time"].append(times.copy())
+        predictions[opts.get_label()]["data"].append(np.array(forecast))
 
-    print("Number of forecasts: {}".format(len(predictions[opts.get_label()]["data"])))
+    n_forecast = len(predictions[opts.get_label()]["data"])
+
+    print("Read {} forecasts in {:.1f} sec".format(n_forecast, time.time() - start))
+
+    if n_forecast == 0:
+        sys.exit(1)
+
     return predictions
 
 
@@ -271,35 +252,33 @@ def plot_timeseries(args, predictions):
         if first != "gt":
             break
 
-    if len(predictions) < 8:
-        labels = list(predictions.keys())
-        try:
-            labels.remove("climatology")  # not plotting this in stamp plot
-        except ValueError as e:
-            pass
-
-        labels.sort()
-        idx = np.random.randint(len(predictions[first]["data"]))
-
-        data = []
-        times = predictions[first]["time"][idx]
-
-        for l in labels:
-            if l == "gt":
-                data.append(copy_range(predictions["gt"], times[0], times[-1]))
-                continue
-            data.append(predictions[l]["data"][idx])
-
-        plot_stamps(
-            data,
-            labels,
-            title="Prediction for t0={}".format(times[0]),
-            initial_data=None,
-            start_from_zero=True,
-            plot_dir=args.plot_dir,
-        )
-    else:
+    if len(predictions) >= 8:
         print("Too many predictions ({}) for timeseries plot".format(len(predictions)))
+        return
+
+    labels = list(predictions.keys())
+    labels.sort()
+    idx = np.random.randint(len(predictions[first]["data"]))
+
+    data = []
+    times = predictions[first]["time"][idx]
+
+    print(idx, times)
+
+    for l in labels:
+        if l == "gt":
+            data.append(copy_range(predictions["gt"], times[0], times[-1]))
+            continue
+        data.append(predictions[l]["data"][idx])
+
+    plot_stamps(
+        data,
+        labels,
+        title="Prediction for t0={}".format(times[0]),
+        initial_data=None,
+        start_from_zero=True,
+        plot_dir=args.plot_dir,
+    )
 
 
 def intersection(opts_list, predictions):

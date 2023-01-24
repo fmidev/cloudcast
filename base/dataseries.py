@@ -18,8 +18,7 @@ from base.fileutils import read_filenames
 def read_times_from_preformatted_files_directory(dirname):
     toc = {}
     for f in glob.glob("{}/*-times.npy".format(dirname)):
-        arr = np.load(f)
-        times = list(map(lambda x: datetime.strptime(x, "%Y%m%dT%H%M%S"), arr))
+        times = np.load(f)
 
         for i, t in enumerate(times):
             toc[t] = {"filename": f.replace("-times", ""), "index": i, "time": t}
@@ -48,7 +47,6 @@ def read_times_from_preformatted_file(filename):
     ds = np.load(filename)
     data = ds["arr_0"]
     times = ds["arr_1"]
-    times = list(map(lambda x: datetime.strptime(x, "%Y%m%dT%H%M%S"), times))
 
     toc = {}
     for i, t in enumerate(times):
@@ -102,6 +100,11 @@ class LazyDataSeries:
         self.debug = kwargs.get("enable_debug", False)
         self.filenames = kwargs.get("filenames", None)
         self.infer_mode = kwargs.get("infer_mode", False)
+        self.training_mode = kwargs.get("training_mode", True)
+        self.cache = kwargs.get("enable_cache", False)
+
+        if self.training_mode:
+            self.infer_mode = False
 
         if self.infer_mode:
             self.shuffle_data = False
@@ -202,8 +205,59 @@ class LazyDataSeries:
             np.random.shuffle(self._indexes)
 
     def get_dataset(self, take_ratio=None, skip_ratio=None):
-        def gen(indexes):
+        def get_xy(x_elems, y_elems):
+            xtimes = []
+            ytimes = []
 
+            if self.dataseries_file is not None:
+                assert self.infer_mode is False
+
+                x, xtimes = read_datas_from_preformatted_file(
+                    self.elements, self.data, x_elems, self.toc
+                )
+                y, ytimes = read_datas_from_preformatted_file(
+                    self.elements, self.data, y_elems, self.toc
+                )
+
+            elif self.dataseries_directory is not None:
+                assert self.infer_mode is False
+
+                x, xtimes = read_datas_from_preformatted_files_directory(
+                    self.dataseries_directory, self.toc, x_elems
+                )
+                y, ytimes = read_datas_from_preformatted_files_directory(
+                    self.dataseries_directory, self.toc, y_elems
+                )
+
+            else:
+                x = read_gribs(
+                    x_elems,
+                    dtype=np.single,
+                    disable_preprocess=True,
+                    print_filename=self.debug,
+                )
+
+                x = tf.image.resize(x, self.img_size)
+
+                xtimes = list(map(lambda x: x.split("/")[-1].split("_")[0], x_elems))
+
+                if self.infer_mode is False:
+                    y = read_gribs(
+                        y_elems,
+                        dtype=np.single,
+                        disable_preprocess=True,
+                        print_filename=self.debug,
+                    )
+
+                    y = tf.image.resize(y, self.img_size)
+
+                    ytimes = list(
+                        map(lambda x: x.split("/")[-1].split("_")[0], y_elems)
+                    )
+
+            return x, y, xtimes, ytimes
+
+        def gen(indexes):
             for hist_start in indexes:
                 x_elems = self.elements[hist_start : hist_start + self.n_channels]
                 y_elems = self.elements[
@@ -216,56 +270,9 @@ class LazyDataSeries:
                 xtimes = []
                 ytimes = []
 
-                if self.dataseries_file is not None:
-                    x, xtimes = read_datas_from_preformatted_file(
-                        self.elements, self.data, x_elems, self.toc
-                    )
-                    y, ytimes = read_datas_from_preformatted_file(
-                        self.elements, self.data, y_elems, self.toc
-                    )
+                x, y, xtimes, ytimes = get_xy(x_elems, y_elems)
 
-                    ts = xtimes[-1]
-
-                elif self.dataseries_directory is not None:
-                    x, xtimes = read_datas_from_preformatted_files_directory(
-                        self.dataseries_directory, self.toc, x_elems
-                    )
-                    y, ytimes = read_datas_from_preformatted_files_directory(
-                        self.dataseries_directory, self.toc, y_elems
-                    )
-
-                    ts = xtimes[-1]
-
-                else:
-                    x = read_gribs(
-                        x_elems,
-                        dtype=np.single,
-                        disable_preprocess=True,
-                        print_filename=self.debug,
-                    )
-
-                    x = tf.image.resize(x, self.img_size)
-
-                    xtimes = list(
-                        map(lambda x: x.split("/")[-1].split("_")[0], x_elems)
-                    )
-
-                    if self.infer_mode is False:
-                        y = read_gribs(
-                            y_elems,
-                            dtype=np.single,
-                            disable_preprocess=True,
-                            print_filename=self.debug,
-                        )
-
-                        y = tf.image.resize(y, self.img_size)
-
-                        ytimes = list(
-                            map(lambda x: x.split("/")[-1].split("_")[0], y_elems)
-                        )
-
-                    ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
-
+                ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
                 if self.include_datetime:
                     tod, toy = create_datetime(ts, self.img_size)
                     tod = np.expand_dims(tod, axis=0)
@@ -274,28 +281,29 @@ class LazyDataSeries:
                 for i in range(self.leadtime_conditioning):
                     lt = np.expand_dims(self.leadtimes[i], axis=0)
                     x_ = np.concatenate((x, lt), axis=0)
+                    y_time = ts + timedelta(minutes=i * 15)
 
                     if self.include_datetime:
+                        # tod, toy = create_datetime(y_time, self.img_size)
+                        # tod = np.expand_dims(tod, axis=0)
+                        # toy = np.expand_dims(toy, axis=0)
                         x_ = np.concatenate((x_, tod, toy), axis=0)
                     if self.topography_data is not None:
                         x_ = np.concatenate((x_, self.topography_data), axis=0)
                     if self.terrain_type_data is not None:
                         x_ = np.concatenate((x_, self.terrain_type_data), axis=0)
                     if self.include_sun_elevation_angle:
-                        angle = create_sun_elevation_angle(ts, self.img_size)
+                        angle = create_sun_elevation_angle(y_time, self.img_size)
                         angle = np.expand_dims(angle, axis=0)
                         x_ = np.concatenate((x_, angle), axis=0)
 
                     x_ = np.squeeze(np.swapaxes(x_, 0, 3))
-
                     if self.infer_mode:
-                        y_time = (ts + timedelta(minutes=i * 15)).strftime(
-                            "%Y%m%dT%H%M%S"
-                        )
+                        y_time = y_time.strftime("%Y%m%dT%H%M%S")
                         yield x_, np.full(self.img_size + (1,), np.NaN), (
                             xtimes + [y_time]
                         )
-                    else:
+                    elif self.training_mode is False:
                         y_ = y[i]
 
                         yield (
@@ -303,6 +311,9 @@ class LazyDataSeries:
                             y_,
                             np.asarray(xtimes + [ytimes[i]]),
                         )
+                    else:
+                        y_ = y[i]
+                        yield (x_, y_)
 
         def flip(x, y, t, n):
             # flip first n dimensions as they contain the payload data
@@ -343,25 +354,34 @@ class LazyDataSeries:
         x_dim_len += 1 if self.terrain_type_data is not None else 0
         x_dim_len += 1 if self.include_sun_elevation_angle else 0
 
-        dataset = tf.data.Dataset.from_generator(
-            gen,
-            output_signature=(
-                tf.TensorSpec(
-                    shape=self.img_size + (x_dim_len,), dtype=tf.float32, name="x"
-                ),
-                tf.TensorSpec(shape=self.img_size + (1,), dtype=tf.float32, name="y"),
+        sig = (
+            tf.TensorSpec(
+                shape=self.img_size + (x_dim_len,), dtype=tf.float32, name="x"
+            ),
+            tf.TensorSpec(shape=self.img_size + (1,), dtype=tf.float32, name="y"),
+        )
+
+        if self.training_mode is False:
+            sig += (
                 tf.TensorSpec(
                     shape=(self.n_channels + 1,), dtype=tf.string, name="times"
                 ),
-            ),
+            )
+
+        dataset = tf.data.Dataset.from_generator(
+            gen,
+            output_signature=sig,
             args=(indexes,),
         )
 
-        if self.dataseries_directory is None:
+        if self.dataseries_directory is None and self.dataseries_file is None:
             dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels)).map(
                 lambda x, y, t: normalize(x, y, t, self.n_channels)
             )
 
         dataset = dataset.batch(self.batch_size, drop_remainder=True).prefetch(AUTOTUNE)
+
+        if self.cache:
+            dataset = dataset.cache()
 
         return dataset
