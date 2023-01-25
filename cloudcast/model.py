@@ -31,25 +31,30 @@ from bcl1 import make_bc_l1_loss
 from tensorflow.keras import mixed_precision
 
 
-def get_compute_capability():
-    details = tf.config.experimental.get_device_details(
-        tf.config.experimental.list_physical_devices()[1]
-    )
-    cc = details["compute_capability"]
+def get_compute_capability(gpu_id=0):
+    devices = tf.config.experimental.list_physical_devices()
 
-    return cc
+    for d in devices:
+        if d[1] == "GPU" and int(d[0][-1]) == gpu_id:
+            details = tf.config.experimental.get_device_details(d)
+            return details["compute_capability"]
+
+    return None
 
 
 cc = get_compute_capability()
 
-if int(cc[0]) >= 7:
+if cc is not None and int(cc[0]) >= 7:
     policy = mixed_precision.Policy("mixed_float16")
     mixed_precision.set_global_policy(policy)
 
 policy = tf.keras.mixed_precision.global_policy()
 
-print("Compute dtype: %s" % policy.compute_dtype)
-print("Variable dtype: %s" % policy.variable_dtype)
+print(
+    "Compute dtype: {} Variable dtype: {}".format(
+        policy.compute_dtype, policy.variable_dtype
+    )
+)
 
 
 def get_loss_function(loss_function):
@@ -89,8 +94,6 @@ def get_metrics():
     return [
         "RootMeanSquaredError",
         "MeanAbsoluteError",
-        "accuracy",
-        "AUC",
     ]  # , make_FSS_loss(20, 0), make_SSIM_loss(21), make_KS_loss(21)]
 
 
