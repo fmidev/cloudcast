@@ -85,7 +85,7 @@ def parse_command_line():
 def normalize_label(label):
     normalized_labels = []
 
-    for lbl in args.label:
+    for lbl in label:
         if lbl.find("*") != -1:
             lbls = [os.path.basename(x) for x in glob.glob(f"models/{lbl}")]
             normalized_labels.extend(lbls)
@@ -262,8 +262,6 @@ def plot_timeseries(args, predictions):
 
     data = []
     times = predictions[first]["time"][idx]
-
-    print(idx, times)
 
     for l in labels:
         if l == "gt":
