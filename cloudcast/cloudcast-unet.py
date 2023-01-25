@@ -124,6 +124,7 @@ def callbacks(args, opts):
     cp_cb = tf.keras.callbacks.ModelCheckpoint(
         filepath="checkpoints/{}/cp.ckpt".format(opts.get_label()),
         save_weights_only=True,
+        save_best_only=True,
     )
     early_stopping_cb = keras.callbacks.EarlyStopping(
         monitor="val_loss", patience=7, min_delta=0.001, verbose=1
