@@ -17,7 +17,7 @@ def get_time_for_file(args):
 
 def produce_scores(args, predictions):
     mae(args, predictions)
-    categorical_scores(args, predictions)
+    #categorical_scores(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
     print("All scores produced")
