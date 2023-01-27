@@ -32,13 +32,17 @@ def savefig(plot_dir):
 
 def reduce_label(label):
     return (
-        label.replace("True", "T")
+        label.replace("dt=False-", "")
+        .replace("topo=False-", "")
+        .replace("terraino=False-", "")
+        .replace("sun=False-", "")
+        .replace("oh=False-", "")
+        .replace("True", "T")
         .replace("False", "F")
         .replace("binary_crossentropy", "bc")
         .replace("MeanSquaredError", "MSE")
         .replace("MeanAbsoluteError", "MAE")
         .replace("-img_size=128x128", "")
-        .replace("-oh=F", "")
         .replace("-lc=12", "")
         .replace("-hist=4", "")
     )
@@ -279,7 +283,7 @@ def plot_stamps(
     fig, bigaxes = plt.subplots(
         nrows=nrows,
         ncols=1,
-        figsize=((ncols * 2), nrows * 2),
+        figsize=((ncols * 2.5), nrows * 2.5),
         constrained_layout=False,
         squeeze=False,
         num=figure(),
