@@ -34,7 +34,7 @@ def reduce_label(label):
     return (
         label.replace("dt=False-", "")
         .replace("topo=False-", "")
-        .replace("terraino=False-", "")
+        .replace("terrain=False-", "")
         .replace("sun=False-", "")
         .replace("oh=False-", "")
         .replace("True", "T")
