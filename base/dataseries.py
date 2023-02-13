@@ -3,6 +3,7 @@ from tensorflow.data import AUTOTUNE
 import numpy as np
 import glob
 from datetime import datetime, timedelta
+import copy
 from base.preprocess import (
     create_topography_data,
     create_terrain_type_data,
@@ -57,12 +58,180 @@ def read_times_from_preformatted_file(filename):
 
 def read_datas_from_preformatted_file(all_times, all_data, req_times, toc):
     datas = []
-
     for t in req_times:
         index = toc[t]["index"]
         datas.append(all_data[index])
 
     return datas, req_times
+
+
+class DataSeriesGenerator:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        self.terrain_type_data = None
+        self.topography_data = None
+
+        self.initialize()
+        print("Generator number of batches: {} batch size: {}".format(len(self), self.batch_size))
+
+    def __len__(self):
+        """Return number of batches in this dataset"""
+        return len(self.placeholder) // self.batch_size
+
+    def __getitem__(self, idx):
+        # placeholder X elements:
+        # 0.. n_channels: history of actual data
+        # n_channels    : leadtime conditioning
+        # n_channels + 1: include datetime
+        # n_channels + 2: include topography
+        # n_channels + 3: include terrain type
+        # n_channels + 4: include sun elevation angle
+
+        ph = self.placeholder[idx]
+
+        X = ph[0]
+        Y = ph[1]
+
+        x_hist = X[0 : self.n_channels]
+
+        x, y, xtimes, ytimes = self.get_xy(x_hist, [Y])
+
+        lc = X[self.n_channels]
+        lt = np.expand_dims(self.leadtimes[lc], axis=0)
+
+        x = np.asarray(x)
+        y = np.asarray(y)
+        y = np.squeeze(y, axis=0)
+
+        x = np.concatenate((x, lt), axis=0)
+
+        ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
+        y_time = ts + timedelta(minutes=lc * 15)
+
+        if X[self.n_channels + 1]:
+            tod, toy = create_datetime(ts, self.img_size)
+            tod = np.expand_dims(tod, axis=0)
+            toy = np.expand_dims(toy, axis=0)
+            # TODO:
+            # tod, toy = create_datetime(y_time, self.img_size)
+            # tod = np.expand_dims(tod, axis=0)
+            # toy = np.expand_dims(toy, axis=0)
+            x = np.concatenate((x, tod, toy), axis=0)
+
+        if X[self.n_channels + 2]:
+            x = np.concatenate((x, self.topography_data), axis=0)
+
+        if X[self.n_channels + 3]:
+            x = np.concatenate((x, self.terrain_type_data), axis=0)
+
+        if X[self.n_channels + 4]:
+            angle = create_sun_elevation_angle(y_time, self.img_size)
+            angle = np.expand_dims(angle, axis=0)
+            x = np.concatenate((x, angle), axis=0)
+
+        x = np.squeeze(np.swapaxes(x, 0, 3))
+
+        if self.infer_mode:
+            y_time = y_time.strftime("%Y%m%dT%H%M%S")
+            y = np.full(self.img_size + (1,), np.NaN)
+
+            return (x, y, xtimes + [y_time])
+
+        elif self.training_mode is False:
+            return (
+                x,
+                y,
+                np.append(xtimes, ytimes[0]),
+            )
+        else:
+            return (x, y)
+
+    def initialize(self):
+        assert self.leadtime_conditioning > 0  # temporary
+
+        if self.leadtime_conditioning > 0:
+            leadtimes = np.asarray(
+                [
+                    create_squeezed_leadtime_conditioning(
+                        self.img_size, self.leadtime_conditioning, x
+                    )
+                    for x in range(self.leadtime_conditioning)
+                ]
+            )
+            self.leadtimes = np.squeeze(leadtimes, 1)
+
+        if self.include_topography:
+            self.topography_data = np.expand_dims(
+                create_topography_data(self.img_size), axis=0
+            )
+
+        if self.include_terrain_type:
+            self.terrain_type_data = np.expand_dims(
+                create_terrain_type_data(self.img_size), axis=0
+            )
+
+    def get_xy(self, x_elems, y_elems):
+        xtimes = []
+        ytimes = []
+
+        if self.dataseries_file is not None:
+            assert self.infer_mode is False
+
+            x, xtimes = read_datas_from_preformatted_file(
+                self.elements, self.data, x_elems, self.toc
+            )
+            y, ytimes = read_datas_from_preformatted_file(
+                self.elements, self.data, y_elems, self.toc
+            )
+
+        elif self.dataseries_directory is not None:
+            assert self.infer_mode is False
+
+            x, xtimes = read_datas_from_preformatted_files_directory(
+                self.dataseries_directory, self.toc, x_elems
+            )
+            y, ytimes = read_datas_from_preformatted_files_directory(
+                self.dataseries_directory, self.toc, y_elems
+            )
+
+        else:
+            x = read_gribs(
+                x_elems,
+                dtype=np.single,
+                disable_preprocess=True,
+                print_filename=self.debug,
+            )
+
+            x = tf.image.resize(x, self.img_size)
+
+            xtimes = list(map(lambda x: x.split("/")[-1].split("_")[0], x_elems))
+
+            if self.infer_mode is False:
+                y = read_gribs(
+                    y_elems,
+                    dtype=np.single,
+                    disable_preprocess=True,
+                    print_filename=self.debug,
+                )
+
+                y = tf.image.resize(y, self.img_size)
+
+                ytimes = list(map(lambda x: x.split("/")[-1].split("_")[0], y_elems))
+
+        return x, y, xtimes, ytimes
+
+    def __call__(self):
+        for i in range(len(self.placeholder)):
+            elem = self.__getitem__(i)
+            yield elem
+
+        self.on_epoch_end()
+
+    def on_epoch_end(self):
+        if self.shuffle_data:
+            np.random.shuffle(self.placeholder)
 
 
 class LazyDataSeries:
@@ -89,8 +258,6 @@ class LazyDataSeries:
             )
 
         self.batch_size = int(kwargs.get("batch_size", 1))
-        self.terrain_type_data = None
-        self.topography_data = None
         self.dataseries_file = kwargs.get("dataseries_file", None)
         self.dataseries_directory = kwargs.get("dataseries_directory", None)
         self.start_date = kwargs.get("start_date", None)
@@ -109,6 +276,8 @@ class LazyDataSeries:
         if self.infer_mode:
             self.shuffle_data = False
             self.batch_size = 1
+
+        self._placeholder = []
 
         # reuse_y_as_x is True:
         # first set   second set
@@ -130,19 +299,8 @@ class LazyDataSeries:
 
         self.initialize()
 
-    def __len__(self):
-        """Return number of samples"""
-
-        if self.reuse_y_as_x:
-            return len(self._indexes) * self.leadtime_conditioning
-
-        return self.leadtime_conditioning * int(
-            len(self.elements) / (self.n_channels + self.leadtime_conditioning)
-        )
-
     def initialize(self):
-
-        assert self.leadtime_conditioning > 0  # temporary
+        # create placeholder data
 
         if self.dataseries_file is not None:
             self.elements, self.data, self.toc = read_times_from_preformatted_file(
@@ -161,160 +319,40 @@ class LazyDataSeries:
                 self.elements = read_filenames(self.start_date, self.stop_date)
             self.elements.sort()
 
-        if self.leadtime_conditioning > 0:
-            leadtimes = np.asarray(
-                [
-                    create_squeezed_leadtime_conditioning(
-                        self.img_size, self.leadtime_conditioning, x
-                    )
-                    for x in range(self.leadtime_conditioning)
-                ]
-            )
-            self.leadtimes = np.squeeze(leadtimes, 1)
+        i = 0
 
-        if self.include_topography:
-            self.topography_data = np.expand_dims(
-                create_topography_data(self.img_size), axis=0
-            )
+        step = 1 if self.reuse_y_as_x else self.n_channels + self.leadtime_conditioning
 
-        if self.include_terrain_type:
-            self.terrain_type_data = np.expand_dims(
-                create_terrain_type_data(self.img_size), axis=0
-            )
+        while i <= len(self.elements) - (self.n_channels + self.leadtime_conditioning):
+            ph = []
+            x = list(self.elements[i : i + self.n_channels])
 
-        if self.infer_mode:
-            self._indexes = [0]
+            assert self.leadtime_conditioning == 12
 
-        elif self.reuse_y_as_x:
-            self._indexes = np.arange(
-                0, len(self.elements) - self.n_channels - self.leadtime_conditioning
-            )
+            for lt in range(self.leadtime_conditioning):
+                x_ = copy.deepcopy(x)
+                x_.append(lt)
+                x_.append(self.include_datetime)
+                x_.append(self.include_topography)
+                x_.append(self.include_terrain_type)
+                x_.append(self.include_sun_elevation_angle)
+                y = self.elements[i + self.n_channels + lt]
 
-        else:
-            n_source = int(
-                len(self.elements) / (self.n_channels + self.leadtime_conditioning)
-            )
-            self._indexes = np.asarray(
-                [
-                    x * (self.n_channels + self.leadtime_conditioning)
-                    for x in range(n_source)
-                ]
-            )
+                self._placeholder.append([x_, y])
+
+            i += step
+
+        print("Placeholder timeseries length: {} number of samples: {}".format(len(self.elements), len(self._placeholder)))
 
         if self.shuffle_data:
-            np.random.shuffle(self._indexes)
+            np.random.shuffle(self._placeholder)
+
+    def __len__(self):
+        """Return number of samples"""
+        return len(self._placeholder)
+
 
     def get_dataset(self, take_ratio=None, skip_ratio=None):
-        def get_xy(x_elems, y_elems):
-            xtimes = []
-            ytimes = []
-
-            if self.dataseries_file is not None:
-                assert self.infer_mode is False
-
-                x, xtimes = read_datas_from_preformatted_file(
-                    self.elements, self.data, x_elems, self.toc
-                )
-                y, ytimes = read_datas_from_preformatted_file(
-                    self.elements, self.data, y_elems, self.toc
-                )
-
-            elif self.dataseries_directory is not None:
-                assert self.infer_mode is False
-
-                x, xtimes = read_datas_from_preformatted_files_directory(
-                    self.dataseries_directory, self.toc, x_elems
-                )
-                y, ytimes = read_datas_from_preformatted_files_directory(
-                    self.dataseries_directory, self.toc, y_elems
-                )
-
-            else:
-                x = read_gribs(
-                    x_elems,
-                    dtype=np.single,
-                    disable_preprocess=True,
-                    print_filename=self.debug,
-                )
-
-                x = tf.image.resize(x, self.img_size)
-
-                xtimes = list(map(lambda x: x.split("/")[-1].split("_")[0], x_elems))
-
-                if self.infer_mode is False:
-                    y = read_gribs(
-                        y_elems,
-                        dtype=np.single,
-                        disable_preprocess=True,
-                        print_filename=self.debug,
-                    )
-
-                    y = tf.image.resize(y, self.img_size)
-
-                    ytimes = list(
-                        map(lambda x: x.split("/")[-1].split("_")[0], y_elems)
-                    )
-
-            return x, y, xtimes, ytimes
-
-        def gen(indexes):
-            for hist_start in indexes:
-                x_elems = self.elements[hist_start : hist_start + self.n_channels]
-                y_elems = self.elements[
-                    hist_start
-                    + self.n_channels : hist_start
-                    + self.n_channels
-                    + self.leadtime_conditioning
-                ]
-
-                xtimes = []
-                ytimes = []
-
-                x, y, xtimes, ytimes = get_xy(x_elems, y_elems)
-
-                ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
-                if self.include_datetime:
-                    tod, toy = create_datetime(ts, self.img_size)
-                    tod = np.expand_dims(tod, axis=0)
-                    toy = np.expand_dims(toy, axis=0)
-
-                for i in range(self.leadtime_conditioning):
-                    lt = np.expand_dims(self.leadtimes[i], axis=0)
-                    x_ = np.concatenate((x, lt), axis=0)
-                    y_time = ts + timedelta(minutes=i * 15)
-
-                    if self.include_datetime:
-                        # tod, toy = create_datetime(y_time, self.img_size)
-                        # tod = np.expand_dims(tod, axis=0)
-                        # toy = np.expand_dims(toy, axis=0)
-                        x_ = np.concatenate((x_, tod, toy), axis=0)
-                    if self.topography_data is not None:
-                        x_ = np.concatenate((x_, self.topography_data), axis=0)
-                    if self.terrain_type_data is not None:
-                        x_ = np.concatenate((x_, self.terrain_type_data), axis=0)
-                    if self.include_sun_elevation_angle:
-                        angle = create_sun_elevation_angle(y_time, self.img_size)
-                        angle = np.expand_dims(angle, axis=0)
-                        x_ = np.concatenate((x_, angle), axis=0)
-
-                    x_ = np.squeeze(np.swapaxes(x_, 0, 3))
-                    if self.infer_mode:
-                        y_time = y_time.strftime("%Y%m%dT%H%M%S")
-                        yield x_, np.full(self.img_size + (1,), np.NaN), (
-                            xtimes + [y_time]
-                        )
-                    elif self.training_mode is False:
-                        y_ = y[i]
-
-                        yield (
-                            x_,
-                            y_,
-                            np.append(xtimes, ytimes[i]),
-                        )
-                    else:
-                        y_ = y[i]
-                        yield (x_, y_)
-
         def flip(x, y, t, n):
             # flip first n dimensions as they contain the payload data
             # concatenate the flipped data with the rest
@@ -334,24 +372,24 @@ class LazyDataSeries:
             y = y * 0.01
             return (x, y, t)
 
-        indexes = None
+        placeholder = None
 
         if take_ratio is not None:
-            l = int(len(self._indexes) * take_ratio)
-            indexes = self._indexes[0:l]
+            l = int(len(self._placeholder) * take_ratio)
+            placeholder = self._placeholder[0:l]
 
         if skip_ratio is not None:
-            l = int(len(self._indexes) * skip_ratio)
-            indexes = self._indexes[l:]
+            l = int(len(self._placeholder) * skip_ratio)
+            placeholder = self._placeholder[l:]
 
-        if indexes is None:
-            indexes = np.copy(self._indexes)
+        if placeholder is None:
+            placeholder = copy.deepcopy(self._placeholder)
 
         x_dim_len = self.n_channels
         x_dim_len += 1 if self.leadtime_conditioning > 0 else 0
         x_dim_len += 2 if self.include_datetime else 0
-        x_dim_len += 1 if self.topography_data is not None else 0
-        x_dim_len += 1 if self.terrain_type_data is not None else 0
+        x_dim_len += 1 if self.include_topography else 0
+        x_dim_len += 1 if self.include_terrain_type else 0
         x_dim_len += 1 if self.include_sun_elevation_angle else 0
 
         sig = (
@@ -368,11 +406,8 @@ class LazyDataSeries:
                 ),
             )
 
-        dataset = tf.data.Dataset.from_generator(
-            gen,
-            output_signature=sig,
-            args=(indexes,),
-        )
+        gen = DataSeriesGenerator(placeholder=placeholder, **self.__dict__)
+        dataset = tf.data.Dataset.from_generator(gen, output_signature=sig)
 
         if self.dataseries_directory is None and self.dataseries_file is None:
             dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels)).map(
