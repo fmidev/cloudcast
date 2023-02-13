@@ -309,7 +309,7 @@ class LazyDataSeries:
                         yield (
                             x_,
                             y_,
-                            np.asarray(xtimes + [ytimes[i]]),
+                            np.append(xtimes, ytimes[i]),
                         )
                     else:
                         y_ = y[i]
