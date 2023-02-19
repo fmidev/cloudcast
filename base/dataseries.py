@@ -3,6 +3,7 @@ from tensorflow.data import AUTOTUNE
 import numpy as np
 import glob
 from datetime import datetime, timedelta
+from enum import Enum
 import copy
 from base.preprocess import (
     create_topography_data,
@@ -14,6 +15,8 @@ from base.preprocess import (
 )
 from base.gributils import read_gribs
 from base.fileutils import read_filenames
+
+OpMode = Enum("OperatingMode", ["TRAIN", "INFER", "VERIFY"])
 
 
 def read_times_from_preformatted_files_directory(dirname):
@@ -74,7 +77,11 @@ class DataSeriesGenerator:
         self.topography_data = None
 
         self.initialize()
-        print("Generator number of batches: {} batch size: {}".format(len(self), self.batch_size))
+        print(
+            "Generator number of batches: {} batch size: {}".format(
+                len(self), self.batch_size
+            )
+        )
 
     def __len__(self):
         """Return number of batches in this dataset"""
@@ -82,12 +89,12 @@ class DataSeriesGenerator:
 
     def __getitem__(self, idx):
         # placeholder X elements:
-        # 0.. n_channels: history of actual data
-        # n_channels    : leadtime conditioning
-        # n_channels + 1: include datetime
-        # n_channels + 2: include topography
-        # n_channels + 3: include terrain type
-        # n_channels + 4: include sun elevation angle
+        # 0.. n_channels: history of actual data (YYYYMMDDTHHMMSS, string)
+        # n_channels    : leadtime conditioning (0..11, int)
+        # n_channels + 1: include datetime (bool)
+        # n_channels + 2: include topography (bool)
+        # n_channels + 3: include terrain type (bool)
+        # n_channels + 4: include sun elevation angle (bool)
 
         ph = self.placeholder[idx]
 
@@ -103,12 +110,13 @@ class DataSeriesGenerator:
 
         x = np.asarray(x)
         y = np.asarray(y)
+
         y = np.squeeze(y, axis=0)
 
         x = np.concatenate((x, lt), axis=0)
 
-        ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")
-        y_time = ts + timedelta(minutes=lc * 15)
+        ts = datetime.strptime(xtimes[-1], "%Y%m%dT%H%M%S")  # "analysis time"
+        y_time = ts + timedelta(minutes=(1 + lc) * 15)
 
         if X[self.n_channels + 1]:
             tod, toy = create_datetime(ts, self.img_size)
@@ -133,24 +141,23 @@ class DataSeriesGenerator:
 
         x = np.squeeze(np.swapaxes(x, 0, 3))
 
-        if self.infer_mode:
-            y_time = y_time.strftime("%Y%m%dT%H%M%S")
-            y = np.full(self.img_size + (1,), np.NaN)
-
-            return (x, y, xtimes + [y_time])
-
-        elif self.training_mode is False:
+        #        if self.operating_mode == "VERIFY":
+        #            y_time = y_time.strftime("%Y%m%dT%H%M%S")
+        #            y = np.full(self.img_size + (1,), np.NaN)
+        #
+        #            return (x, y, xtimes + [y_time])
+        #
+        #        el
+        if self.operating_mode in (OpMode.VERIFY, OpMode.INFER):
             return (
                 x,
                 y,
-                np.append(xtimes, ytimes[0]),
+                np.append(xtimes, y_time.strftime("%Y%m%dT%H%M%S")),
             )
         else:
             return (x, y)
 
     def initialize(self):
-        assert self.leadtime_conditioning > 0  # temporary
-
         if self.leadtime_conditioning > 0:
             leadtimes = np.asarray(
                 [
@@ -177,8 +184,6 @@ class DataSeriesGenerator:
         ytimes = []
 
         if self.dataseries_file is not None:
-            assert self.infer_mode is False
-
             x, xtimes = read_datas_from_preformatted_file(
                 self.elements, self.data, x_elems, self.toc
             )
@@ -187,8 +192,6 @@ class DataSeriesGenerator:
             )
 
         elif self.dataseries_directory is not None:
-            assert self.infer_mode is False
-
             x, xtimes = read_datas_from_preformatted_files_directory(
                 self.dataseries_directory, self.toc, x_elems
             )
@@ -201,6 +204,7 @@ class DataSeriesGenerator:
                 x_elems,
                 dtype=np.single,
                 disable_preprocess=True,
+                enable_cache=self.cache,
                 print_filename=self.debug,
             )
 
@@ -208,17 +212,20 @@ class DataSeriesGenerator:
 
             xtimes = list(map(lambda x: x.split("/")[-1].split("_")[0], x_elems))
 
-            if self.infer_mode is False:
+            if self.operating_mode in (OpMode.TRAIN, OpMode.VERIFY):
                 y = read_gribs(
                     y_elems,
                     dtype=np.single,
                     disable_preprocess=True,
+                    enable_cache=self.cache,
                     print_filename=self.debug,
                 )
 
                 y = tf.image.resize(y, self.img_size)
 
                 ytimes = list(map(lambda x: x.split("/")[-1].split("_")[0], y_elems))
+            else:
+                y = np.full((1,) + self.img_size + (1,), np.NaN)
 
         return x, y, xtimes, ytimes
 
@@ -266,14 +273,25 @@ class LazyDataSeries:
         self.shuffle_data = kwargs.get("shuffle_data", True)
         self.debug = kwargs.get("enable_debug", False)
         self.filenames = kwargs.get("filenames", None)
-        self.infer_mode = kwargs.get("infer_mode", False)
-        self.training_mode = kwargs.get("training_mode", True)
+        operating_mode = kwargs.get("operating_mode", "TRAIN")
+
         self.cache = kwargs.get("enable_cache", False)
 
-        if self.training_mode:
-            self.infer_mode = False
+        if operating_mode == "TRAIN":
+            self.operating_mode = OpMode.TRAIN
+        elif operating_mode == "INFER":
+            self.operating_mode = OpMode.INFER
+        elif operating_mode == "VERIFY":
+            self.operating_mode = OpMode.VERIFY
+        else:
+            print("Invalid operating mode: {}".format(operating_mode))
+            sys.exit(1)
 
-        if self.infer_mode:
+        if self.operating_mode == OpMode.INFER:
+            self.shuffle_data = False
+            self.batch_size = 1
+
+        elif self.operating_mode == OpMode.VERIFY:
             self.shuffle_data = False
             self.batch_size = 1
 
@@ -323,11 +341,16 @@ class LazyDataSeries:
 
         step = 1 if self.reuse_y_as_x else self.n_channels + self.leadtime_conditioning
 
-        while i <= len(self.elements) - (self.n_channels + self.leadtime_conditioning):
-            ph = []
-            x = list(self.elements[i : i + self.n_channels])
+        n_fut = self.leadtime_conditioning if self.operating_mode != OpMode.INFER else 0
 
-            assert self.leadtime_conditioning == 12
+        assert (
+            len(self.elements) - (self.n_channels + n_fut)
+        ) >= 0, "Too few data to make a prediction: {} (need at least {})".format(
+            len(self.elements), self.n_channels + n_fut
+        )
+
+        while i <= len(self.elements) - (self.n_channels + n_fut):
+            x = list(self.elements[i : i + self.n_channels])
 
             for lt in range(self.leadtime_conditioning):
                 x_ = copy.deepcopy(x)
@@ -336,13 +359,23 @@ class LazyDataSeries:
                 x_.append(self.include_topography)
                 x_.append(self.include_terrain_type)
                 x_.append(self.include_sun_elevation_angle)
-                y = self.elements[i + self.n_channels + lt]
+
+                if self.operating_mode == OpMode.INFER:
+                    y = "nan"  # datetime.strptime(self.elements[-1], '%Y%m%dT%H%M%S') + timedelta(minutes=i*15)
+                else:
+                    y = self.elements[i + self.n_channels + lt]
 
                 self._placeholder.append([x_, y])
 
             i += step
 
-        print("Placeholder timeseries length: {} number of samples: {}".format(len(self.elements), len(self._placeholder)))
+        assert len(self._placeholder) > 0, "Placeholder array is empty"
+
+        print(
+            "Placeholder timeseries length: {} number of samples: {}".format(
+                len(self.elements), len(self._placeholder)
+            )
+        )
 
         if self.shuffle_data:
             np.random.shuffle(self._placeholder)
@@ -350,7 +383,6 @@ class LazyDataSeries:
     def __len__(self):
         """Return number of samples"""
         return len(self._placeholder)
-
 
     def get_dataset(self, take_ratio=None, skip_ratio=None):
         def flip(x, y, t, n):
@@ -399,7 +431,7 @@ class LazyDataSeries:
             tf.TensorSpec(shape=self.img_size + (1,), dtype=tf.float32, name="y"),
         )
 
-        if self.training_mode is False:
+        if self.operating_mode in (OpMode.INFER, OpMode.VERIFY):
             sig += (
                 tf.TensorSpec(
                     shape=(self.n_channels + 1,), dtype=tf.string, name="times"
@@ -410,9 +442,13 @@ class LazyDataSeries:
         dataset = tf.data.Dataset.from_generator(gen, output_signature=sig)
 
         if self.dataseries_directory is None and self.dataseries_file is None:
-            dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels)).map(
-                lambda x, y, t: normalize(x, y, t, self.n_channels)
-            )
+            dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels))
+
+            if self.operating_mode == OpMode.TRAIN:
+                # Train data in GRIB2 format is ranged between 0 ... 100
+                dataset = dataset.map(
+                    lambda x, y, t: normalize(x, y, t, self.n_channels)
+                )
 
         dataset = dataset.batch(self.batch_size, drop_remainder=True).prefetch(AUTOTUNE)
 

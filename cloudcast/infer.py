@@ -48,7 +48,6 @@ def parse_command_line():
 
 
 def predict(args):
-
     opts = CloudCastOptions(label=args.label)
 
     model_file = "models/{}".format(opts.get_label())
@@ -67,8 +66,10 @@ def predict(args):
     lds = LazyDataSeries(
         opts=opts,
         filenames=filenames,
-        infer_mode=True,
+        operating_mode="INFER",
         **vars(args),
+        enable_debug=True,
+        enable_cache=True,
     )
 
     d = lds.get_dataset()
@@ -97,6 +98,7 @@ def predict(args):
                 datetime.datetime.strptime(xy_times[-2].decode("utf8"), "%Y%m%dT%H%M%S")
             )
             forecast.append(x[..., lds.n_channels - 1])
+            forecast[-1] = np.expand_dims(np.squeeze(forecast[-1]), axis=-1)
 
         prediction = m.predict(x)
         prediction = np.squeeze(prediction, axis=0)
@@ -128,6 +130,7 @@ def save_gribs(args, times, data):
         filename = "{}/{}+{:03d}m.grib2".format(
             args.directory, analysistime.strftime("%Y%m%d%H%M%S"), leadtime
         )
+
         save_grib(d, filename, analysistime, t)
 
 

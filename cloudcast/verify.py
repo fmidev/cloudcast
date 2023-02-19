@@ -114,10 +114,11 @@ def predict(args, opts):
 
     lds = LazyDataSeries(
         opts=opts,
-        training_mode=False,
+        operating_mode="VERIFY",
         shuffle_data=False,
         reuse_y_as_x=True,
         enable_cache=True,
+        enable_debug=True,
         **vars(args),
     )
 
