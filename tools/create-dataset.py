@@ -8,6 +8,17 @@ from base.preprocess import *
 from base.plotutils import *
 
 
+def parse_time(str1, str2):
+    try:
+        return datetime.datetime.strptime(str1, "%Y-%m-%d"), datetime.datetime.strptime(
+            str2, "%Y-%m-%d"
+        )
+    except ValueError:
+        return datetime.datetime.strptime(
+            str1, "%Y-%m-%d %H:%M:%S"
+        ), datetime.datetime.strptime(str2, "%Y-%m-%d %H:%M:%S")
+
+
 def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_date", action="store", type=str, required=True)
@@ -23,8 +34,7 @@ def parse_command_line():
 
     args = parser.parse_args()
 
-    args.start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d")
-    args.stop_date = datetime.datetime.strptime(args.stop_date, "%Y-%m-%d")
+    args.start_date, args.stop_date = parse_time(args.start_date, args.stop_date)
 
     if args.packing_type not in ("npz", "npy"):
         raise Exception("Packing type must be one of: npz, npy")
@@ -126,10 +136,39 @@ def create_forecast(args):
     save_to_file(datas, atimes, create_filename(args))
 
 
+def create_sun_elevation_angle_timeseries(args):
+    times = []
+    datas = []
+
+    curdate = args.start_date
+
+    start = time.time()
+    while curdate != args.stop_date:
+        angle = create_sun_elevation_angle(curdate, get_img_size(args.preprocess))
+        datas.append(angle)
+        times.append(curdate.strftime("%Y%m%dT%H%M%S"))
+        curdate += datetime.timedelta(minutes=15)
+
+    stop = time.time()
+
+    duration = stop - start
+
+    print(
+        "Creating {} elevation angle grids took {:.2f} seconds".format(
+            len(times), duration
+        )
+    )
+
+    save_to_file(datas, times, create_filename(args))
+
+
 if __name__ == "__main__":
     args = parse_command_line()
 
-    if args.producer == "nwcsaf":
+    if args.param == "sun_elevation_angle":
+        args.producer = "cloudcast"
+        create_sun_elevation_angle_timeseries(args)
+    elif args.producer == "nwcsaf":
         create_timeseries(args)
     else:
         create_forecast(args)
