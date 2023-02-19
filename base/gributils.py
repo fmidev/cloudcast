@@ -12,6 +12,7 @@ from io import BytesIO
 from base.s3utils import *
 
 DEFAULT_SIZE = (1069, 949, 1)
+GRIB_CACHE = {}
 
 
 def read_from_http(url, **kwargs):
@@ -90,10 +91,25 @@ def read_grib_contents(gh, **kwargs):
 
 
 def read_grib(file_path, message_no=0, **kwargs):
+    global GRIB_CACHE
+
+    enable_cache = kwargs.get("enable_cache", False)
+
+    if enable_cache:
+        try:
+            return GRIB_CACHE[file_path]
+        except KeyError:
+            pass
+
     if file_path[0:4] == "http" or file_path[0:5] == "s3://":
-        return read_from_http(file_path, **kwargs)
+        arr = read_from_http(file_path, **kwargs)
     else:
-        return read_from_file(file_path, message_no, **kwargs)
+        arr = read_from_file(file_path, message_no, **kwargs)
+
+    if enable_cache:
+        GRIB_CACHE[file_path] = arr
+
+    return arr
 
 
 def save_grib(data, filepath, analysistime, forecasttime):
