@@ -10,7 +10,7 @@ from base.preprocess import (
     create_terrain_type_data,
     create_squeezed_leadtime_conditioning,
     create_datetime,
-    create_sun_elevation_angle,
+    create_sun_elevation_angle_data,
     get_img_size,
 )
 from base.gributils import read_gribs
@@ -135,19 +135,14 @@ class DataSeriesGenerator:
             x = np.concatenate((x, self.terrain_type_data), axis=0)
 
         if X[self.n_channels + 4]:
-            angle = create_sun_elevation_angle(y_time, self.img_size)
+            angle = self.sun_elevation_angle_data[
+                y_time.replace(year=2023).strftime("%Y%m%dT%H%M%S")
+            ]
             angle = np.expand_dims(angle, axis=0)
             x = np.concatenate((x, angle), axis=0)
 
         x = np.squeeze(np.swapaxes(x, 0, 3))
 
-        #        if self.operating_mode == "VERIFY":
-        #            y_time = y_time.strftime("%Y%m%dT%H%M%S")
-        #            y = np.full(self.img_size + (1,), np.NaN)
-        #
-        #            return (x, y, xtimes + [y_time])
-        #
-        #        el
         if self.operating_mode in (OpMode.VERIFY, OpMode.INFER):
             return (
                 x,
@@ -178,6 +173,9 @@ class DataSeriesGenerator:
             self.terrain_type_data = np.expand_dims(
                 create_terrain_type_data(self.img_size), axis=0
             )
+
+        if self.include_sun_elevation_angle:
+            self.sun_elevation_angle_data = create_sun_elevation_angle_data(self.img_size)
 
     def get_xy(self, x_elems, y_elems):
         xtimes = []

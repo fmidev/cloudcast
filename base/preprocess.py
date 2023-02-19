@@ -253,13 +253,28 @@ def create_sun_elevation_angle(ts, img_size):
 
 
 def sun_elevation_angle_wrapper(ts, longitude, latitude):
-
     decl = sun_declination_angle(ts)
     E = equation_of_time(ts)
     HRA = solar_hour_angle(ts, E, longitude)
     angle = sun_elevation_angle(decl, HRA, latitude)
 
     return angle
+
+
+def create_sun_elevation_angle_data(img_size):
+    sun_file = get_filename(
+        None, producer="cloudcast", param="sun_elevation_angle", img_size=img_size
+    )
+
+    ds = np.load(sun_file)
+    datas = ds["arr_0"]
+    times = ds["arr_1"]
+
+    ret = {}
+    for i, t in enumerate(times):
+        ret[t] = datas[i]
+
+    return ret
 
 
 def create_datetime(datetime, img_size):
@@ -271,7 +286,6 @@ def create_datetime(datetime, img_size):
 
 
 def process_lsm(LSM):
-
     # Value     Label
     # 11        Post-flooding or irrigated croplands (or aquatic)
     # 14        Rainfed croplands
@@ -339,7 +353,7 @@ def is_http(uri):
 
 
 def create_topography_data(img_size):
-    assert(type(img_size) == tuple)
+    assert type(img_size) == tuple
 
     global DEM
     isize = "{}x{}".format(img_size[0], img_size[1])
@@ -373,7 +387,7 @@ def create_topography_data(img_size):
 
 
 def create_terrain_type_data(img_size):
-    assert(type(img_size) == tuple)
+    assert type(img_size) == tuple
 
     global LSM
 
