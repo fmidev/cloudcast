@@ -86,7 +86,7 @@ def get_filename(
         return "{}/static/LSM-cloudcast.tif".format(STATIC_DATA_DIR)
     if producer == "clim":
         return "{}/static/climatology-monthly-128x128.npz".format(STATIC_DATA_DIR)
-    if producer == "cloudcast" and param == "sun_elevation_angle"):
+    if producer == "cloudcast" and param == "sun_elevation_angle":
         return "{}/static/cloudcast-sun_elevation_angle-20230101-20240101-img_size=128x128-float32.npz".format(STATIC_DATA_DIR)
 
 
