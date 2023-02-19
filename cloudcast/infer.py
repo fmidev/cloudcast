@@ -10,9 +10,6 @@ from base.postprocess import *
 from base.opts import CloudCastOptions
 from base.dataseries import LazyDataSeries
 
-PRED_STEP = timedelta(minutes=15)
-
-
 def parse_command_line():
     def valid_time(x):
         try:
@@ -80,6 +77,9 @@ def predict(args):
     for t in tfds.as_numpy(d):
         x = t[0]
         y = t[1]
+
+        assert(np.min(x[...,0]) >= 0.00 and np.max(x[...,0]) <= 1.001)
+
         xy_times = np.squeeze(t[2])
         print(
             "Using {} to predict {}".format(
