@@ -175,7 +175,9 @@ class DataSeriesGenerator:
             )
 
         if self.include_sun_elevation_angle:
-            self.sun_elevation_angle_data = create_sun_elevation_angle_data(self.img_size)
+            self.sun_elevation_angle_data = create_sun_elevation_angle_data(
+                self.img_size
+            )
 
     def get_xy(self, x_elems, y_elems):
         xtimes = []
@@ -396,6 +398,9 @@ class LazyDataSeries:
             # mean, variance = tf.nn.moments(x, axes=[0, 1], keepdims=True)
             # x = (x - mean) / tf.sqrt(variance + tf.keras.backend.epsilon())
 
+            if tf.math.reduce_max(x[..., 0]) <= 1.01:
+                return (x, y, t)
+
             # scale all data to 0..1, to preserve compatibility with older models
             # trained with this software
             x = tf.concat([0.01 * x[..., 0:n], x[..., n:]], axis=-1)
@@ -440,13 +445,9 @@ class LazyDataSeries:
         dataset = tf.data.Dataset.from_generator(gen, output_signature=sig)
 
         if self.dataseries_directory is None and self.dataseries_file is None:
-            dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels))
-
-            if self.operating_mode == OpMode.TRAIN:
-                # Train data in GRIB2 format is ranged between 0 ... 100
-                dataset = dataset.map(
-                    lambda x, y, t: normalize(x, y, t, self.n_channels)
-                )
+            dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels)).map(
+                lambda x, y, t: normalize(x, y, t, self.n_channels)
+            )
 
         dataset = dataset.batch(self.batch_size, drop_remainder=True).prefetch(AUTOTUNE)
 
