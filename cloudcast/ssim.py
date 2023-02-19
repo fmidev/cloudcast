@@ -25,3 +25,23 @@ def make_SSIM_loss(mask_size=11, mask_sigma=1.5, k1=0.01, k2=0.03):
     SSIM_loss.__name__ = "SSIM_mask_size-{}".format(mask_size)
 
     return SSIM_loss
+
+
+def make_MS_SSIM_loss(mask_size=11, mask_sigma=1.5, k1=0.01, k2=0.03):
+    def MS_SSIM_loss(y_true, y_pred):
+        return 1 - tf.reduce_mean(
+            tf.image.ssim_multiscale(
+                y_true,
+                y_pred,
+                1.0,
+                power_factors=(0.0448, 0.2856, 0.3001, 0.2363, 0.1333),
+                filter_size=mask_size,
+                filter_sigma=mask_sigma,
+                k1=k1,
+                k2=k2,
+            )
+        )
+
+    MS_SSIM_loss.__name__ = "MS_SSIM_mask_size-{}".format(mask_size)
+
+    return MS_SSIM_loss

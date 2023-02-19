@@ -24,7 +24,7 @@ from tensorflow.keras.layers import (
 from tensorflow.keras.models import Model
 
 from fss import make_FSS_loss
-from ssim import make_SSIM_loss
+from ssim import make_SSIM_loss, make_MS_SSIM_loss
 from ks import make_KS_loss
 from bcl1 import make_bc_l1_loss
 
@@ -58,8 +58,18 @@ print(
 
 
 def get_loss_function(loss_function):
-    if loss_function == "ssim":
-        return make_SSIM_loss()
+    if loss_function.startswith("ssim"):
+        values = loss_function.split("_")
+        if len(values) == 1:
+            return make_SSIM_loss()
+
+        return make_SSIM_loss(int(values[1]))
+    elif loss_function.startswith("msssim"):
+        values = loss_function.split("_")
+        if len(values) == 1:
+            return make_MS_SSIM_loss()
+
+        return make_SSIM_loss(int(values[1]))
     elif loss_function == "bcl1":
         return make_bc_l1_loss()
     elif loss_function.startswith("fss"):
@@ -104,7 +114,6 @@ def unet(
     optimizer="adam",
     n_categories=None,
 ):
-
     inputs = Input(input_size)
 
     def conv_block(inp, num_filters):
@@ -175,7 +184,6 @@ def convlstm(
     input_size=(256, 256, 1),
     loss_function="binary_crossentropy",
 ):
-
     inp = Input(shape=(None, *input_size))
 
     # We will construct 3 `ConvLSTM2D` layers with batch normalization,
