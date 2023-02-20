@@ -218,35 +218,21 @@ def plot_mae_timeseries(args, ae, times):
     def aggregate_to_max_hour(ae_timeseries, times):
         x, y, counts = process_data(ae_timeseries, times)
         return x,y,counts
-#        mcounts = []
-#        mx = []
-#        my = []
-#        for i, t in enumerate(x):
-#            if t.strftime("%M") != "00":
-#                continue
-#            try:
-#                s = np.argmax(i - 3, 0)
-#                my.append(np.max(y[s:i]).astype(np.float32))
-#                mcounts.append(np.sum(counts[s:i]).astype(np.int8))
-#                mx.append(t)
-#            except (ValueError, AttributeError) as e:
-#                print(e)
-#                pass
-#
-#        assert len(mx) == len(my)
-#        return mx, my, mcounts
+
+    data = []
 
     for l in ae.keys():
         assert len(times) == len(ae[l])
         mx, my, mcounts = aggregate_to_max_hour(ae[l], times)
+        data.append(my)
 
-        xlabels = list(map(lambda x: x.strftime("%H:%M"), mx))
+    xlabels = list(map(lambda x: x.strftime("%H:%M"), mx))
 
-        plot_normal(
+    plot_normal(
             mx,
-            [my],
+            data,
             mcounts,
-            [l],
+            list(map(lambda x: reduce_label(x), ae.keys())),
             title="MAE between {}..{}\n{}".format(
                 times[0][0].strftime("%Y%m%dT%H%M"),
                 times[-1][-1].strftime("%Y%m%dT%H%M"),
