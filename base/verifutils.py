@@ -168,7 +168,7 @@ def plot_mae2d(args, ae, times):
         title = "Mean Absolute Error 2D"
 
     for l in ae:
-        titlel = "{}\n{}".format(title, l)
+        titlel = "{}\n{}".format(title, reduce_label(l))
         # calculate average 2d field
         img_size = ae[l][0].shape[1:3]
         mae = np.average(
@@ -250,7 +250,7 @@ def plot_mae_timeseries(args, ae, times):
             title="MAE between {}..{}\n{}".format(
                 times[0][0].strftime("%Y%m%dT%H%M"),
                 times[-1][-1].strftime("%Y%m%dT%H%M"),
-                l,
+                reduce_label(l),
             ),
             xlabels=xlabels,
             plot_dir=args.plot_dir,

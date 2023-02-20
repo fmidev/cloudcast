@@ -270,6 +270,7 @@ def plot_timeseries(args, predictions):
             continue
         data.append(predictions[l]["data"][idx])
 
+    labels = list(map(lambda x: reduce_label(x), labels))
     plot_stamps(
         data,
         labels,
