@@ -43,13 +43,6 @@ def parse_command_line():
     parser.add_argument("--prediction_len", action="store", type=int, default=12)
     parser.add_argument("--include_additional", action="store", nargs="+", default=[])
     parser.add_argument(
-        "--top",
-        action="store",
-        type=int,
-        default=-1,
-        help="out of all models select the top n that perform best",
-    )
-    parser.add_argument(
         "--plot_dir",
         action="store",
         type=str,
