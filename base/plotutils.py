@@ -101,10 +101,10 @@ def latlonraster(img_size):
 def plot_on_map(data, title=None, plot_dir=None):
     plt.figure(figure(), figsize=(10, 8))
     m = Basemap(
-        llcrnrlon=-0.5,
-        llcrnrlat=49.0,
-        urcrnrlon=57.5,
-        urcrnrlat=72.3,
+        llcrnrlon=-0.3,
+        llcrnrlat=49.6,
+        urcrnrlon=57.3,
+        urcrnrlat=71.8,
         ellps="WGS84",
         resolution="l",
         area_thresh=1000.0,
@@ -118,7 +118,7 @@ def plot_on_map(data, title=None, plot_dir=None):
     lons, lats = latlonraster(data.shape)
 
     x, y = m(lons, lats)
-    cs = m.pcolormesh(x, y, data, shading="auto")  # ,cmap=plt.cm.Greys)
+    cs = m.pcolormesh(x, y, data, shading="auto", vmin=0, vmax=0.7)  # ,cmap=plt.cm.Greys)
 
     m.drawcoastlines()
     m.drawmapboundary()
@@ -181,7 +181,7 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
         y_ = np.asarray(y_)
         #        x = xreal[np.isfinite(y_)]
         # y = mae[np.isfinite(mae)]
-        ax2.plot(x, y_, label=labels[i], linestyle="-", marker="o")
+        ax2.plot(x, y_, label=labels[i], linestyle="-", marker="o", markersize=3)
         ax2.set_ylabel("mean absolute error")
 
     plt.title(title)
@@ -283,7 +283,7 @@ def plot_stamps(
     fig, bigaxes = plt.subplots(
         nrows=nrows,
         ncols=1,
-        figsize=((ncols * 2.5), nrows * 2.5),
+        figsize=((ncols * 2.5), nrows * 3.5),
         constrained_layout=False,
         squeeze=False,
         num=figure(),
@@ -406,7 +406,7 @@ def plot_performance_diagram(
 
 
 def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False):
-
+    return
     if save_path is None:
         save_path = model_dir
 
