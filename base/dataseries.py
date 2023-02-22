@@ -119,13 +119,9 @@ class DataSeriesGenerator:
         y_time = ts + timedelta(minutes=(1 + lc) * 15)
 
         if X[self.n_channels + 1]:
-            tod, toy = create_datetime(ts, self.img_size)
+            tod, toy = create_datetime(y_time, self.img_size)
             tod = np.expand_dims(tod, axis=0)
             toy = np.expand_dims(toy, axis=0)
-            # TODO:
-            # tod, toy = create_datetime(y_time, self.img_size)
-            # tod = np.expand_dims(tod, axis=0)
-            # toy = np.expand_dims(toy, axis=0)
             x = np.concatenate((x, tod, toy), axis=0)
 
         if X[self.n_channels + 2]:
