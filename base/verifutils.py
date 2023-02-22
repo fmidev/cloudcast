@@ -17,7 +17,7 @@ def get_time_for_file(args):
 
 def produce_scores(args, predictions):
     mae(args, predictions)
-    #categorical_scores(args, predictions)
+    # categorical_scores(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
     print("All scores produced")
@@ -127,8 +127,10 @@ def ae2d(predictions):
 def plot_mae_per_leadtime(args, ae):
     print("Plotting mae per leadtime")
 
+    labels = list(ae.keys())
+
     maelts = []
-    for l in ae:
+    for j, l in enumerate(ae):
         newae = np.moveaxis(ae[l], 0, 1)
         maelt = []
 
@@ -136,6 +138,7 @@ def plot_mae_per_leadtime(args, ae):
             maelt.append(np.mean(lt).astype(np.float32))
 
         maelts.append(np.asarray(maelt, dtype=np.float32))
+        labels[j] += " ({:.3f})".format(np.mean(np.asarray(maelt)))
 
         if args.result_dir is not None:
             np.save(
@@ -145,7 +148,7 @@ def plot_mae_per_leadtime(args, ae):
 
     plot_linegraph(
         maelts,
-        list(ae.keys()),
+        labels,
         title="MAE over {} predictions".format(ae[l].shape[0]),
         ylabel="mae",
         plot_dir=args.plot_dir,
@@ -217,7 +220,7 @@ def plot_mae_timeseries(args, ae, times):
 
     def aggregate_to_max_hour(ae_timeseries, times):
         x, y, counts = process_data(ae_timeseries, times)
-        return x,y,counts
+        return x, y, counts
 
     data = []
 
@@ -229,18 +232,18 @@ def plot_mae_timeseries(args, ae, times):
     xlabels = list(map(lambda x: x.strftime("%H:%M"), mx))
 
     plot_normal(
-            mx,
-            data,
-            mcounts,
-            list(map(lambda x: reduce_label(x), ae.keys())),
-            title="MAE between {}..{}\n{}".format(
-                times[0][0].strftime("%Y%m%dT%H%M"),
-                times[-1][-1].strftime("%Y%m%dT%H%M"),
-                reduce_label(l),
-            ),
-            xlabels=xlabels,
-            plot_dir=args.plot_dir,
-        )
+        mx,
+        data,
+        mcounts,
+        list(map(lambda x: reduce_label(x), ae.keys())),
+        title="MAE between {}..{}\n{}".format(
+            times[0][0].strftime("%Y%m%dT%H%M"),
+            times[-1][-1].strftime("%Y%m%dT%H%M"),
+            reduce_label(l),
+        ),
+        xlabels=xlabels,
+        plot_dir=args.plot_dir,
+    )
 
 
 def calculate_categorical_score(category, cm, score):
@@ -255,24 +258,9 @@ def calculate_categorical_score(category, cm, score):
 
     idx = CATEGORIES.index(category)
     TP = cm[idx, idx]
-    FN = (
-        np.sum(
-            cm[
-                idx,
-            ]
-        )
-        - TP
-    )
+    FN = np.sum(cm[idx,]) - TP
     FP = np.sum(cm[:, idx]) - TP
-    TN = (
-        np.sum(cm)
-        - np.sum(
-            cm[
-                idx,
-            ]
-        )
-        - np.sum(cm[:, idx])
-    )
+    TN = np.sum(cm) - np.sum(cm[idx,]) - np.sum(cm[:, idx])
 
     return calc_score(TN, FP, FN, TP, score)
 
@@ -361,7 +349,6 @@ def ssim(args, predictions):
 
     ssims = []
     for l in predictions.keys():
-
         ssims.append([])
 
         if l == "gt":
