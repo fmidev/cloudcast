@@ -118,7 +118,9 @@ def plot_on_map(data, title=None, plot_dir=None):
     lons, lats = latlonraster(data.shape)
 
     x, y = m(lons, lats)
-    cs = m.pcolormesh(x, y, data, shading="auto", vmin=0, vmax=0.7)  # ,cmap=plt.cm.Greys)
+    cs = m.pcolormesh(
+        x, y, data, shading="auto", vmin=0, vmax=0.7
+    )  # ,cmap=plt.cm.Greys)
 
     m.drawcoastlines()
     m.drawmapboundary()
@@ -172,16 +174,14 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
 
     ax1.set_xlabel("time")
     ax1.set_ylabel("count")
-    ax1.scatter(x, y2, color=color, marker="x", label="counts")
+    ax1.scatter(x, y2, color=color, marker="x", s=3, label="counts")
     ax1.tick_params(axis="y", labelcolor=color)
 
     ax2 = ax1.twinx()
 
     for i, y_ in enumerate(y):
         y_ = np.asarray(y_)
-        #        x = xreal[np.isfinite(y_)]
-        # y = mae[np.isfinite(mae)]
-        ax2.plot(x, y_, label=labels[i], linestyle="-", marker="o", markersize=3)
+        ax2.plot(x, y_, label=labels[i], linestyle="-", marker="o", markersize=2)
         ax2.set_ylabel("mean absolute error")
 
     plt.title(title)
@@ -357,7 +357,6 @@ def plot_performance_diagram(
     title="Performance diagram",
     plot_dir=None,
 ):
-
     plt.figure(figure(), figsize=(9, 8))
     legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
     csi_cmap = "Blues"
