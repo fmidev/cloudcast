@@ -56,15 +56,3 @@ class CloudCastOptions:
             self.include_sun_elevation_angle,
             self.preprocess,
         )
-
-    def get_reduced_label(self):
-        return (
-            get_label()
-            .replace("True", "T")
-            .replace("False", "F")
-            .replace("binary_crossentropy", "bc")
-            .replace("MeanSquaredError", "MSE")
-            .replace("MeanAbsoluteError", "MAE")
-            .replace("img_size", "i_s")
-            .replace("terrain", "tr")
-        )
