@@ -191,6 +191,9 @@ def plot_mae2d(args, ae, times):
 def plot_mae_timeseries(args, ae, times):
     print("Plotting mae timeseries")
 
+    # if less than 12 forecasts are found for a given time,
+    # do not include that to data (because the results are skewed)
+    trim_short_times=True
     def process_data(ae, times):
         maets = {}
 
@@ -213,6 +216,8 @@ def plot_mae_timeseries(args, ae, times):
         x = []
         y = []
         for t in maets.keys():
+            if trim_short_times and len(maets[t]) < 12:
+                continue
             counts.append(len(maets[t]))
             y.append(np.average(maets[t]).astype(np.float32))
             x.append(t)
@@ -236,10 +241,8 @@ def plot_mae_timeseries(args, ae, times):
         data,
         mcounts,
         list(map(lambda x: reduce_label(x), ae.keys())),
-        title="MAE between {}..{}\n{}".format(
-            times[0][0].strftime("%Y%m%dT%H%M"),
-            times[-1][-1].strftime("%Y%m%dT%H%M"),
-            reduce_label(l),
+        title="MAE between {}..{}".format(
+            times[0][0].strftime("%Y%m%dT%H%M"), times[-1][-1].strftime("%Y%m%dT%H%M")
         ),
         xlabels=xlabels,
         plot_dir=args.plot_dir,
