@@ -266,6 +266,8 @@ def create_sun_elevation_angle_data(img_size):
         None, producer="cloudcast", param="sun_elevation_angle", img_size=img_size
     )
 
+    print(f"Reading {sun_file}")
+
     ds = np.load(sun_file)
     datas = ds["arr_0"]
     times = ds["arr_1"]
