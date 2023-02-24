@@ -161,9 +161,11 @@ def preprocess_single(arr, process_label):
                 arr = (arr - np.min(arr)) / np.ptp(arr)
         elif k == "img_size":
             img_size = tuple(map(int, v.split("x")))
-            arr = np.expand_dims(
-                cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2
-            )
+            if arr.shape != img_size:
+                arr = np.expand_dims(
+                    cv2.resize(arr, dsize=img_size, interpolation=cv2.INTER_LINEAR),
+                    axis=2,
+                )
         elif k == "area":  # and v != 'Scandinavia':
             arr = reproject(arr, v)
 
@@ -262,15 +264,16 @@ def sun_elevation_angle_wrapper(ts, longitude, latitude):
 
 
 def create_sun_elevation_angle_data(img_size):
-    sun_file = get_filename(
-        None, producer="cloudcast", param="sun_elevation_angle", img_size=img_size
-    )
+    sun_file = get_filename(None, producer="cloudcast", param="sun_elevation_angle")
 
     print(f"Reading {sun_file}")
 
     ds = np.load(sun_file)
     datas = ds["arr_0"]
     times = ds["arr_1"]
+
+    if img_size != (128, 128):
+        datas = tf.image.resize(datas, img_size)
 
     ret = {}
     for i, t in enumerate(times):

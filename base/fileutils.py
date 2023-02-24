@@ -45,7 +45,7 @@ def read_filenames(
 
 
 def get_filename(
-    time, producer="nwcsaf", analysis_time=None, param="effective-cloudiness", img_size=None
+    time, producer="nwcsaf", analysis_time=None, param="effective-cloudiness"
 ):
     if producer == "nwcsaf":
         return "{}/nwcsaf/{}_nwcsaf_{}.grib2".format(
@@ -87,7 +87,7 @@ def get_filename(
     if producer == "clim":
         return "{}/static/climatology-monthly-128x128.npz".format(STATIC_DATA_DIR)
     if producer == "cloudcast" and param == "sun_elevation_angle":
-        return "{}/static/cloudcast-sun_elevation_angle-20230101-20240101-img_size=128x128-float32.npz".format(STATIC_DATA_DIR)
+        return "{}/static/sun_elevation_angle-128x128.npz".format(STATIC_DATA_DIR)
 
 
 def read_time(
