@@ -3,6 +3,8 @@ from sklearn.metrics import mean_absolute_error, confusion_matrix
 from skimage.metrics import structural_similarity
 import matplotlib.pyplot as plt
 from base.plotutils import *
+import tensorflow as tf
+from fss import make_FSS_loss
 
 CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
@@ -20,6 +22,7 @@ def produce_scores(args, predictions):
     # categorical_scores(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
+    fss(args, predictions)
     print("All scores produced")
 
 
@@ -193,7 +196,8 @@ def plot_mae_timeseries(args, ae, times):
 
     # if less than 12 forecasts are found for a given time,
     # do not include that to data (because the results are skewed)
-    trim_short_times=True
+    trim_short_times = True
+
     def process_data(ae, times):
         maets = {}
 
@@ -408,3 +412,56 @@ def ssim(args, predictions):
         ylabel="ssim",
         plot_dir=args.plot_dir,
     )
+
+
+def fss(args, predictions):
+    print("Plotting FSS")
+
+    gtt = predictions["gt"]["time"]
+    bins = tf.constant(
+        [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
+    )
+    masks = [5, 9, 13, 17, 27]
+    labels = list(predictions.keys())
+    labels.remove("gt")
+
+    fsss = []
+    img_sizes = []
+
+    for l in predictions:
+        if l == "gt":
+            continue
+
+        img_sizes.append(predictions[l]["data"][0].shape[1:3])
+
+        label_arr = []
+        for m in masks:
+            print("FSS for: {} mask size: {}".format(l, m))
+            mask_arr = []
+            for pred_times, pred_data in zip(
+                predictions[l]["time"], predictions[l]["data"]
+            ):
+                a = gtt.index(pred_times[0])
+                b = gtt.index(pred_times[-1])
+                gt_data = np.asarray(predictions["gt"]["data"][a : b + 1])
+
+                assert gt_data.shape == pred_data.shape
+
+                datas = []
+                for y_true, y_pred in zip(gt_data, pred_data):
+                    lf = make_FSS_loss(m, bins=bins)
+                    # fss is implemented as a loss functions, so it needs
+                    # batch dimension
+                    y_true = np.expand_dims(y_true, 0)
+                    y_pred = np.expand_dims(y_pred, 0)
+
+                    loss = 1 - lf(y_true, y_pred).numpy()
+                    datas.append(loss)
+                assert len(datas) == 13
+
+                mask_arr.append(datas)
+            label_arr.append(mask_arr)
+        fsss.append(label_arr)
+
+    fsss = np.asarray(fsss)
+    plot_fss(fsss, masks, labels, img_sizes=img_sizes, plot_dir=args.plot_dir)

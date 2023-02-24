@@ -442,3 +442,56 @@ def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False
 
         plt.savefig("{}/{}".format(save_path, filename))
         print("Wrote file {}/{}".format(save_path, filename))
+
+
+def plot_fss(data, masks, labels, img_sizes, plot_dir=None):
+    domain_x = 2370  # km
+    domain_y = 2670
+
+    for i in range(data.shape[0]):
+        plt.figure(figure(), figsize=(10, 8))
+        dx = int(np.ceil(domain_x / float(img_sizes[i][0])))
+
+        for j, m in enumerate(masks):
+            mask_data = data[i][j]
+            mask_data = np.mean(mask_data, axis=0)
+            all_mean = np.mean(mask_data)
+
+            plt.plot(
+                range(13),
+                mask_data,
+                label="{} mask: {}/{}km mean: {:.3f}".format(
+                    reduce_label(labels[i]),
+                    m,
+                    m * dx,
+                    all_mean,
+                ),
+            )
+
+        plt.legend()
+
+        if plot_dir is not None:
+            savefig(plot_dir)
+
+    # plot single mask from all labels into one figure
+    plt.figure(figure(), figsize=(10, 8))
+
+    for i in range(data.shape[0]):
+        # mask #3
+        m = masks[3]
+        mask_data = data[i][3]
+        mask_data = np.mean(mask_data, axis=0)
+        all_mean = np.mean(mask_data)
+        dx = int(np.ceil(domain_x / float(img_sizes[0][0])))
+
+        plt.plot(
+            range(13),
+            mask_data,
+            label="{} mask: {}/{}km mean: {:.3f}".format(
+                reduce_label(labels[i]), m, m * dx, all_mean
+            ),
+        )
+    plt.legend()
+
+    if plot_dir is not None:
+        savefig(plot_dir)
