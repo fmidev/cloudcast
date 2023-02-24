@@ -144,7 +144,7 @@ def create_sun_elevation_angle_timeseries(args):
 
     start = time.time()
     while curdate != args.stop_date:
-        angle = create_sun_elevation_angle(curdate, get_img_size(args.preprocess))
+        angle = create_sun_elevation_angle(curdate, get_img_size(args.preprocess)).astype(args.dtype)
         datas.append(angle)
         times.append(curdate.strftime("%Y%m%dT%H%M%S"))
         curdate += datetime.timedelta(minutes=15)
