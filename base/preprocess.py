@@ -268,12 +268,20 @@ def create_sun_elevation_angle_data(img_size):
 
     print(f"Reading {sun_file}")
 
-    ds = np.load(sun_file)
+    if is_http(sun_file):
+        import requests
+        import io
+
+        sun_file = sun_file.replace("s3://", "")
+        sun_file = "https://lake.fmi.fi/{}".format(sun_file)
+        response = requests.get(sun_file)
+        response.raise_for_status()
+        ds = np.load(io.BytesIO(response.content))
+    else:
+        ds = np.load(sun_file)
+
     datas = ds["arr_0"]
     times = ds["arr_1"]
-
-    if img_size != (128, 128):
-        datas = tf.image.resize(datas, img_size)
 
     ret = {}
     for i, t in enumerate(times):
