@@ -29,6 +29,12 @@ from ks import make_KS_loss
 from bcl1 import make_bc_l1_loss
 
 from tensorflow.keras import mixed_precision
+from tensorflow.python.client import device_lib
+
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x for x in local_device_protos if x.device_type == "GPU"]
 
 
 def get_compute_capability(gpu_id=0):
@@ -51,8 +57,8 @@ if cc is not None and int(cc[0]) >= 7:
 policy = tf.keras.mixed_precision.global_policy()
 
 print(
-    "Compute dtype: {} Variable dtype: {}".format(
-        policy.compute_dtype, policy.variable_dtype
+    "Compute dtype: {} Variable dtype: {} Number of GPUs: {}".format(
+        policy.compute_dtype, policy.variable_dtype, len(get_available_gpus())
     )
 )
 
@@ -78,7 +84,7 @@ def get_loss_function(loss_function):
             return make_FSS_loss(5)
 
         mask = int(values[1])
-        bins = values[2].split(',')
+        bins = values[2].split(",")
         bins = list(map(lambda x: float(x), bins))
         fuzzy = eval(values[3])
         return make_FSS_loss(mask, bins, fuzzy)
