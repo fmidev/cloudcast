@@ -73,10 +73,6 @@ class DataSeriesGenerator:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-        self.terrain_type_data = None
-        self.topography_data = None
-
-        self.initialize()
         print(
             "Generator number of batches: {} batch size: {}".format(
                 len(self), self.batch_size
@@ -135,6 +131,7 @@ class DataSeriesGenerator:
                 y_time.replace(year=2023).strftime("%Y%m%dT%H%M%S")
             ]
             angle = np.expand_dims(angle, axis=0)
+            angle = tf.image.resize(angle, self.img_size)
             x = np.concatenate((x, angle), axis=0)
 
         x = np.squeeze(np.swapaxes(x, 0, 3))
@@ -147,33 +144,6 @@ class DataSeriesGenerator:
             )
         else:
             return (x, y)
-
-    def initialize(self):
-        if self.leadtime_conditioning > 0:
-            leadtimes = np.asarray(
-                [
-                    create_squeezed_leadtime_conditioning(
-                        self.img_size, self.leadtime_conditioning, x
-                    )
-                    for x in range(self.leadtime_conditioning)
-                ]
-            )
-            self.leadtimes = np.squeeze(leadtimes, 1)
-
-        if self.include_topography:
-            self.topography_data = np.expand_dims(
-                create_topography_data(self.img_size), axis=0
-            )
-
-        if self.include_terrain_type:
-            self.terrain_type_data = np.expand_dims(
-                create_terrain_type_data(self.img_size), axis=0
-            )
-
-        if self.include_sun_elevation_angle:
-            self.sun_elevation_angle_data = create_sun_elevation_angle_data(
-                self.img_size
-            )
 
     def get_xy(self, x_elems, y_elems):
         xtimes = []
@@ -314,6 +284,35 @@ class LazyDataSeries:
         self.initialize()
 
     def initialize(self):
+        # Read static datas, so that each dataset generator
+        # does not have to read them
+
+        if self.leadtime_conditioning > 0:
+            leadtimes = np.asarray(
+                [
+                    create_squeezed_leadtime_conditioning(
+                        self.img_size, self.leadtime_conditioning, x
+                    )
+                    for x in range(self.leadtime_conditioning)
+                ]
+            )
+            self.leadtimes = np.squeeze(leadtimes, 1)
+
+        if self.include_topography:
+            self.topography_data = np.expand_dims(
+                create_topography_data(self.img_size), axis=0
+            )
+
+        if self.include_terrain_type:
+            self.terrain_type_data = np.expand_dims(
+                create_terrain_type_data(self.img_size), axis=0
+            )
+
+        if self.include_sun_elevation_angle:
+            self.sun_elevation_angle_data = create_sun_elevation_angle_data(
+                self.img_size
+            )
+
         # create placeholder data
 
         if self.dataseries_file is not None:
@@ -440,7 +439,11 @@ class LazyDataSeries:
         gen = DataSeriesGenerator(placeholder=placeholder, **self.__dict__)
         dataset = tf.data.Dataset.from_generator(gen, output_signature=sig)
 
-        if self.dataseries_directory is None and self.dataseries_file is None:
+        if (
+            self.operating_mode != OpMode.TRAIN
+            and self.dataseries_directory is None
+            and self.dataseries_file is None
+        ):
             dataset = dataset.map(lambda x, y, t: flip(x, y, t, self.n_channels)).map(
                 lambda x, y, t: normalize(x, y, t, self.n_channels)
             )
