@@ -136,16 +136,20 @@ def callbacks(args, opts):
 
 def save_model_info(args, opts, duration, hist, model_dir):
     with open(
-        "{}/info-{}.txt".format(
+        "{}/info-{}.json".format(
             model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
         ),
         "w",
     ) as fp:
-        fp.write(f"{args}\n")
-        fp.write(f"{opts}\n")
-        fp.write(f"duration: {duration}\n")
-        fp.write(f"finished: {datetime.datetime.now()}\n")
-        fp.write(f"hostname: {os.environ['HOSTNAME']}\n")
+        data = {
+            "args": args,
+            "opts": opts,
+            "duration": duration,
+            "finished": datetime.datetime.now(),
+            "hostname": os.environ["HOSTNAME"],
+        }
+
+        json.dump(data, fp)
 
     with open(
         "{}/hist-{}.txt".format(
@@ -153,7 +157,7 @@ def save_model_info(args, opts, duration, hist, model_dir):
         ),
         "w",
     ) as fp:
-        fp.write(f"{hist}")
+        json.dump(hist, fp)
 
 
 def run_model(args, opts):
