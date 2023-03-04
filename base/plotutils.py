@@ -452,46 +452,28 @@ def plot_fss(data, masks, labels, img_sizes, plot_dir=None):
         plt.figure(figure(), figsize=(10, 8))
         dx = int(np.ceil(domain_x / float(img_sizes[i][0])))
 
+        x = np.arange(13)
+        y = np.arange(len(masks))
+
+        xx, yy = np.meshgrid(x, y)
+
+        v = []
+
         for j, m in enumerate(masks):
-            mask_data = data[i][j]
-            mask_data = np.mean(mask_data, axis=0)
-            all_mean = np.mean(mask_data)
+            v.append(np.mean(data[i][j], axis=0))
 
-            plt.plot(
-                range(13),
-                mask_data,
-                label="{} mask: {}/{}km mean: {:.3f}".format(
-                    reduce_label(labels[i]),
-                    m,
-                    m * dx,
-                    all_mean,
-                ),
-            )
+        v = np.asarray(v)
 
-        plt.legend()
+        levels = np.linspace(0.0, 1.0, 21)
+        plt.contourf(xx, yy, v, levels=levels)
+        plt.colorbar()
+        plt.title("Fractions skill score for {}".format(reduce_label(labels[i])))
+        plt.xlabel("Leadtime (minutes)")
+        plt.ylabel("Mask size (km)")
+        plt.xticks(x, list(map(lambda x: "{}m".format(x * 15), x)))
+        plt.yticks(y, list(map(lambda x: "{}km".format(int(x * dx)), masks)))
+        CS = plt.contour(xx, yy, v, [0.5])
+        plt.clabel(CS, inline=True, fontsize=10)
 
         if plot_dir is not None:
             savefig(plot_dir)
-
-    # plot single mask from all labels into one figure
-    plt.figure(figure(), figsize=(10, 8))
-
-    for i in range(data.shape[0]):
-        # mask #3
-        m = masks[3]
-        mask_data = data[i][3]
-        mask_data = np.mean(mask_data, axis=0)
-        all_mean = np.mean(mask_data)
-        dx = int(np.ceil(domain_x / float(img_sizes[0][0])))
-
-        plt.plot(
-            range(13),
-            mask_data,
-            label="{} mask: {}/{}km mean: {:.3f}".format(
-                reduce_label(labels[i]), m, m * dx, all_mean
-            ),
-        )
-    plt.legend()
-
-    if plot_dir is not None:
-        savefig(plot_dir)
