@@ -42,7 +42,10 @@ def reduce_label(label):
         .replace("binary_crossentropy", "bc")
         .replace("MeanSquaredError", "MSE")
         .replace("MeanAbsoluteError", "MAE")
-        .replace("-img_size=128x128", "")
+        .replace("-img_size=128x128", "128")
+        .replace("-img_size=256x256", "256")
+        .replace("-img_size=512x512", "512")
+        .replace("-img_size=768x768", "768")
         .replace("-lc=12", "")
         .replace("-hist=4", "")
     )
@@ -448,32 +451,55 @@ def plot_fss(data, masks, labels, img_sizes, plot_dir=None):
     domain_x = 2370  # km
     domain_y = 2670
 
-    for i in range(data.shape[0]):
-        plt.figure(figure(), figsize=(10, 8))
-        dx = int(np.ceil(domain_x / float(img_sizes[i][0])))
+    CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
-        x = np.arange(13)
-        y = np.arange(len(masks))
+    # shape: a, b, c, d, e
+    # a: model label
+    # b: mask
+    # c: forecast number
+    # d: bin
+    # e: leadtime (data)
 
-        xx, yy = np.meshgrid(x, y)
+    for i in range(data.shape[0]):  # labels
+        for j in range(data.shape[1]):  # categories (bins)
+            cat = CATEGORIES[j]
 
-        v = []
+            plt.figure(figure(), figsize=(8, 8))
+            dx = int(np.ceil(domain_x / float(img_sizes[i][0])))
 
-        for j, m in enumerate(masks):
-            v.append(np.mean(data[i][j], axis=0))
+            x = np.arange(13)
+            y = np.arange(len(masks))
 
-        v = np.asarray(v)
+            xx, yy = np.meshgrid(x, y)
 
-        levels = np.linspace(0.0, 1.0, 21)
-        plt.contourf(xx, yy, v, levels=levels)
-        plt.colorbar()
-        plt.title("Fractions skill score for {}".format(reduce_label(labels[i])))
-        plt.xlabel("Leadtime (minutes)")
-        plt.ylabel("Mask size (km)")
-        plt.xticks(x, list(map(lambda x: "{}m".format(x * 15), x)))
-        plt.yticks(y, list(map(lambda x: "{}km".format(int(x * dx)), masks)))
-        CS = plt.contour(xx, yy, v, [0.5])
-        plt.clabel(CS, inline=True, fontsize=10)
+            v = []
 
-        if plot_dir is not None:
-            savefig(plot_dir)
+            for k, m in enumerate(masks):
+                v.append(np.nanmean(data[i][j][k], axis=0))
+
+            v = np.asarray(v)
+            v = np.nan_to_num(v)
+            v = np.ma.masked_where(v == 0.0, v)
+
+            try:
+                levels = np.linspace(0.3, 1.0, 21)
+                plt.contourf(xx, yy, v, levels=levels)
+                plt.colorbar()
+                plt.title(
+                    "Fractions skill score for category '{}' model\n '{}'".format(
+                        cat, reduce_label(labels[i])
+                    )
+                )
+                plt.xlabel("Leadtime (minutes)")
+                plt.ylabel("Mask size (km)")
+                plt.xticks(x, list(map(lambda x: "{}m".format(x * 15), x)))
+                plt.yticks(y, list(map(lambda x: "{}km".format(int(x * dx)), masks)))
+                CS = plt.contour(xx, yy, v, [0.5])
+                plt.clabel(CS, inline=True, fontsize=10)
+            except ValueError as e:
+                print("Failed to plot for bin #{}".format(j))
+                print(e)
+                continue
+
+            if plot_dir is not None:
+                savefig(plot_dir)
