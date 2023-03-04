@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from base.plotutils import *
 import tensorflow as tf
 from fss import make_FSS_loss
+import time
 
 CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
@@ -421,7 +422,7 @@ def fss(args, predictions):
     bins = tf.constant(
         [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
     )
-    masks = [5, 9, 13, 17, 27]
+    masks = [5, 9, 13, 17, 27, 45]
     labels = list(predictions.keys())
     labels.remove("gt")
 
@@ -436,7 +437,7 @@ def fss(args, predictions):
 
         label_arr = []
         for m in masks:
-            print("FSS for: {} mask size: {}".format(l, m))
+            start = time.time()
             mask_arr = []
             for pred_times, pred_data in zip(
                 predictions[l]["time"], predictions[l]["data"]
@@ -461,6 +462,9 @@ def fss(args, predictions):
 
                 mask_arr.append(datas)
             label_arr.append(mask_arr)
+            stop = time.time()
+            print("FSS for: {} mask size: {} in {:.1f}ms".format(l, m, stop - start))
+
         fsss.append(label_arr)
 
     fsss = np.asarray(fsss)
