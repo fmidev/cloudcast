@@ -447,7 +447,7 @@ def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False
         print("Wrote file {}/{}".format(save_path, filename))
 
 
-def plot_fss(data, masks, labels, img_sizes, plot_dir=None):
+def plot_fss(data, masks, labels, obs_frac, img_sizes, plot_dir=None):
     domain_x = 2370  # km
     domain_y = 2670
 
@@ -483,18 +483,22 @@ def plot_fss(data, masks, labels, img_sizes, plot_dir=None):
 
             try:
                 levels = np.linspace(0.3, 1.0, 21)
+                fss_good = 0.5 + (obs_frac[j] * 0.5)
+                print("Good FSS for category {}={:.3f}".format(CATEGORIES[j], fss_good))
+
                 plt.contourf(xx, yy, v, levels=levels)
                 plt.colorbar()
                 plt.title(
-                    "Fractions skill score for category '{}' model\n '{}'".format(
-                        cat, reduce_label(labels[i])
+                    "FSS for category '{}' (FSS_good={:.3f})\n'{}'".format(
+                        cat, fss_good, reduce_label(labels[i])
                     )
                 )
                 plt.xlabel("Leadtime (minutes)")
                 plt.ylabel("Mask size (km)")
                 plt.xticks(x, list(map(lambda x: "{}m".format(x * 15), x)))
                 plt.yticks(y, list(map(lambda x: "{}km".format(int(x * dx)), masks)))
-                CS = plt.contour(xx, yy, v, [0.5])
+
+                CS = plt.contour(xx, yy, v, [fss_good])
                 plt.clabel(CS, inline=True, fontsize=10)
             except ValueError as e:
                 print("Failed to plot for bin #{}".format(j))

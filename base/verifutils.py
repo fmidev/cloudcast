@@ -416,13 +416,55 @@ def ssim(args, predictions):
 
 
 def fss(args, predictions):
-    print("Plotting FSS")
+    def calc_fss(lf, pred_times, pred_data, gtt, gtd):
+        arr = []
+
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            a = gtt.index(pred_times[0])
+            b = gtt.index(pred_times[-1])
+            gt_data = np.asarray(gtd[a : b + 1])
+
+            assert gt_data.shape == pred_data.shape
+
+            datas = []
+            for y_true, y_pred in zip(gt_data, pred_data):
+                # fss is implemented as a loss functions, so it needs
+                # batch dimension
+                y_true = np.expand_dims(y_true, 0)
+                y_pred = np.expand_dims(y_pred, 0)
+
+                loss = 1 - lf(y_true, y_pred).numpy()
+                datas.append(loss)
+
+            assert len(datas) == 13
+
+            arr.append(datas)
+        return arr
+
+    print("Producing FSS")
 
     gtt = predictions["gt"]["time"]
-    bins = tf.constant(
-        [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
-    )
-    masks = [5, 9, 13, 17, 27, 45]
+
+    obs_cat = categorize(predictions["gt"]["data"])
+    observed_cat0 = np.count_nonzero(obs_cat == 0)
+    observed_cat1 = np.count_nonzero(obs_cat == 1)
+    observed_cat2 = np.count_nonzero(obs_cat == 2)
+
+    obs_frac_cat0 = observed_cat0 / (observed_cat0 + observed_cat1 + observed_cat2)
+    obs_frac_cat1 = observed_cat1 / (observed_cat0 + observed_cat1 + observed_cat2)
+    obs_frac_cat2 = observed_cat2 / (observed_cat0 + observed_cat1 + observed_cat2)
+
+    obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2]
+    print(obs_frac)
+
+    # bins = tf.constant(
+    #    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
+    # )
+    bins = tf.constant([[0, 0.15], [0.15, 0.85], [0.85, 1.01]], dtype=tf.float32)
+
+    masks = [3, 5, 9, 13, 17, 27, 45, 60, 80]
     labels = list(predictions.keys())
     labels.remove("gt")
 
@@ -438,34 +480,28 @@ def fss(args, predictions):
         label_arr = []
         for m in masks:
             start = time.time()
-            mask_arr = []
-            for pred_times, pred_data in zip(
-                predictions[l]["time"], predictions[l]["data"]
-            ):
-                a = gtt.index(pred_times[0])
-                b = gtt.index(pred_times[-1])
-                gt_data = np.asarray(predictions["gt"]["data"][a : b + 1])
-
-                assert gt_data.shape == pred_data.shape
-
-                datas = []
-                for y_true, y_pred in zip(gt_data, pred_data):
-                    lf = make_FSS_loss(m, bins=bins)
-                    # fss is implemented as a loss functions, so it needs
-                    # batch dimension
-                    y_true = np.expand_dims(y_true, 0)
-                    y_pred = np.expand_dims(y_pred, 0)
-
-                    loss = 1 - lf(y_true, y_pred).numpy()
-                    datas.append(loss)
-                assert len(datas) == 13
-
-                mask_arr.append(datas)
+            lf = make_FSS_loss(m, bins=bins, fuzzy=True, reduce=False)
+            mask_arr = calc_fss(
+                lf,
+                predictions[l]["time"],
+                predictions[l]["data"],
+                gtt,
+                np.asarray(predictions["gt"]["data"]),
+            )
             label_arr.append(mask_arr)
             stop = time.time()
-            print("FSS for: {} mask size: {} in {:.1f}ms".format(l, m, stop - start))
+            print("FSS for: {} mask size: {} in {:.1f}s".format(l, m, stop - start))
 
         fsss.append(label_arr)
 
     fsss = np.asarray(fsss)
-    plot_fss(fsss, masks, labels, img_sizes=img_sizes, plot_dir=args.plot_dir)
+    fsss = np.moveaxis(fsss, -1, 1)
+
+    # shape: a, b, c, d, e
+    # a: model label
+    # b: bin
+    # c: mask
+    # d: forecast number
+    # e: leadtime
+
+    plot_fss(fsss, masks, labels, obs_frac, img_sizes, plot_dir=args.plot_dir)
