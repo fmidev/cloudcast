@@ -91,7 +91,7 @@ def with_dataset(m, args, opts):
     # number of samples
     n = len(lds)
     # train-val split ratio
-    r = 0.85
+    r = 0.80
     # training dataset
     train_ds = lds.get_dataset(take_ratio=r)
     # validation dataset
