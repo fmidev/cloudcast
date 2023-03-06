@@ -82,12 +82,17 @@ def get_loss_function(loss_function):
         values = loss_function.split("_")
         if len(values) == 1:
             return make_FSS_loss(5)
+        assert len(values) == 3
 
         mask = int(values[1])
-        bins = values[2].split(",")
-        bins = list(map(lambda x: float(x), bins))
-        fuzzy = eval(values[3])
-        return make_FSS_loss(mask, bins, fuzzy)
+        bins = list(map(lambda x: float(x), values[2].split(",")))
+
+        b = []
+        for i in range(len(bins) - 1):
+            b.append([bins[i], bins[i + 1]])
+
+        bins = tf.constant(b)
+        return make_FSS_loss(mask, bins, hard_discretization=False)
     elif loss_function.startswith("ks"):
         values = loss_function.split("_")
         if len(values) == 1:

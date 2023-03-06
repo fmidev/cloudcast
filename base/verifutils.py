@@ -480,7 +480,7 @@ def fss(args, predictions):
         label_arr = []
         for m in masks:
             start = time.time()
-            lf = make_FSS_loss(m, bins=bins, fuzzy=True, reduce=False)
+            lf = make_FSS_loss(m, bins=bins, hard_discretization=True)
             mask_arr = calc_fss(
                 lf,
                 predictions[l]["time"],
