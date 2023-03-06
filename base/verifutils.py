@@ -457,7 +457,6 @@ def fss(args, predictions):
     obs_frac_cat2 = observed_cat2 / (observed_cat0 + observed_cat1 + observed_cat2)
 
     obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2]
-    print(obs_frac)
 
     # bins = tf.constant(
     #    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
@@ -504,4 +503,4 @@ def fss(args, predictions):
     # d: forecast number
     # e: leadtime
 
-    plot_fss(fsss, masks, labels, obs_frac, img_sizes, plot_dir=args.plot_dir)
+    plot_fss(fsss, masks, labels, obs_frac, img_sizes, gtt, plot_dir=args.plot_dir)
