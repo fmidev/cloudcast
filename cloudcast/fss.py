@@ -144,11 +144,11 @@ def make_FSS_loss(
         )
         i = 0
 
-        for binval in bins:
+        for i in range(bins.shape[0]):
+            binval = bins[i]
             assert binval.shape[0] == 2
             lossv = my_FSS_loss(y_true, y_pred, binval, hard_discretization)
             loss = loss.write(i, lossv)
-            i += 1
 
         loss = loss.stack()
 
