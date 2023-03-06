@@ -447,11 +447,11 @@ def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False
         print("Wrote file {}/{}".format(save_path, filename))
 
 
-def plot_fss(data, masks, labels, obs_frac, img_sizes, plot_dir=None):
+def plot_fss(data, masks, labels, obs_frac, img_sizes, times, plot_dir=None):
     domain_x = 2370  # km
     domain_y = 2670
 
-    CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
+    CATEGORIES = ["clearsky", "partly-cloudy", "cloudy"]
 
     # shape: a, b, c, d, e
     # a: model label
@@ -489,8 +489,8 @@ def plot_fss(data, masks, labels, obs_frac, img_sizes, plot_dir=None):
                 plt.contourf(xx, yy, v, levels=levels)
                 plt.colorbar()
                 plt.title(
-                    "FSS for category '{}' (FSS_good={:.3f})\n'{}'".format(
-                        cat, fss_good, reduce_label(labels[i])
+                    "FSS for category '{}' (FSS_good={:.2f})\ntime {}..{} '{}'".format(
+                        cat, fss_good, times[0], times[-1], reduce_label(labels[i])
                     )
                 )
                 plt.xlabel("Leadtime (minutes)")
