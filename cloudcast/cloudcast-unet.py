@@ -130,8 +130,9 @@ def callbacks(args, opts):
         monitor="val_loss", patience=7, min_delta=0.001, verbose=1
     )
     reduce_lr_cb = keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5)
+    term_nan = keras.callbacks.TerminateOnNaN()
 
-    return [cp_cb, early_stopping_cb, reduce_lr_cb]
+    return [cp_cb, early_stopping_cb, reduce_lr_cb, term_nan]
 
 
 def save_model_info(args, opts, duration, hist, model_dir):
