@@ -175,12 +175,14 @@ def plot_mae2d(args, ae, times):
         title = "Mean Absolute Error 2D"
 
     for l in ae:
-        titlel = "{}\n{}".format(title, reduce_label(l))
+        label = reduce_label(l)
+        titlel = "{}\n{}".format(title, label)
         # calculate average 2d field
         img_size = ae[l][0].shape[1:3]
         mae = np.average(
             ae[l].reshape((-1, img_size[0], img_size[1], 1)), axis=0
         ).astype(np.float32)
+
         plot_on_map(np.squeeze(mae), title=titlel, plot_dir=args.plot_dir)
 
         if args is not None and args.result_dir is not None:
@@ -190,6 +192,25 @@ def plot_mae2d(args, ae, times):
                 ),
                 mae,
             )
+
+        # calculate mae 2d field per leadtime
+
+        mae = np.average(ae[l], axis=0).astype(np.float32)
+
+        for lt in range(mae.shape[0]):
+            plot_on_map(
+                np.squeeze(mae[lt]),
+                title="MAE leadtime={}m\n{}".format((1 + lt) * 15, label),
+                plot_dir=args.plot_dir,
+            )
+
+            if args is not None and args.result_dir is not None:
+                np.save(
+                    "{}/{}_{}_mae2d_{}.npy".format(
+                        args.result_dir, l, get_time_for_file(args), lt
+                    ),
+                    mae,
+                )
 
 
 def plot_mae_timeseries(args, ae, times):
@@ -266,9 +287,24 @@ def calculate_categorical_score(category, cm, score):
 
     idx = CATEGORIES.index(category)
     TP = cm[idx, idx]
-    FN = np.sum(cm[idx,]) - TP
+    FN = (
+        np.sum(
+            cm[
+                idx,
+            ]
+        )
+        - TP
+    )
     FP = np.sum(cm[:, idx]) - TP
-    TN = np.sum(cm) - np.sum(cm[idx,]) - np.sum(cm[:, idx])
+    TN = (
+        np.sum(cm)
+        - np.sum(
+            cm[
+                idx,
+            ]
+        )
+        - np.sum(cm[:, idx])
+    )
 
     return calc_score(TN, FP, FN, TP, score)
 
@@ -458,9 +494,6 @@ def fss(args, predictions):
 
     obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2]
 
-    # bins = tf.constant(
-    #    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.00], dtype=tf.float32
-    # )
     bins = tf.constant([[0, 0.15], [0.15, 0.85], [0.85, 1.01]], dtype=tf.float32)
 
     masks = [3, 5, 9, 13, 17, 27, 45, 60, 80]

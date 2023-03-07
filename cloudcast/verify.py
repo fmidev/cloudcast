@@ -107,7 +107,7 @@ def predict(args, opts):
         operating_mode="VERIFY",
         shuffle_data=False,
         reuse_y_as_x=True,
-        enable_cache=True,
+        enable_cache=False,
         enable_debug=True,
         **vars(args),
     )
