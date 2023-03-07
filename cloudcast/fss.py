@@ -35,36 +35,25 @@ def make_FSS_loss(
 
         # This example assumes that y_true, y_pred have the shape (None, N, N, 1).
 
-        # Round true value and prediction into nearest single decimal
-
-        if hard_discretization:
-            y_true_binary = tf.where(
-                tf.math.logical_and(y_true >= binval[0], y_true < binval[1]), 1.0, 0.0
-            )
-            y_pred_binary = tf.where(
-                tf.math.logical_and(y_pred >= binval[0], y_pred < binval[1]), 1.0, 0.0
-            )
-        else:
-            # Soft discretization
-
-            y_true_mask = tf.where(
-                tf.math.logical_and(y_true >= binval[0], y_true < binval[1]), 1.0, 0.0
-            )
-            y_true_binary = y_true * y_true_mask
-            y_true_binary = tf.clip_by_value(y_true_binary, 0, 1)
-
-            y_pred_mask = tf.where(
-                tf.math.logical_and(y_pred >= binval[0], y_pred < binval[1]), 1.0, 0.0
-            )
-            y_pred_binary = y_pred * y_pred_mask
-            y_pred_binary = tf.clip_by_value(y_pred_binary, 0, 1)
+        y_true_binary = tf.where(
+            tf.math.logical_and(y_true >= binval[0], y_true < binval[1]), 1.0, 0.0
+        )
+        y_pred_binary = tf.where(
+            tf.math.logical_and(y_pred >= binval[0], y_pred < binval[1]), 1.0, 0.0
+        )
 
         # If neither y_true nor y_pred have values in this bin, fss is undetermined
         if tf.reduce_sum(y_true_binary) == 0 and tf.reduce_sum(y_pred_binary) == 0:
-            return tf.constant(float("NaN"))
+            return tf.constant(float("NaN"), dtype=tf.float32)
 
         if hard_discretization is False:
-            c = 6  # make sigmoid function steep
+            y_true_binary = y_true * y_true_binary
+            y_true_binary = tf.clip_by_value(y_true_binary, 0, 1)
+
+            y_pred_binary = y_pred * y_pred_binary
+            y_pred_binary = tf.clip_by_value(y_pred_binary, 0, 1)
+
+            c = 6
             y_true_binary = tf.math.sigmoid(c * norm(y_true_binary))
             y_pred_binary = tf.math.sigmoid(c * norm(y_pred_binary))
 
@@ -76,11 +65,6 @@ def make_FSS_loss(
             pool_size=(mask_size, mask_size), strides=(1, 1), padding="valid"
         )
         y_true_density = pool1(y_true_binary)
-
-        # Need to know for normalization later how many pixels there are after pooling
-        n_density_pixels = tf.cast(
-            (tf.shape(y_true_density)[1] * tf.shape(y_true_density)[2]), tf.float32
-        )
 
         # To calculate densities: apply average pooling to y_pred.
         # Result is M(mask_size)(i,j) in Eq. (3) of [RL08].
@@ -94,6 +78,7 @@ def make_FSS_loss(
         # This calculates MSE(n) in Eq. (5) of [RL08].
         # Since we use MSE function, this automatically includes the factor 1/(Nx*Ny) in Eq. (5).
         MSE_n = tf.keras.losses.MeanSquaredError()(y_true_density, y_pred_density)
+        MSE_n = tf.cast(MSE_n, dtype=tf.float32)
 
         # To calculate MSE_n_ref in Eq. (7) of [RL08] efficiently:
         # multiply each image with itself to get square terms, then sum up those terms.
@@ -102,7 +87,9 @@ def make_FSS_loss(
         O_n_squared_image = tf.keras.layers.Multiply()([y_true_density, y_true_density])
 
         # Flatten result, to make it easier to sum over it.
-        O_n_squared_vector = tf.keras.layers.Flatten()(O_n_squared_image)
+        O_n_squared_vector = tf.keras.layers.Flatten(dtype=tf.float32)(
+            O_n_squared_image
+        )
 
         # Calculate sum over all terms.
         O_n_squared_sum = tf.reduce_sum(O_n_squared_vector)
@@ -112,10 +99,21 @@ def make_FSS_loss(
         M_n_squared_image = tf.keras.layers.Multiply()([y_pred_density, y_pred_density])
 
         # Flatten result, to make it easier to sum over it.
-        M_n_squared_vector = tf.keras.layers.Flatten()(M_n_squared_image)
-
+        M_n_squared_vector = tf.keras.layers.Flatten(dtype=tf.float32)(
+            M_n_squared_image
+        )
         # Calculate sum over all terms.
         M_n_squared_sum = tf.reduce_sum(M_n_squared_vector)
+
+        # Need to know for normalization later how many pixels there are after pooling
+        # Note: float32 data type here, as float16 range might not be enough
+        n_density_pixels = tf.cast(
+            (tf.shape(y_true_density)[1] * tf.shape(y_true_density)[2]), tf.float32
+        )
+
+        M_n_squared_sum = tf.cast(M_n_squared_sum, dtype=tf.float32)
+        O_n_squared_sum = tf.cast(O_n_squared_sum, dtype=tf.float32)
+
         MSE_n_ref = (O_n_squared_sum + M_n_squared_sum) / n_density_pixels
 
         # FSS score according to Eq. (6) of [RL08].
@@ -126,7 +124,10 @@ def make_FSS_loss(
         # Avoid division by zero if MSE_n_ref == 0
         # MSE_n_ref = 0 only if both input images contain only zeros.
         # In that case both images match exactly, i.e. we should return 0.
-        return MSE_n / (MSE_n_ref + tf.keras.backend.epsilon())
+
+        return tf.cast(
+            MSE_n / (MSE_n_ref + tf.keras.backend.epsilon()), dtype=tf.float32
+        )
 
     @tf.function
     def run_loss(y_true, y_pred, bins=bins, hard_discretization=hard_discretization):
@@ -142,13 +143,13 @@ def make_FSS_loss(
             clear_after_read=False,
             infer_shape=True,
         )
-        i = 0
 
         for i in range(bins.shape[0]):
             binval = bins[i]
             assert binval.shape[0] == 2
-            lossv = my_FSS_loss(y_true, y_pred, binval, hard_discretization)
-            loss = loss.write(i, lossv)
+            loss = loss.write(
+                i, my_FSS_loss(y_true, y_pred, binval, hard_discretization)
+            )
 
         loss = loss.stack()
 
@@ -156,9 +157,9 @@ def make_FSS_loss(
 
         if hard_discretization is False:
             loss = tf.boolean_mask(loss, tf.math.is_finite(loss))
-            return tf.reduce_mean(loss)
+            return tf.cast(tf.reduce_mean(loss), dtype=tf.float32)
 
-        return loss
+        return tf.cast(loss, dtype=tf.float32)
 
     my_FSS_loss.__name__ = "FSS_mask_size-{}".format(mask_size)
 
