@@ -38,7 +38,7 @@ def parse_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_date", action="store", type=str, required=False)
     parser.add_argument("--stop_date", action="store", type=str, required=False)
-    parser.add_argument("--single_time", action="store", type=str, required=False)
+    parser.add_argument("--dataseries_file", action="store", type=str, required=False)
     parser.add_argument("--label", action="store", nargs="+", type=str, required=True)
     parser.add_argument("--prediction_len", action="store", type=int, default=12)
     parser.add_argument("--include_additional", action="store", nargs="+", default=[])
@@ -61,16 +61,13 @@ def parse_command_line():
 
     if (
         args.start_date is None and args.stop_date is None
-    ) and args.single_time is None:
-        print("One of: (start_date, stop_date), (single_time) must be given")
+    ) and args.dataseries_file is None:
+        print("One of: (start_date, stop_date), (dataseries_file) must be given")
         sys.exit(1)
 
     if args.start_date is not None and args.stop_date is not None:
         args.start_date = parse_time(args.start_date)
         args.stop_date = parse_time(args.stop_date)
-    else:
-        args.start_date = parse_time(args.single_time)
-        args.stop_date = args.start_date
 
     return args
 
@@ -110,7 +107,7 @@ def predict(args, opts):
         operating_mode="VERIFY",
         shuffle_data=False,
         reuse_y_as_x=True,
-        enable_cache=True,
+        enable_cache=False,
         enable_debug=True,
         **vars(args),
     )
@@ -325,10 +322,8 @@ if __name__ == "__main__":
         assert opts_list[-1].onehot_encoding is False
 
     predictions = predict_many(args, opts_list)
-    if args.start_date != args.stop_date and len(labels) > 1:
+    if len(labels) > 1:
         predictions = intersection(opts_list, predictions)
-
-    #    predictions, errors = filter_top_n(predictions, errors, args.top, keep=['persistence'] + args.include_additional)
 
     plot_timeseries(args, predictions)
     produce_scores(args, predictions)
