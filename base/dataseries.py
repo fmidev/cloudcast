@@ -10,6 +10,7 @@ from base.preprocess import (
     create_terrain_type_data,
     create_squeezed_leadtime_conditioning,
     create_datetime,
+    create_sun_elevation_angle,
     create_sun_elevation_angle_data,
     get_img_size,
 )
@@ -239,6 +240,7 @@ class LazyDataSeries:
         self.shuffle_data = kwargs.get("shuffle_data", True)
         self.debug = kwargs.get("enable_debug", False)
         self.filenames = kwargs.get("filenames", None)
+        self.analysis_time = kwargs.get("analysis_time", None)
         operating_mode = kwargs.get("operating_mode", "TRAIN")
 
         self.cache = kwargs.get("enable_cache", False)
@@ -309,9 +311,17 @@ class LazyDataSeries:
             )
 
         if self.include_sun_elevation_angle:
-            self.sun_elevation_angle_data = create_sun_elevation_angle_data(
-                self.img_size
-            )
+            if self.operating_mode == OpMode.INFER:
+                self.sun_elevation_angle_data = {}
+                for i in range(self.leadtime_conditioning):
+                    ts = self.analysis_time + timedelta(minutes=(1 + i) * 15)
+                    self.sun_elevation_angle_data[
+                        ts.strftime("%Y%m%dT%H%M%S")
+                    ] = create_sun_elevation_angle(ts, (128, 128))
+            else:
+                self.sun_elevation_angle_data = create_sun_elevation_angle_data(
+                    self.img_size,
+                )
 
         # create placeholder data
 
