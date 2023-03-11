@@ -9,6 +9,7 @@ from base.opts import CloudCastOptions
 from base.dataseries import LazyDataSeries
 import math
 import argparse
+import json
 
 EPOCHS = 500
 
@@ -33,6 +34,7 @@ def parse_command_line():
     parser.add_argument(
         "--include_sun_elevation_angle", action="store_true", default=False
     )
+    parser.add_argument("--model", action="store", default="unet")
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--start_date", action="store", type=str)
@@ -41,11 +43,15 @@ def parse_command_line():
 
     args = parser.parse_args()
 
+    allowed_models = ("unet", "unet_att")
+    if args.model not in allowed_models:
+        print("Allowed options for --model are: {}".format(allowed_models))
+        sys.exit(1)
+
     if args.label is not None:
         opts = CloudCastOptions(label=args.label)
     else:
         vars_ = vars(args)
-        vars_["model"] = "unet"
         opts = CloudCastOptions(**vars_)
 
     if (
@@ -186,12 +192,21 @@ def run_model(args, opts):
     if opts.include_sun_elevation_angle:
         n_channels += 1
 
-    m = unet(
-        pretrained_weights,
-        input_size=img_size + (n_channels,),
-        loss_function=args.loss_function,
-        optimizer="adam",
-    )
+    if args.mpdel == "unet":
+        m = unet(
+            pretrained_weights,
+            input_size=img_size + (n_channels,),
+            loss_function=args.loss_function,
+            optimizer="adam",
+        )
+
+    else:
+        m = attention_unet(
+            pretrained_weights,
+            input_size=img_size + (n_channels,),
+            loss_function=args.loss_function,
+            optimizer="adam",
+        )
 
     start = datetime.datetime.now()
 

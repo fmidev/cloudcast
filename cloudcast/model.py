@@ -20,6 +20,8 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Conv3D,
     Activation,
+    Add,
+    Multiply,
 )
 from tensorflow.keras.models import Model
 
@@ -194,57 +196,91 @@ def unet(
     return model
 
 
-def convlstm(
+def attention_unet(
     pretrained_weights=None,
-    input_size=(256, 256, 1),
+    input_size=(512, 512, 4),
     loss_function="binary_crossentropy",
+    optimizer="adam",
 ):
-    inp = Input(shape=(None, *input_size))
+    inputs = Input(input_size)
 
-    # We will construct 3 `ConvLSTM2D` layers with batch normalization,
-    # followed by a `Conv3D` layer for the spatiotemporal outputs.
-    x = ConvLSTM2D(
-        filters=64,
-        kernel_size=(5, 5),
-        padding="same",
-        return_sequences=True,
-        activation="relu",
-    )(inp)
-    x = BatchNormalization()(x)
-    x = ConvLSTM2D(
-        filters=64,
-        kernel_size=(3, 3),
-        padding="same",
-        return_sequences=True,
-        activation="relu",
-    )(x)
-    x = BatchNormalization()(x)
-    x = ConvLSTM2D(
-        filters=64,
-        kernel_size=(1, 1),
-        padding="same",
-        return_sequences=True,
-        activation="relu",
-    )(x)
-    x = Conv3D(filters=1, kernel_size=(3, 3, 3), activation="sigmoid", padding="same")(
-        x
-    )
+    def conv_block(inp, num_filters):
+        x = Conv2D(num_filters, 3, padding="same")(inp)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
 
-    model = Model(inp, x)
+        x = Conv2D(num_filters, 3, padding="same")(x)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
 
-    metrics = [
-        "RootMeanSquaredError",
-        "MeanAbsoluteError",
-        "accuracy",
-        "AUC",
-        make_SSIM_loss(21),
-        make_SSIM_loss(11),
-    ]
+        return x
 
+    def encoder_block(inp, num_filters):
+        x = conv_block(inp, num_filters)
+        p = MaxPooling2D((2, 2))(x)
+
+        return x, p
+
+    def decoder_block(inp, skip_connections, num_filters):
+        x = Conv2DTranspose(num_filters, (2, 2), strides=2, padding="same")(inp)
+        # x = conv_block(x, num_filters)
+        x = Conv2D(num_filters, kernel_size=3, strides=1, padding="same")(x)
+        x = BatchNormalization()(x)
+
+        return x
+
+    def attention_block(inp_g, inp_x, num_filters):
+        g = Conv2D(num_filters, kernel_size=1, strides=1, padding="valid")(inp_g)
+        g = BatchNormalization()(g)
+        x = Conv2D(num_filters, kernel_size=1, strides=1, padding="valid")(inp_x)
+        x = BatchNormalization()(x)
+
+        psi = Add()([g, x])
+        psi = Activation("relu")(psi)
+
+        psi = Conv2D(1, kernel_size=1, strides=1, padding="valid")(psi)
+        psi = BatchNormalization()(psi)
+        psi = Activation("sigmoid")(psi)
+
+        return Multiply()([inp_x, psi])
+
+    s1, p1 = encoder_block(inputs, 64)
+    s2, p2 = encoder_block(p1, 128)
+    s3, p3 = encoder_block(p2, 256)
+    s4, p4 = encoder_block(p3, 512)
+
+    b1 = conv_block(p4, 1024)
+
+    d1 = decoder_block(b1, s4, 512)
+    a1 = attention_block(d1, s4, 512)
+    d1 = Concatenate()([d1, a1])
+    d1 = conv_block(d1, 512)
+
+    d2 = decoder_block(d1, s3, 256)
+    a2 = attention_block(d2, s3, 256)
+    d2 = Concatenate()([d2, a2])
+    d2 = conv_block(d2, 256)
+
+    d3 = decoder_block(d2, s2, 128)
+    a3 = attention_block(d3, s2, 128)
+    d3 = Concatenate()([d3, a3])
+    d3 = conv_block(d3, 128)
+
+    d4 = decoder_block(d3, s1, 64)
+    a4 = attention_block(d4, s1, 64)
+    d4 = Concatenate()([d4, a4])
+    d4 = conv_block(d4, 64)
+
+    # Force datatype of output layer to float32; float16 is not numerically
+    # stable enough in this layer
+
+    outputs = Conv2D(1, 1, padding="same", activation="sigmoid", dtype="float32")(d4)
+
+    model = Model(inputs, outputs)
     model.compile(
+        optimizer=optimizer,
         loss=get_loss_function(loss_function),
-        optimizer=keras.optimizers.Adam(),
-        metrics=metrics,
+        metrics=get_metrics(),
     )
 
     if pretrained_weights is not None:
