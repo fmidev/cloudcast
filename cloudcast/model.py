@@ -287,3 +287,73 @@ def attention_unet(
         model.load_weights(pretrained_weights)
 
     return model
+
+
+def resnet_unet(
+    pretrained_weights=None,
+    input_size=(512, 512, 4),
+    loss_function="binary_crossentropy",
+    optimizer="adam",
+):
+    inputs = Input(input_size)
+
+    def res_block_initial(inp, num_filters):
+        x = Conv2D(num_filters, 3, padding="same")(inp)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
+        x = Conv2D(num_filters, 3, padding="same")(x)
+
+        y = Conv2D(num_filters, 1, padding="same")(inp)
+        y = BatchNormalization()(y)
+
+        x = Add()([x, y])
+
+        return x
+
+    def res_block(inp, num_filters, strides):
+        x = BatchNormalization()(inp)
+        x = Activation("relu")(x)
+        x = Conv2D(num_filters, 3, strides=strides[0], padding="same")(x)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
+        x = Conv2D(num_filters, 3, strides=strides[1], padding="same")(x)
+
+        y = Conv2D(num_filters, 1, strides=strides[0], padding="same")(inp)
+        y = BatchNormalization()(y)
+
+        x = Add()([x, y])
+
+        return x
+
+    def decoder_block(inp, skip_connection, num_filters, strides):
+        x = UpSampling2D(size=(2, 2))(inp)
+        x = Concatenate(axis=-1)([x, skip_connection])
+        x = res_block(x, num_filters, strides)
+
+        return x
+
+    s1 = res_block_initial(inputs, 64)
+    s2 = res_block(s1, 128, (2, 1))
+    s3 = res_block(s2, 256, (2, 1))
+    s4 = res_block(s3, 512, (2, 1))
+
+    b = res_block(s4, 1024, (2, 1))
+
+    d1 = decoder_block(b, s4, 512, (1, 1))
+    d2 = decoder_block(d1, s3, 256, (1, 1))
+    d3 = decoder_block(d2, s2, 128, (1, 1))
+    d4 = decoder_block(d3, s1, 64, (1, 1))
+
+    outputs = Conv2D(1, 1, padding="same", activation="sigmoid", dtype="float32")(d4)
+
+    model = Model(inputs, outputs)
+    model.compile(
+        optimizer=optimizer,
+        loss=get_loss_function(loss_function),
+        metrics=get_metrics(),
+    )
+
+    if pretrained_weights is not None:
+        model.load_weights(pretrained_weights)
+
+    return model

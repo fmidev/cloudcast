@@ -43,7 +43,7 @@ def parse_command_line():
 
     args = parser.parse_args()
 
-    allowed_models = ("unet", "unet_att")
+    allowed_models = ("unet", "unet_att", "unet_resnet")
     if args.model not in allowed_models:
         print("Allowed options for --model are: {}".format(allowed_models))
         sys.exit(1)
@@ -149,8 +149,8 @@ def save_model_info(args, opts, duration, hist, model_dir):
         "w",
     ) as fp:
         data = {
-            "args": args,
-            "opts": opts,
+            "args": vars(args),
+            "opts": opts.__dict__,
             "duration": duration,
             "finished": datetime.datetime.now(),
             "hostname": os.environ["HOSTNAME"],
@@ -192,7 +192,7 @@ def run_model(args, opts):
     if opts.include_sun_elevation_angle:
         n_channels += 1
 
-    if args.mpdel == "unet":
+    if args.model == "unet":
         m = unet(
             pretrained_weights,
             input_size=img_size + (n_channels,),
@@ -200,8 +200,16 @@ def run_model(args, opts):
             optimizer="adam",
         )
 
-    else:
+    elif args.model == "unet_att":
         m = attention_unet(
+            pretrained_weights,
+            input_size=img_size + (n_channels,),
+            loss_function=args.loss_function,
+            optimizer="adam",
+        )
+
+    else:
+        m = resnet_unet(
             pretrained_weights,
             input_size=img_size + (n_channels,),
             loss_function=args.loss_function,
