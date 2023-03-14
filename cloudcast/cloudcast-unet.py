@@ -142,26 +142,23 @@ def callbacks(args, opts):
 
 
 def save_model_info(args, opts, duration, hist, model_dir):
+    now = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     with open(
-        "{}/info-{}.json".format(
-            model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        ),
+        "{}/info-{}.json".format(model_dir, now),
         "w",
     ) as fp:
         data = {
             "args": vars(args),
             "opts": opts.__dict__,
             "duration": duration,
-            "finished": datetime.datetime.now(),
+            "finished": now,
             "hostname": os.environ["HOSTNAME"],
         }
 
         json.dump(data, fp)
 
     with open(
-        "{}/hist-{}.txt".format(
-            model_dir, datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        ),
+        "{}/hist-{}.txt".format(model_dir, now),
         "w",
     ) as fp:
         json.dump(hist, fp)

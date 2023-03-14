@@ -107,7 +107,7 @@ def predict(args, opts):
         operating_mode="VERIFY",
         shuffle_data=False,
         reuse_y_as_x=True,
-        enable_cache=False,
+        enable_cache=True,
         enable_debug=True,
         **vars(args),
     )
@@ -204,7 +204,6 @@ def sort_errors(errors, best_first=True):
 
 
 def filter_top_n(predictions, errors, n, keep=[]):
-
     if n == -1 or len(predictions) < n:
         return predictions, errors
 
@@ -237,7 +236,6 @@ def filter_top_n(predictions, errors, n, keep=[]):
 
 
 def plot_timeseries(args, predictions):
-
     while True:
         first = list(predictions.keys())[np.random.randint(len(predictions))]
         if first != "gt":
