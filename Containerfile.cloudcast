@@ -5,11 +5,11 @@ RUN rpm -ivh https://download.fmi.fi/smartmet-open/rhel/8/x86_64/smartmet-open-r
     dnf -y install dnf-plugins-core && \
     dnf config-manager --set-enabled powertools && \
     dnf -y module disable postgresql && \
-    dnf -y install python39 python39-devel eccodes libglvnd-glx gdal34 gdal34-devel gcc-c++ && \
+    dnf -y install python39 python39-devel eccodes libglvnd-glx gdal34 gdal34-devel gcc-c++ git && \
     dnf -y clean all
 
-COPY cloudcast /opt/app-root/src/cloudcast/cloudcast
-COPY base /opt/app-root/src/cloudcast/base
+WORKDIR /opt/app-root/src/
+RUN git clone https://github.com/fmidev/cloudcast.git
 WORKDIR /opt/app-root/src/cloudcast/cloudcast
 
 ENV PYTHONPATH /opt/app-root/src/cloudcast:${PYTHONPATH}
