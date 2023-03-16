@@ -112,10 +112,8 @@ def read_grib(file_path, message_no=0, **kwargs):
     return arr
 
 
-def save_grib(data, filepath, analysistime, forecasttime):
+def save_grib(data, filepath, analysistime, forecasttime, grib_options=None):
     assert filepath[-5:] == "grib2"
-
-    number = 164 if filepath.find("unet") != -1 else 192
 
     h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
     ecc.codes_set(h, "gridType", "lambert")
@@ -136,9 +134,9 @@ def save_grib(data, filepath, analysistime, forecasttime):
     ecc.codes_set(h, "dataTime", int(analysistime.strftime("%H%M")))
     ecc.codes_set(h, "centre", 86)
     ecc.codes_set(h, "generatingProcessIdentifier", 251)
-    ecc.codes_set(h, "discipline", 192)
-    ecc.codes_set(h, "parameterCategory", 128)
-    ecc.codes_set(h, "parameterNumber", number)
+    ecc.codes_set(h, "discipline", 0)
+    ecc.codes_set(h, "parameterCategory", 6)
+    ecc.codes_set(h, "parameterNumber", 192)
     ecc.codes_set(h, "typeOfFirstFixedSurface", 103)
     ecc.codes_set(h, "packingType", "grid_ccsds")
     ecc.codes_set(h, "indicatorOfUnitOfTimeRange", 0)
@@ -147,6 +145,20 @@ def save_grib(data, filepath, analysistime, forecasttime):
     )
     ecc.codes_set(h, "typeOfGeneratingProcess", 2)  # deterministic forecast
     ecc.codes_set(h, "typeOfProcessedData", 2)  # analysis and forecast products
+
+    if grib_options is not None:
+        for gopt in grib_options.split(","):
+            k, v = gopt.split("=")
+            typ = "d"
+            elem = k.split(":")
+            if len(elem) == 2:
+                typ = elem[1]
+            if typ == "d":
+                v = int(v)
+            elif typ == "f":
+                v = float(v)
+
+            ecc.codes_set(h, k, v)
 
     data = np.flipud(data)
     ecc.codes_set_values(h, data.flatten())
@@ -171,7 +183,6 @@ def save_grib(data, filepath, analysistime, forecasttime):
 
 
 def read_gribs(filenames, **kwargs):
-
     files_ds = []
 
     for f in filenames:

@@ -10,6 +10,7 @@ from base.postprocess import *
 from base.opts import CloudCastOptions
 from base.dataseries import LazyDataSeries
 
+
 def parse_command_line():
     def valid_time(x):
         try:
@@ -37,6 +38,7 @@ def parse_command_line():
         default=None,
         help="downsampled size hxw",
     )
+    parser.add_argument("--grib_options", action="store")
 
     args = parser.parse_args()
     args.onehot_encoding = False
@@ -78,7 +80,7 @@ def predict(args):
         x = t[0]
         y = t[1]
 
-        assert(np.min(x[...,0]) >= 0.00 and np.max(x[...,0]) <= 1.001)
+        assert np.min(x[..., 0]) >= 0.00 and np.max(x[..., 0]) <= 1.001
 
         xy_times = np.squeeze(t[2])
         print(
@@ -131,7 +133,7 @@ def save_gribs(args, times, data):
             args.directory, analysistime.strftime("%Y%m%d%H%M%S"), leadtime
         )
 
-        save_grib(d, filename, analysistime, t)
+        save_grib(d, filename, analysistime, t, grib_options=args.grib_options)
 
 
 if __name__ == "__main__":
