@@ -144,7 +144,7 @@ def save_model_info(args, opts, duration, hist, model_dir):
         data = {
             "args": args,
             "opts": opts,
-            "duration": duration,
+            "duration": str(duration),
             "finished": now,
             "hostname": os.environ["HOSTNAME"],
         }
