@@ -9,6 +9,7 @@ from base.opts import CloudCastOptions
 from base.dataseries import LazyDataSeries
 import math
 import argparse
+import json
 
 EPOCHS = 500
 
@@ -142,20 +143,27 @@ def save_model_info(args, opts, duration, hist, model_dir):
         "w",
     ) as fp:
         data = {
-            "args": args,
-            "opts": opts,
+            "args": vars(args),
+            "opts": opts.__dict__,
             "duration": str(duration),
             "finished": now,
             "hostname": os.environ["HOSTNAME"],
         }
+        json.dump(data, fp, default=str)
 
-        json.dump(data, fp)
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, np.float32):
+                return str(obj)
+            return json.JSONEncoder.default(self, obj)
 
     with open(
-        "{}/hist-{}.txt".format(model_dir, now),
+        "{}/hist-{}.json".format(model_dir, now),
         "w",
     ) as fp:
-        json.dump(hist, fp)
+        json.dump(hist, fp, cls=NumpyEncoder)
 
 
 def run_model(args, opts):
