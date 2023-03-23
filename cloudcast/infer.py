@@ -39,6 +39,7 @@ def parse_command_line():
         help="downsampled size hxw",
     )
     parser.add_argument("--grib_options", action="store")
+    parser.add_argument("--merge_gribs", action="store_true", default=False)
 
     args = parser.parse_args()
     args.onehot_encoding = False
@@ -127,13 +128,20 @@ def save_gribs(args, times, data):
 
     analysistime = times[0]
 
+    if args.merge_gribs:
+        filename = "{}/{}.grib2".format(
+            args.directory, analysistime.strftime("%Y%m%d%H%M%S")
+        )
+        save_grib(data, filename, analysistime, times, grib_options=args.grib_options)
+        return
+
     for d, t in zip(data, times):
         leadtime = int((t - analysistime).total_seconds() / 60)
         filename = "{}/{}+{:03d}m.grib2".format(
             args.directory, analysistime.strftime("%Y%m%d%H%M%S"), leadtime
         )
 
-        save_grib(d, filename, analysistime, t, grib_options=args.grib_options)
+        save_grib([d], filename, analysistime, [t], grib_options=args.grib_options)
 
 
 if __name__ == "__main__":
