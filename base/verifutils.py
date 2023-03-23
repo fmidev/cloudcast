@@ -197,7 +197,7 @@ def plot_mae2d(args, ae, times):
 
         mae = np.average(ae[l], axis=0).astype(np.float32)
 
-        for lt in range(mae.shape[0]):
+        for lt in (3, 7, 11): #range(mae.shape[0]):
             plot_on_map(
                 np.squeeze(mae[lt]),
                 title="MAE leadtime={}m\n{}".format((1 + lt) * 15, label),
