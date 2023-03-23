@@ -84,6 +84,9 @@ def latlonraster(img_size):
     elif img_size == (512, 512):
         x = np.linspace(-1065644.490, 1306855.478, 512)
         y = np.linspace(9683729.573, 7011229.349, 512)
+    elif img_size == (768, 768):
+        x = np.linspace(-1065644.490, 1306855.478, 768)
+        y = np.linspace(9683729.573, 7011229.349, 768)
     else:
         raise Exception("Unsupported img_size for 2d plotting: {}".format(img_size))
 
