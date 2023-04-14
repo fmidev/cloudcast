@@ -30,7 +30,13 @@ def parse_command_line():
     )
     parser.add_argument("--label", action="store", type=str, required=True)
     parser.add_argument("--directory", action="store", default="/tmp")
-    parser.add_argument("--prediction_len", action="store", type=int, default=12)
+    parser.add_argument(
+        "--prediction_len",
+        action="store",
+        help="Set forecast length as a number of time steps",
+        type=int,
+        default=None,
+    )
     parser.add_argument(
         "--output_size",
         action="store",
@@ -38,8 +44,17 @@ def parse_command_line():
         default=None,
         help="downsampled size hxw",
     )
-    parser.add_argument("--grib_options", action="store")
-    parser.add_argument("--merge_gribs", action="store_true", default=False)
+    parser.add_argument(
+        "--grib_options",
+        action="store",
+        help="Options to pass directly to grib writing routine",
+    )
+    parser.add_argument(
+        "--merge_gribs",
+        action="store_true",
+        help="Merge single grib messages into one file",
+        default=False,
+    )
 
     args = parser.parse_args()
     args.onehot_encoding = False
@@ -62,6 +77,9 @@ def predict(args):
             filenames,
         )
     )
+
+    if args.prediction_len is not None:
+        opts.leadtime_conditioning = args.prediction_len
 
     lds = LazyDataSeries(
         opts=opts,
