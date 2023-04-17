@@ -197,7 +197,7 @@ def plot_mae2d(args, ae, times):
 
         mae = np.average(ae[l], axis=0).astype(np.float32)
 
-        for lt in (3, 7, 11): #range(mae.shape[0]):
+        for lt in (3, 7, 11):  # range(mae.shape[0]):
             plot_on_map(
                 np.squeeze(mae[lt]),
                 title="MAE leadtime={}m\n{}".format((1 + lt) * 15, label),
@@ -216,7 +216,7 @@ def plot_mae2d(args, ae, times):
 def plot_mae_timeseries(args, ae, times):
     print("Plotting mae timeseries")
 
-    # if less than 12 forecasts are found for a given time,
+    # if less than leadtime_conditioning forecasts are found for a given time,
     # do not include that to data (because the results are skewed)
     trim_short_times = True
 
@@ -242,7 +242,7 @@ def plot_mae_timeseries(args, ae, times):
         x = []
         y = []
         for t in maets.keys():
-            if trim_short_times and len(maets[t]) < 12:
+            if trim_short_times and len(maets[t]) < args.prediction_len:
                 continue
             counts.append(len(maets[t]))
             y.append(np.average(maets[t]).astype(np.float32))
@@ -287,24 +287,9 @@ def calculate_categorical_score(category, cm, score):
 
     idx = CATEGORIES.index(category)
     TP = cm[idx, idx]
-    FN = (
-        np.sum(
-            cm[
-                idx,
-            ]
-        )
-        - TP
-    )
+    FN = np.sum(cm[idx,]) - TP
     FP = np.sum(cm[:, idx]) - TP
-    TN = (
-        np.sum(cm)
-        - np.sum(
-            cm[
-                idx,
-            ]
-        )
-        - np.sum(cm[:, idx])
-    )
+    TN = np.sum(cm) - np.sum(cm[idx,]) - np.sum(cm[:, idx])
 
     return calc_score(TN, FP, FN, TP, score)
 
@@ -474,12 +459,10 @@ def fss(args, predictions):
                 loss = 1 - lf(y_true, y_pred).numpy()
                 datas.append(loss)
 
-            assert len(datas) == 13
+            assert len(datas) == args.prediction_len + 1
 
             arr.append(datas)
         return arr
-
-    print("Producing FSS")
 
     gtt = predictions["gt"]["time"]
 
@@ -502,6 +485,8 @@ def fss(args, predictions):
 
     fsss = []
     img_sizes = []
+
+    print("Producing FSS for mask sizes: {}".format(masks))
 
     for l in predictions:
         if l == "gt":

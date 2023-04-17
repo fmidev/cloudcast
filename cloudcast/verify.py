@@ -110,6 +110,7 @@ def predict(args, opts):
         enable_cache=True,
         enable_debug=True,
         **vars(args),
+        leadtime_conditioning=args.prediction_len,
     )
 
     d = lds.get_dataset()
@@ -128,17 +129,13 @@ def predict(args, opts):
     forecast = []
     times = []
 
-    assert opts.leadtime_conditioning == 12
-
     for t in tfds.as_numpy(d):
         x = t[0]
         y = t[1]
         xy_times = np.squeeze(t[2])
         xy_times = list(map(lambda x: x.decode("utf8"), xy_times))
 
-        print("Using {} to predict {}".format(xy_times[:-1], xy_times[-1]))
-
-        if len(forecast) > 0 and len(forecast) % 13 == 0:
+        if len(forecast) > 0 and len(forecast) % (1 + args.prediction_len) == 0:
             predictions[opts.get_label()]["time"].append(times.copy())
             predictions[opts.get_label()]["data"].append(np.array(forecast))
 
@@ -157,6 +154,12 @@ def predict(args, opts):
                 predictions["gt"]["time"].append(t0)
                 predictions["gt"]["data"].append(x0)
 
+        print(
+            "Using {} to predict {} [{}/{}]".format(
+                xy_times[:-1], xy_times[-1], len(forecast), args.prediction_len
+            )
+        )
+
         prediction = m.predict(x, verbose=0)
         prediction = np.squeeze(prediction, axis=0)
         prediction_time = datetime.datetime.strptime(xy_times[-1], "%Y%m%dT%H%M%S")
@@ -167,7 +170,7 @@ def predict(args, opts):
             predictions["gt"]["time"].append(prediction_time)
             predictions["gt"]["data"].append(np.squeeze(y, axis=0))
 
-    if len(forecast) == 13:
+    if len(forecast) == args.prediction_len + 1:
         predictions[opts.get_label()]["time"].append(times.copy())
         predictions[opts.get_label()]["data"].append(np.array(forecast))
 
@@ -236,6 +239,8 @@ def filter_top_n(predictions, errors, n, keep=[]):
 
 
 def plot_timeseries(args, predictions):
+    print(list(predictions.keys()))
+
     while True:
         first = list(predictions.keys())[np.random.randint(len(predictions))]
         if first != "gt":

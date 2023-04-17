@@ -213,7 +213,9 @@ class LazyDataSeries:
         try:
             opts = kwargs["opts"]
             self.n_channels = opts.n_channels
-            self.leadtime_conditioning = opts.leadtime_conditioning
+            self.leadtime_conditioning = int(
+                kwargs.get("leadtime_conditioning", opts.leadtime_conditioning)
+            )
             self.img_size = get_img_size(opts.preprocess)
             self.include_datetime = opts.include_datetime
             self.include_topography = opts.include_topography

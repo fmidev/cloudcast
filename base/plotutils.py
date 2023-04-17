@@ -469,8 +469,7 @@ def plot_fss(data, masks, labels, obs_frac, img_sizes, times, plot_dir=None):
 
             plt.figure(figure(), figsize=(8, 8))
             dx = int(np.ceil(domain_x / float(img_sizes[i][0])))
-
-            x = np.arange(13)
+            x = np.arange(data.shape[-1])
             y = np.arange(len(masks))
 
             xx, yy = np.meshgrid(x, y)
