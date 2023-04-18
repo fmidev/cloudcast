@@ -497,8 +497,8 @@ def plot_fss(data, masks, labels, obs_frac, img_sizes, times, plot_dir=None):
                 )
                 plt.xlabel("Leadtime (minutes)")
                 plt.ylabel("Mask size (km)")
-                plt.xticks(x, list(map(lambda x: "{}m".format(x * 15), x)))
-                plt.yticks(y, list(map(lambda x: "{}km".format(int(x * dx)), masks)))
+                plt.xticks(x, list(map(lambda x: "{}".format(x * 15), x)))
+                plt.yticks(y, list(map(lambda x: "{}".format(int(x * dx)), masks)))
 
                 CS = plt.contour(xx, yy, v, [fss_good])
                 plt.clabel(CS, inline=True, fontsize=10)
