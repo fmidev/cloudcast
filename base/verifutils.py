@@ -44,12 +44,12 @@ def histogram(args, predictions):
                 np.histogram(np.asarray(datas[-1]), bins=50),
             )
 
-    datas = np.asarray(datas)
+    datas = np.asarray(datas, dtype=object)
     plot_histogram(datas, labels, plot_dir=args.plot_dir)
 
 
 def mae(args, predictions):
-    ae, times = ae2d(predictions)
+    ae, times = ae2d(args, predictions)
     plot_mae_per_leadtime(args, ae)
 
     ae, times = remove_initial_ae(ae, times)
@@ -75,10 +75,11 @@ def remove_initial_ae(ae, times):
 
 
 # absolute error 2d
-def ae2d(predictions):
+def ae2d(args, predictions):
     print("Producing error fields")
     ret = {}
-    gtt = predictions["gt"]["time"]
+    gtt = np.asarray(predictions["gt"]["time"])
+    gtd = np.asarray(predictions["gt"]["data"])
     times = []
     first = True
 
@@ -91,9 +92,13 @@ def ae2d(predictions):
         for pred_times, pred_data in zip(
             predictions[l]["time"], predictions[l]["data"]
         ):
-            a = gtt.index(pred_times[0])
-            b = gtt.index(pred_times[-1])
-            gt_data = np.asarray(predictions["gt"]["data"][a : b + 1])
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
 
             assert gt_data.shape == pred_data.shape
 
@@ -112,9 +117,14 @@ def ae2d(predictions):
     # create persistence
     ret["persistence"] = []
     for i, pred_times in enumerate(times):
-        a = gtt.index(pred_times[0])
-        b = gtt.index(pred_times[-1])
-        gt_data = np.asarray(predictions["gt"]["data"][a : b + 1])
+        if args.full_hours_only is False:
+            a = np.where(gtt == pred_times[0])[0][0]
+            b = np.where(gtt == pred_times[-1])[0][0]
+            gt_data = gtd[a : b + 1]
+        else:
+            idx = np.where(np.isin(gtt, pred_times))
+            gt_data = gtd[idx]
+
         initial = np.expand_dims(gt_data[0], axis=0)
         initial = np.repeat(initial, len(pred_times), axis=0)
 
@@ -157,6 +167,7 @@ def plot_mae_per_leadtime(args, ae):
         ylabel="mae",
         plot_dir=args.plot_dir,
         start_from_zero=True,
+        full_hours_only=args.full_hours_only,
     )
 
 
@@ -194,10 +205,14 @@ def plot_mae2d(args, ae, times):
             )
 
         # calculate mae 2d field per leadtime
-
+        continue
         mae = np.average(ae[l], axis=0).astype(np.float32)
 
-        for lt in (3, 7, 11):  # range(mae.shape[0]):
+        plotted_leadtimes = (3, 7, 11)  # should not be hard coded
+        if args.full_hours_only:
+            plotted_leadtimes = range(mae.shape[0])
+
+        for lt in plotted_leadtimes:  # range(mae.shape[0]):
             plot_on_map(
                 np.squeeze(mae[lt]),
                 title="MAE leadtime={}m\n{}".format((1 + lt) * 15, label),
@@ -219,6 +234,11 @@ def plot_mae_timeseries(args, ae, times):
     # if less than leadtime_conditioning forecasts are found for a given time,
     # do not include that to data (because the results are skewed)
     trim_short_times = True
+
+    num_expected_forecasts = args.prediction_len
+
+    if args.full_hours_only:
+        num_expected_forecasts = int(args.prediction_len / 4)
 
     def process_data(ae, times):
         maets = {}
@@ -242,7 +262,7 @@ def plot_mae_timeseries(args, ae, times):
         x = []
         y = []
         for t in maets.keys():
-            if trim_short_times and len(maets[t]) < args.prediction_len:
+            if trim_short_times and len(maets[t]) < num_expected_forecasts:
                 continue
             counts.append(len(maets[t]))
             y.append(np.average(maets[t]).astype(np.float32))
@@ -376,6 +396,11 @@ def categorical_scores(args, predictions):
 def ssim(args, predictions):
     print("Plotting SSIM")
 
+    num_expected_forecasts = args.prediction_len
+
+    if args.full_hours_only:
+        num_expected_forecasts = int(args.prediction_len / 4)
+
     ssims = []
     for l in predictions.keys():
         ssims.append([])
@@ -383,7 +408,7 @@ def ssim(args, predictions):
         if l == "gt":
             gtd = predictions["gt"]["data"]
             start = 0
-            stop = args.prediction_len
+            stop = num_expected_forecasts
             while stop < len(gtd):
                 gtdata = gtd[start : stop + 1]
                 i = 0
@@ -397,8 +422,8 @@ def ssim(args, predictions):
                         ).astype(np.float32)
                     )
 
-                start += args.prediction_len
-                stop += args.prediction_len
+                start += num_expected_forecasts
+                stop += num_expected_forecasts
                 ssims[-1][-1] = np.asarray(ssims[-1][-1])
             ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
             continue
@@ -433,6 +458,7 @@ def ssim(args, predictions):
         ),
         ylabel="ssim",
         plot_dir=args.plot_dir,
+        full_hours_only=args.full_hours_only,
     )
 
 
@@ -443,9 +469,13 @@ def fss(args, predictions):
         for pred_times, pred_data in zip(
             predictions[l]["time"], predictions[l]["data"]
         ):
-            a = gtt.index(pred_times[0])
-            b = gtt.index(pred_times[-1])
-            gt_data = np.asarray(gtd[a : b + 1])
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
 
             assert gt_data.shape == pred_data.shape
 
@@ -459,12 +489,12 @@ def fss(args, predictions):
                 loss = 1 - lf(y_true, y_pred).numpy()
                 datas.append(loss)
 
-            assert len(datas) == args.prediction_len + 1
+            assert (args.full_hours_only and len(datas) == len(pred_times)) or (
+                args.full_hours_only is False and len(datas) == args.prediction_len + 1
+            )
 
             arr.append(datas)
         return arr
-
-    gtt = predictions["gt"]["time"]
 
     obs_cat = categorize(predictions["gt"]["data"])
     observed_cat0 = np.count_nonzero(obs_cat == 0)
@@ -502,7 +532,7 @@ def fss(args, predictions):
                 lf,
                 predictions[l]["time"],
                 predictions[l]["data"],
-                gtt,
+                np.asarray(predictions["gt"]["time"]),
                 np.asarray(predictions["gt"]["data"]),
             )
             label_arr.append(mask_arr)
@@ -521,4 +551,13 @@ def fss(args, predictions):
     # d: forecast number
     # e: leadtime
 
-    plot_fss(fsss, masks, labels, obs_frac, img_sizes, gtt, plot_dir=args.plot_dir)
+    plot_fss(
+        fsss,
+        masks,
+        labels,
+        obs_frac,
+        img_sizes,
+        predictions["gt"]["time"],
+        plot_dir=args.plot_dir,
+        full_hours_only=args.full_hours_only,
+    )

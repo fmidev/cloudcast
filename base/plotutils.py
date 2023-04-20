@@ -235,13 +235,14 @@ def plot_linegraph(
     plot_dir=None,
     start_from_zero=False,
     add_mean_value_to_label=False,
+    full_hours_only=False,
 ):
     assert len(data) == len(labels)
     fig = plt.figure(figure(), figsize=(12, 7))
     ax = plt.axes()
     ax.set_xlabel("leadtime")
     ax.set_ylabel(ylabel)
-    step = timedelta(minutes=15)
+    step = timedelta(minutes=60) if full_hours_only else timedelta(minutes=15)
 
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
@@ -276,7 +277,13 @@ def plot_linegraph(
 
 
 def plot_stamps(
-    datas, labels, title=None, initial_data=None, start_from_zero=False, plot_dir=None
+    datas,
+    labels,
+    title=None,
+    initial_data=None,
+    start_from_zero=False,
+    full_hours_only=False,
+    plot_dir=None,
 ):
     assert len(datas) == len(labels)
 
@@ -318,6 +325,7 @@ def plot_stamps(
         write_time = nrows - 2
 
     offset = 0 if start_from_zero else 1
+    factor = 60 if full_hours_only else 15
 
     for i in range(len(datas)):
         for j in range(datas[i].shape[0]):
@@ -326,7 +334,7 @@ def plot_stamps(
             ax.imshow(np.squeeze(datas[i][j]), cmap="gray_r")
             ax.axis("off")
             if i == write_time:
-                ax.set_title(f"{(j+offset)*15}m", y=0, pad=-25)
+                ax.set_title(f"{(j+offset)*factor}m", y=0, pad=-25)
 
     fig.set_facecolor("w")
 
@@ -450,11 +458,22 @@ def plot_hist(hist, model_dir=None, show=False, save_path=None, name_files=False
         print("Wrote file {}/{}".format(save_path, filename))
 
 
-def plot_fss(data, masks, labels, obs_frac, img_sizes, times, plot_dir=None):
+def plot_fss(
+    data,
+    masks,
+    labels,
+    obs_frac,
+    img_sizes,
+    times,
+    full_hours_only=False,
+    plot_dir=None,
+):
     domain_x = 2370  # km
     domain_y = 2670
 
     CATEGORIES = ["clearsky", "partly-cloudy", "cloudy"]
+
+    factor = 60 if full_hours_only else 15
 
     # shape: a, b, c, d, e
     # a: model label
@@ -497,7 +516,7 @@ def plot_fss(data, masks, labels, obs_frac, img_sizes, times, plot_dir=None):
                 )
                 plt.xlabel("Leadtime (minutes)")
                 plt.ylabel("Mask size (km)")
-                plt.xticks(x, list(map(lambda x: "{}".format(x * 15), x)))
+                plt.xticks(x, list(map(lambda x: "{}".format(x * factor), x)))
                 plt.yticks(y, list(map(lambda x: "{}".format(int(x * dx)), masks)))
 
                 CS = plt.contour(xx, yy, v, [fss_good])

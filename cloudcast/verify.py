@@ -56,6 +56,7 @@ def parse_command_line():
         default=None,
         help="save results to directory of choice",
     )
+    parser.add_argument("--full_hours_only", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -129,13 +130,20 @@ def predict(args, opts):
     forecast = []
     times = []
 
+    num_expected_forecasts = 1 + args.prediction_len
+
+    if args.full_hours_only:
+        num_expected_forecasts = 1 + int(args.prediction_len / 4)
+
     for t in tfds.as_numpy(d):
         x = t[0]
         y = t[1]
         xy_times = np.squeeze(t[2])
         xy_times = list(map(lambda x: x.decode("utf8"), xy_times))
 
-        if len(forecast) > 0 and len(forecast) % (1 + args.prediction_len) == 0:
+        prediction_time = datetime.datetime.strptime(xy_times[-1], "%Y%m%dT%H%M%S")
+
+        if len(forecast) > 0 and len(forecast) % num_expected_forecasts == 0:
             predictions[opts.get_label()]["time"].append(times.copy())
             predictions[opts.get_label()]["data"].append(np.array(forecast))
 
@@ -154,15 +162,21 @@ def predict(args, opts):
                 predictions["gt"]["time"].append(t0)
                 predictions["gt"]["data"].append(x0)
 
+        if args.full_hours_only:
+            lt = prediction_time - times[0]
+            if int(lt.total_seconds() % 3600) != 0:
+                continue
+
         print(
             "Using {} to predict {} [{}/{}]".format(
-                xy_times[:-1], xy_times[-1], len(forecast), args.prediction_len
+                xy_times[:-1], xy_times[-1], len(forecast), num_expected_forecasts - 1
             )
         )
 
+        assert len(forecast) <= num_expected_forecasts
+
         prediction = m.predict(x, verbose=0)
         prediction = np.squeeze(prediction, axis=0)
-        prediction_time = datetime.datetime.strptime(xy_times[-1], "%Y%m%dT%H%M%S")
         forecast.append(prediction)
         times.append(prediction_time)
 
@@ -170,7 +184,7 @@ def predict(args, opts):
             predictions["gt"]["time"].append(prediction_time)
             predictions["gt"]["data"].append(np.squeeze(y, axis=0))
 
-    if len(forecast) == args.prediction_len + 1:
+    if len(forecast) == num_expected_forecasts:
         predictions[opts.get_label()]["time"].append(times.copy())
         predictions[opts.get_label()]["data"].append(np.array(forecast))
 
@@ -239,8 +253,6 @@ def filter_top_n(predictions, errors, n, keep=[]):
 
 
 def plot_timeseries(args, predictions):
-    print(list(predictions.keys()))
-
     while True:
         first = list(predictions.keys())[np.random.randint(len(predictions))]
         if first != "gt":
@@ -257,9 +269,20 @@ def plot_timeseries(args, predictions):
     data = []
     times = predictions[first]["time"][idx]
 
+    assert len(predictions["gt"]["data"]) == len(predictions["gt"]["time"])
+
     for l in labels:
         if l == "gt":
-            data.append(copy_range(predictions["gt"], times[0], times[-1]))
+            if args.full_hours_only:
+                temp_data = []
+                for t in times:
+                    idx_ = predictions["gt"]["time"].index(t)
+                    temp_data.append(predictions["gt"]["data"][idx_])
+
+                data.append(np.asarray(temp_data))
+            else:
+                data.append(copy_range(predictions["gt"], times[0], times[-1]))
+
             continue
         data.append(predictions[l]["data"][idx])
 
@@ -270,6 +293,7 @@ def plot_timeseries(args, predictions):
         title="Prediction for t0={}".format(times[0]),
         initial_data=None,
         start_from_zero=True,
+        full_hours_only=args.full_hours_only,
         plot_dir=args.plot_dir,
     )
 
