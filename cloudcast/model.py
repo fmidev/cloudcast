@@ -128,6 +128,7 @@ def unet(
     loss_function="MeanSquaredError",
     optimizer="adam",
     n_categories=None,
+    compile=True
 ):
     inputs = Input(input_size)
 
@@ -182,11 +183,13 @@ def unet(
     assert n_categories is None or loss_function == "sparse_categorical_crossentropy"
 
     model = Model(inputs, outputs)
-    model.compile(
-        optimizer=optimizer,
-        loss=get_loss_function(loss_function),
-        metrics=get_metrics(),
-    )
+
+    if compile:
+        model.compile(
+            optimizer=optimizer,
+            loss=get_loss_function(loss_function),
+            metrics=get_metrics(),
+        )
 
     if pretrained_weights is not None:
         model.load_weights(pretrained_weights)
