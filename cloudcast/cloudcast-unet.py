@@ -71,6 +71,8 @@ def get_batch_size(img_size):
         batch_size = 3
     elif img_size[0] >= 256:
         batch_size = 8
+    elif img_size[0] >= 224:
+        batch_size = 16
     elif img_size[0] >= 128:
         batch_size = 32
     else:
