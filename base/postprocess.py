@@ -1,4 +1,4 @@
-import qnorm
+#import qnorm
 import numpy as np
 from osgeo import gdal, osr
 
