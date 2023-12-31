@@ -3,7 +3,7 @@ boto3
 eccodes
 gdal==3.4.0
 numba==0.53
-numpy<1.23
+numpy
 opencv-python
 qnorm
 scikit-image
