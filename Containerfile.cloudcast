@@ -4,6 +4,7 @@ RUN rpm -ivh https://download.fmi.fi/smartmet-open/rhel/8/x86_64/smartmet-open-r
              https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm && \ 
     dnf -y install dnf-plugins-core && \
     dnf config-manager --set-enabled powertools && \
+    dnf config-manager --setopt="epel.exclude=eccodes*" --save && \
     dnf -y module disable postgresql && \
     dnf -y install python39 python39-devel eccodes libglvnd-glx gdal34 gdal34-devel gcc-c++ git && \
     dnf -y clean all
