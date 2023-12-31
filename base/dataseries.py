@@ -317,6 +317,7 @@ class LazyDataSeries:
                 self.sun_elevation_angle_data = {}
                 for i in range(self.leadtime_conditioning):
                     ts = self.analysis_time + timedelta(minutes=(1 + i) * 15)
+                    ts = ts.replace(year=2023)
                     self.sun_elevation_angle_data[
                         ts.strftime("%Y%m%dT%H%M%S")
                     ] = create_sun_elevation_angle(ts, (128, 128))
