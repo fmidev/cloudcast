@@ -112,7 +112,7 @@ podman run --rm \
   -it cloudcast-oper \
   python3.9 infer.py --label unet-bcl1-hist=4-dt=False-topo=False-terrain=False-lc=12-oh=False-sun=True-img_size=512x512 \
   --directory /mnt/output \
-  --analysis_time "2024-01-15T12:00:00" \
+  --analysis_time "2024-01-15 12:00:00" \
   --output_size 1069x949 \
   --prediction_len 20 \
   --merge_gribs
