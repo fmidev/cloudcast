@@ -121,7 +121,7 @@ def save_grib(datas, filepath, analysistime, forecasttimes, grib_options=None):
     for data, forecasttime in zip(datas, forecasttimes):
         h = ecc.codes_grib_new_from_samples("regular_ll_sfc_grib2")
         ecc.codes_set(h, "gridType", "lambert")
-        ecc.codes_set(h, "shapeOfTheEarth", 5)
+        ecc.codes_set(h, "shapeOfTheEarth", 6)
         ecc.codes_set(h, "Nx", data.shape[1])
         ecc.codes_set(h, "Ny", data.shape[0])
         ecc.codes_set(h, "DxInMetres", 2370000 / (data.shape[1] - 1))
