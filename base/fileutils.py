@@ -36,7 +36,7 @@ def read_filenames(
     filenames = []
 
     for f in files:
-        datetime = f.split("/")[-1][0:14]
+        datetime = f.split("/")[-1][0:15]
         if datetime >= start_date and datetime < stop_date:
             filenames.append(f)
 
