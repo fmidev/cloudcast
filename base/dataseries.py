@@ -69,6 +69,15 @@ def read_datas_from_preformatted_file(all_times, all_data, req_times, toc):
     return datas, req_times
 
 
+def fix_sun_angle_date(ts):
+    if ts.month == 2 and ts.day == 29:
+        ts = ts.replace(day=28)
+
+    ts = ts.replace(year=2023)
+
+    return ts
+
+
 class DataSeriesGenerator:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
@@ -129,7 +138,7 @@ class DataSeriesGenerator:
 
         if X[self.n_channels + 4]:
             angle = self.sun_elevation_angle_data[
-                y_time.replace(year=2023).strftime("%Y%m%dT%H%M%S")
+                fix_sun_angle_date(y_time).strftime("%Y%m%dT%H%M%S")
             ]
             angle = np.expand_dims(angle, axis=0)
             angle = tf.image.resize(angle, self.img_size)
@@ -317,7 +326,7 @@ class LazyDataSeries:
                 self.sun_elevation_angle_data = {}
                 for i in range(self.leadtime_conditioning):
                     ts = self.analysis_time + timedelta(minutes=(1 + i) * 15)
-                    ts = ts.replace(year=2023)
+                    ts = fix_sun_angle_date(ts)
                     self.sun_elevation_angle_data[
                         ts.strftime("%Y%m%dT%H%M%S")
                     ] = create_sun_elevation_angle(ts, (128, 128))
