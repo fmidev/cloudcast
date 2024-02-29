@@ -1,10 +1,12 @@
 # cloudcast
 
-cloudcast is a U-Net based convolutional neural network for total cloud cover prediction. cloudcast is used operationally at FMI to provide short term cloud cover nowcasts. 
+cloudcast is a U-Net based convolutional neural network for total cloud cover prediction. cloudcast is used operationally at FMI to provide short term cloud cover nowcasts.
+
+![cloudcast example forecast](https://github.com/fmidev/cloudcast/cloudcast.gif)
 
 # Description
 
-Source data for predictions is NWCSAF effective eloudiness:
+Source data for predictions is NWCSAF effective cloudiness:
 
 [https://www.nwcsaf.org/ctth_description#2.-%20CTTH%20algorithm%20summary%20description]()
 
@@ -57,6 +59,8 @@ In order to run the model yourself, you need
 Code is found at this repo, but it is easier to use a pre-built container image (that's what we use too):
 
 [https://quay.io/repository/fmi/cloudcast](https://quay.io/repository/fmi/cloudcast)
+
+Both cpu and gpu versions are included, tags `latest` and `latest-cuda`.
 
 ## Weights
 
@@ -174,6 +178,25 @@ edition      centre       date         dataType     gridType     stepRange    ty
 21 of 21 messages in /home/partio/tmp/20240115120000.grib2
 
 21 of 21 total messages in 1 files
+```
+
+# Training
+
+
+Training data is located at `s3://cc_archive/nwcsaf`. Following the NWCSAF data license this is not available to general public.
+
+Reading grib from s3 is too slow for training, therefore numpy file(s) should be created. This can be done with script `create-dataset.py`. Script creates npy files which can be read through linux memory mapping technique, which means that the whole data does not need to read to memory. Upcoming changes will switch to using zarr for data handling.
+
+Once the source data is created, script `cloudcast-unet.py` is used to start training. The current model version is trained with:
+
+```
+python3 cloudcast-unet.py \
+  --loss_function bcl1 \
+  --n_channels 4 \
+  --leadtime_conditioning 12 \
+  --preprocess img_size=512x512 \
+  --dataseries_directory /path/to/data/dir \
+  --include_sun_elevation_angle
 ```
 
 # Contact
