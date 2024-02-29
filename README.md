@@ -187,6 +187,8 @@ Training data is located at `s3://cc_archive/nwcsaf`. Following the NWCSAF data 
 
 Reading grib from s3 is too slow for training, therefore numpy file(s) should be created. This can be done with script `create-dataset.py`. Script creates npy files which can be read through linux memory mapping technique, which means that the whole data does not need to read to memory. Upcoming changes will switch to using zarr for data handling.
 
+For training we have used data from NWCSAF versions v2016 and v2018.
+
 Once the source data is created, script `cloudcast-unet.py` is used to start training. The current model version is trained with:
 
 ```
