@@ -8,7 +8,7 @@ cloudcast is a U-Net based convolutional neural network for total cloud cover pr
 
 Source data for predictions is NWCSAF effective cloudiness:
 
-[https://www.nwcsaf.org/ctth_description#2.-%20CTTH%20algorithm%20summary%20description]()
+[Effective cloudiness](https://www.nwcsaf.org/ctth_description#2.-%20CTTH%20algorithm%20summary%20description)
 
 This data is produced with 15-minute intervals. The model takes as input four previous satellite images (=1 hour), and can produce forecast of any length. In practice the quality of the predictions is not that good after three hours. In FMI we predict up to five hours, as the last two prediction hours are used to blend the forecast with NWP forecast.
 
