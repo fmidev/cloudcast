@@ -2,7 +2,7 @@
 
 cloudcast is a U-Net based convolutional neural network for total cloud cover prediction. cloudcast is used operationally at FMI to provide short term cloud cover nowcasts.
 
-![cloudcast example forecast](https://github.com/fmidev/cloudcast/cloudcast.gif)
+![cloudcast example forecast](https://raw.githubusercontent.com/fmidev/cloudcast/main/cloudcast.gif)
 
 # Description
 
