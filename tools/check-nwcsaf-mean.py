@@ -198,7 +198,9 @@ def check(nowtime, plot=False):
         plt.show()
 
 
-urlbase = "https://lake.fmi.fi/routines-data/cloudcast-source/nwcsaf"
+urlbase = os.environ.get("CLOUDCAST_INPUT_DIR", "https://lake.fmi.fi/routines-data/cloudcast-source")
+
+urlbase += "/nwcsaf"
 
 if len(sys.argv) == 2:
     check(datetime.strptime(sys.argv[1], "%Y%m%dT%H%M%S"))
