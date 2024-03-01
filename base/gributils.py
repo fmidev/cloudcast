@@ -84,7 +84,7 @@ def read_grib_contents(gh, **kwargs):
         data[data == 9999.0] = np.NAN
         return np.expand_dims(data, axis=-1)
 
-    if dtype != np.uint8 and cat == 6 and num == 192:
+    if dtype != np.uint8 and ((cat == 6 and num == 1) or (cat == 6 and num == 192)):
         data = data / 100.0
 
     return np.expand_dims(data, axis=2)
