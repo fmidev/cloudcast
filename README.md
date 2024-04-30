@@ -16,9 +16,9 @@ In addition to the four previous times we also include sun elevation angle and l
 
 # Preprocessing
 
-The geographical domain is that of MEPS (MEPS25D): northern europe in lambert conformal conic projection, 2.5 km grid. The satellite coverage is very poor in the north-east corner of the domain which can be seen as visible saw-shaped static artifacts.
+The geographical domain is that of MEPS (MEPS25D): northern europe in lambert conformal conic projection, 2.5 km grid. The satellite coverage is very poor in the north-east corner of the domain which can be seen as a visible saw blade-shaped static artifact.
 
-The NWCSAF effective cloudiness has known issues which we try to correct **before** the data is fed to the neural network.
+The NWCSAF effective cloudiness has known issues which we try to correct **before** the data is fed to the neural network to make a prediction. Our training data set does not have this correction.
 
 1. Cumulus clouds are reported as 100% cloud cover, probably due to the resolution of the data. We try to fix this by using short range radiation information to decrease the cloud cover
   * [https://github.com/fmidev/himan/blob/master/himan-scripts/nwcsaf-cumulus.lua](https://github.com/fmidev/himan/blob/master/himan-scripts/nwcsaf-cumulus.lua)
@@ -200,6 +200,29 @@ python3 cloudcast-unet.py \
   --dataseries_directory /path/to/data/dir \
   --include_sun_elevation_angle
 ```
+
+## Creating our own training dataset from NWCSAF data
+
+If you'd like to create your own training dataset for some other geographical domain than Northern Europe, you need access to NWCSAF data.
+
+NWCSAF provides output in netcdf which need to be converted to grib2, and then preferrably to numpy. You can also skip grib and create numpy from netcdf files directly.
+
+1. First geotag the netcdf files and write the output as geotiff
+
+```gdal_translate -of GTiff -a_srs '+proj=geos +ellps=GRS80 +lon_0=0.000000 +h=35785863.000000 +sweep=y' -a_ullr -5570249.202 5438231.202 5567248.202 2653856.798 NETCDF:S_NWC_CTTH_MSG3_MSG-N-VISIR_20240101T040000Z_PLAX.nc:ctth_effectiv geotag.tif```
+
+2. Crop to wanted domain and convert to grib
+
+```gdalwarp -t_srs '+proj=lcc +lat_0=63.3 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +units=m +no_defs +ellps=WGS84 +datum=WGS84' -r bilinear -wo SOURCE_EXTRA=100 geotag.tif geotag2.tif
+gdalwarp -te -1064963.311 -1340554.308 1318611.801 1341951.017 geotag2.tif geotag3.grib2```
+
+3. Fix grib metadata which is not correctly set by gdal tools
+
+```grib_set -s dataDate=20240101,dataTime=400,... geotag3.grib2 20240101T040000.grib2```
+
+4. For efficient training, create a numpy archive from these files with script create-dataset.py
+
+For better performance the gdal-based commands can also be implemented for example with gdal python bindings.
 
 # Contact
 
