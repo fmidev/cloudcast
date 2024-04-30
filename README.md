@@ -91,10 +91,10 @@ podman build -t cloudcast-oper .
 Test files are located at:
 
 ```
-https://lake.fmi.fi/cc_archive/nwcsaf/2024/01/15/20240115T120000_nwcsaf_effective-cloudiness.grib2
-https://lake.fmi.fi/cc_archive/nwcsaf/2024/01/15/20240115T114500_nwcsaf_effective-cloudiness.grib2
-https://lake.fmi.fi/cc_archive/nwcsaf/2024/01/15/20240115T113000_nwcsaf_effective-cloudiness.grib2
-https://lake.fmi.fi/cc_archive/nwcsaf/2024/01/15/20240115T111500_nwcsaf_effective-cloudiness.grib2
+https://lake.fmi.fi/cc_archive/test_data/nwcsaf/2024/01/15/20240115T120000_nwcsaf_effective-cloudiness.grib2
+https://lake.fmi.fi/cc_archive/test_data/nwcsaf/2024/01/15/20240115T114500_nwcsaf_effective-cloudiness.grib2
+https://lake.fmi.fi/cc_archive/test_data/nwcsaf/2024/01/15/20240115T113000_nwcsaf_effective-cloudiness.grib2
+https://lake.fmi.fi/cc_archive/test_data/nwcsaf/2024/01/15/20240115T111500_nwcsaf_effective-cloudiness.grib2
 ```
 
 These files contain the fixes mentioned earlier. Cloudcast reads the data from a pre-defined directory structure. Filenames also need to be in specific format (as seen above).
