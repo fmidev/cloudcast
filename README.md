@@ -209,16 +209,22 @@ NWCSAF provides output in netcdf which need to be converted to grib2, and then p
 
 1. First geotag the netcdf files and write the output as geotiff
 
-```gdal_translate -of GTiff -a_srs '+proj=geos +ellps=GRS80 +lon_0=0.000000 +h=35785863.000000 +sweep=y' -a_ullr -5570249.202 5438231.202 5567248.202 2653856.798 NETCDF:S_NWC_CTTH_MSG3_MSG-N-VISIR_20240101T040000Z_PLAX.nc:ctth_effectiv geotag.tif```
+```
+gdal_translate -of GTiff -a_srs '+proj=geos +ellps=GRS80 +lon_0=0.000000 +h=35785863.000000 +sweep=y' -a_ullr -5570249.202 5438231.202 5567248.202 2653856.798 NETCDF:S_NWC_CTTH_MSG3_MSG-N-VISIR_20240101T040000Z_PLAX.nc:ctth_effectiv geotag.tif
+```
 
 2. Crop to wanted domain and convert to grib
 
-```gdalwarp -t_srs '+proj=lcc +lat_0=63.3 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +units=m +no_defs +ellps=WGS84 +datum=WGS84' -r bilinear -wo SOURCE_EXTRA=100 geotag.tif geotag2.tif
-gdalwarp -te -1064963.311 -1340554.308 1318611.801 1341951.017 geotag2.tif geotag3.grib2```
+```
+gdalwarp -t_srs '+proj=lcc +lat_0=63.3 +lon_0=15 +lat_1=63.3 +lat_2=63.3 +units=m +no_defs +ellps=WGS84 +datum=WGS84' -r bilinear -wo SOURCE_EXTRA=100 geotag.tif geotag2.tif
+gdalwarp -te -1064963.311 -1340554.308 1318611.801 1341951.017 geotag2.tif geotag3.grib2
+```
 
 3. Fix grib metadata which is not correctly set by gdal tools
 
-```grib_set -s dataDate=20240101,dataTime=400,... geotag3.grib2 20240101T040000.grib2```
+```
+grib_set -s dataDate=20240101,dataTime=400,... geotag3.grib2 20240101T040000.grib2
+```
 
 4. For efficient training, create a numpy archive from these files with script create-dataset.py
 
