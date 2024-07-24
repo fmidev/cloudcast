@@ -108,6 +108,11 @@ def predict_many(args, opts_list):
     return all_pred
 
 
+def save_predictions(result_dir, label, predictions):
+    with open(f"{result_dir}/{label}.npz", "wb") as f:
+        np.savez(f, predictions)
+
+
 def predict(args, opts):
     start = time.time()
 
@@ -202,6 +207,9 @@ def predict(args, opts):
 
     if n_forecast == 0:
         sys.exit(1)
+
+    if args.result_dir is not None:
+        save_predictions(args.result_dir, opts.get_label(), predictions)
 
     return predictions
 
