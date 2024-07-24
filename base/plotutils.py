@@ -528,3 +528,33 @@ def plot_fss(
 
             if plot_dir is not None:
                 savefig(plot_dir)
+
+
+def plot_psd(scales, psd_values, lead_times, plot_dir=None):
+    plt.figure(figure(), figsize=(10, 6))
+    for i, lead_time in enumerate(lead_times):
+        # Average PSD over all forecasts and sum over y-scales to get 1D PSD
+        psd_mean = psd_values[i].mean(axis=0).sum(axis=-1)
+        plt.plot(scales, psd_mean, label=f"Lead Time={lead_time}h")
+
+    psd_values = np.asarray(psd_values)
+    ave = np.mean(psd_values, axis=(0, 1)).sum(axis=-1)
+    plt.plot(
+        scales,
+        ave,
+        label="Average PSD",
+        color="black",
+        linestyle="--",
+    )
+    plt.xlabel("Horizontal Scale [km]")
+    plt.ylabel("Power Spectral Density [%²/km]")
+    plt.title("Power Spectral Density for Different Lead Times")
+    plt.legend()
+    plt.grid(True)
+    plt.xscale("log")  # Use logarithmic scale for better visualization
+    plt.yscale("log")  # Use logarithmic scale for better visualization of y-axis
+    plt.gca().invert_xaxis()  # Invert the x-axis for descending order
+    plt.autoscale(True, axis="y")  # Auto-scale the y-axis
+
+    if plot_dir is not None:
+        savefig(plot_dir)
