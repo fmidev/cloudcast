@@ -56,6 +56,14 @@ def parse_command_line():
         default=None,
         help="save results to directory of choice",
     )
+    parser.add_argument(
+        "--stats_dir",
+        action="store",
+        type=str,
+        default=None,
+        help="save (some) statistics as txt file to directory of choice",
+    )
+
     parser.add_argument("--full_hours_only", action="store_true", default=False)
 
     args = parser.parse_args()

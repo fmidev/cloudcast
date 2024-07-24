@@ -61,6 +61,20 @@ def mae(args, predictions):
     plot_mae2d(args, ae, times)
     plot_mae_timeseries(args, ae, times)
 
+    if args.stats_dir is None:
+        return
+
+    with open(args.stats_dir + "/stats.txt", "a") as f:
+        for label in ae:
+            # shape (forecasts, leadtime, x, y, channels)
+            for i in range(ae[label].shape[1]):
+                f.write(
+                    "{} MAE for forecast {}: {:.2f}\n".format(
+                        label, i, np.mean(ae[label][:, i])
+                    )
+                )
+            f.write("{} Average MAE value: {:.2f}\n".format(label, np.mean(ae[label])))
+
 
 def remove_initial_ae(ae, times):
     newae = {}
