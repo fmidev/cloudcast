@@ -11,8 +11,12 @@ CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
 
 def get_time_for_file(args):
+    if args.start_date is None:
+        return ""
+
     if args.start_date == args.stop_date:
         return args.start_date.strftime("%Y%m%dT%H%M%S")
+
     return "{}-{}".format(
         args.start_date.strftime("%Y%m%d"), args.stop_date.strftime("%Y%m%d")
     )
