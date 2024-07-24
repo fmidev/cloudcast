@@ -41,7 +41,7 @@ def histogram(args, predictions):
         datas.append(predictions[l]["data"])
         labels.append(l)
 
-        if args.result_dir is not None:
+        if False and args.result_dir is not None:
             np.save(
                 "{}/{}_{}_histogram.npy".format(
                     args.result_dir, l, get_time_for_file(args)
@@ -463,7 +463,7 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
 
-        if args.result_dir is not None:
+        if False and args.result_dir is not None:
             np.save(
                 "{}/{}_{}_ssim.npy".format(args.result_dir, l, get_time_for_file(args)),
                 ssims[-1],
