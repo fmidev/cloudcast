@@ -326,9 +326,24 @@ def calculate_categorical_score(category, cm, score):
 
     idx = CATEGORIES.index(category)
     TP = cm[idx, idx]
-    FN = np.sum(cm[idx,]) - TP
+    FN = (
+        np.sum(
+            cm[
+                idx,
+            ]
+        )
+        - TP
+    )
     FP = np.sum(cm[:, idx]) - TP
-    TN = np.sum(cm) - np.sum(cm[idx,]) - np.sum(cm[:, idx])
+    TN = (
+        np.sum(cm)
+        - np.sum(
+            cm[
+                idx,
+            ]
+        )
+        - np.sum(cm[:, idx])
+    )
 
     return calc_score(TN, FP, FN, TP, score)
 
