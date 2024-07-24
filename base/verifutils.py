@@ -24,6 +24,7 @@ def get_time_for_file(args):
 
 def produce_scores(args, predictions):
     mae(args, predictions)
+    psd(args, predictions)
     # categorical_scores(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
@@ -565,3 +566,93 @@ def fss(args, predictions):
         plot_dir=args.plot_dir,
         full_hours_only=args.full_hours_only,
     )
+
+
+def calculate_psd(data, args):
+
+    """
+    Calculate Power Spectral Density over the spatial dimensions.
+    :param data: 2D numpy array
+    :param dx: sampling interval in spatial dimensions
+    :return: spatial frequency and PSD values
+    """
+
+    def apply_window(data):
+        """
+        Apply a Hanning window to the data.
+        :param data: 2D numpy array
+        :return: windowed data
+        """
+        nx, ny = data.shape[-2:]
+        window_x = np.hanning(nx)
+        window_y = np.hanning(ny)
+        window = window_x[:, np.newaxis] * window_y[np.newaxis, :]
+        return data * window
+
+    data = apply_window(data)
+
+    # Number of spatial points
+    nx, ny = data.shape[-2:]
+    dx = 2500 * (949 - 1.0) / nx / 1000
+
+    # Perform Fourier transform over spatial dimensions
+    f_transform = np.fft.fft2(data, axes=(-2, -1))
+    f_transform = np.fft.fftshift(f_transform)
+    # Calculate power spectral density
+    psd = np.abs(f_transform) ** 2
+    # Calculate spatial frequencies
+    kx = np.fft.fftfreq(nx, d=dx)
+    ky = np.fft.fftfreq(ny, d=dx)
+    kx = np.fft.fftshift(kx)
+    ky = np.fft.fftshift(ky)
+
+    # Convert spatial frequencies to physical scales in kilometers
+    scale_x = (
+        1 / kx[nx // 2 + 1 :]
+    )  # Ignore the negative frequencies and zero frequency
+    scale_y = (
+        1 / ky[ny // 2 + 1 :]
+    )  # Ignore the negative frequencies and zero frequency
+
+    # Reverse the scales for descending order
+    scale_x = scale_x[::-1]
+    scale_y = scale_y[::-1]
+
+    psd = psd[:, nx // 2 + 1 :, ny // 2 + 1 :][:, ::-1, ::-1]
+
+    return scale_x, scale_y, psd
+
+
+def psd(args, predictions):
+    psd_values = []
+
+    for l in predictions:
+        if l == "gt":
+            continue
+
+        data = np.asarray(predictions[l]["data"])
+        data = np.squeeze(data, axis=-1)
+
+        if len(data.shape) == 3:
+            data = np.expand_dims(data, axis=1)
+
+        for i in range(4, 22, 4):  # pick only full hour data
+            scale_x, scale_y, psd = calculate_psd(data[:, i], args)
+            psd_values.append(psd)
+
+        plot_psd(
+            scale_x,
+            psd_values,
+            list(range(1, 6)),
+            plot_dir=args.plot_dir,
+        )
+
+        if args.stats_dir is None:
+            return
+
+        with open(args.stats_dir + "/stats.txt", "a") as f:
+            for i, psd in enumerate(psd_values):
+                f.write(
+                    "{} PSD value for forecast {}: {:.2f}\n".format(l, i, np.mean(psd))
+                )
+            f.write("{} Average PSD value: {:.2f}\n".format(l, np.mean(psd_values)))
