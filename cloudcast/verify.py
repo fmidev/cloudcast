@@ -63,20 +63,36 @@ def parse_command_line():
         default=None,
         help="save (some) statistics as txt file to directory of choice",
     )
+    parser.add_argument(
+        "--prediction_file",
+        action="store",
+        nargs="+",
+        type=str,
+        default=None,
+        help="read predictions from file, must be one file per label",
+    )
 
     parser.add_argument("--full_hours_only", action="store_true", default=False)
 
     args = parser.parse_args()
 
     if (
-        args.start_date is None and args.stop_date is None
-    ) and args.dataseries_file is None:
-        print("One of: (start_date, stop_date), (dataseries_file) must be given")
+        (args.start_date is None and args.stop_date is None)
+        and args.dataseries_file is None
+        and args.prediction_file is None
+    ):
+        print(
+            "One of: (start_date, stop_date), (dataseries_file), (prediction_file) must be given"
+        )
         sys.exit(1)
 
     if args.start_date is not None and args.stop_date is not None:
         args.start_date = parse_time(args.start_date)
         args.stop_date = parse_time(args.stop_date)
+
+    assert len(args.prediction_file) == 0 or len(args.prediction_file) == len(
+        args.label
+    ), "Need one prediction file per label"
 
     return args
 
@@ -364,7 +380,31 @@ if __name__ == "__main__":
         opts_list.append(CloudCastOptions(label=l))
         assert opts_list[-1].onehot_encoding is False
 
-    predictions = predict_many(args, opts_list)
+    if args.prediction_file is not None and len(args.prediction_file) > 0:
+
+        predictions = {}
+        for i, f in enumerate(args.prediction_file):
+            assert os.path.exists(f), f"File {f} does not exist"
+            data = np.load(f, allow_pickle=True)
+
+            obj = data["arr_0"]
+
+            if obj.ndim == 0:
+                # Access the single element
+                obj = obj.item()
+
+            for k in obj.keys():
+                if k not in predictions:
+                    predictions[k] = {}
+                else:
+                    print(f"Skipping {k}: already exists in predictions")
+                    continue
+
+                predictions[k] = obj[k]
+            print("Read predictions from {}".format(f))
+    else:
+        predictions = predict_many(args, opts_list)
+
     if len(labels) > 1:
         predictions = intersection(opts_list, predictions)
 
