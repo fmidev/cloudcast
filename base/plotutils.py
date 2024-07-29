@@ -251,7 +251,7 @@ def plot_linegraph(
     offset = 0 if start_from_zero else 1
 
     xlabels = list(map(lambda x: step * x, range(offset, offset + len(data[0]))))
-    xlabels = list(map(lambda x: "{}m".format(int(x.total_seconds() / 60)), xlabels))
+    xlabels = list(map(lambda x: "{}".format(int(x.total_seconds() / 60)), xlabels))
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
@@ -333,7 +333,7 @@ def plot_stamps(
             ax.imshow(np.squeeze(datas[i][j]), cmap="gray_r")
             ax.axis("off")
             if i == write_time:
-                ax.set_title(f"{(j+offset)*factor}m", y=0, pad=-25)
+                ax.set_title(f"{(j+offset)*factor}", y=0, pad=-25)
 
     fig.set_facecolor("w")
 
@@ -563,7 +563,6 @@ def plot_psd(scales, psd_values, title, plot_dir=None):
 def plot_psd_ave(scales, psd_values, title, labels, plot_dir=None):
     plt.figure(figure(), figsize=(10, 6))
     psd_values = np.asarray(psd_values)
-    print(psd_values.shape)
 
     for i, psd_mean in enumerate(psd_values):
         plt.plot(scales, psd_mean, label=f"Mean PSD for {labels[i]}")
@@ -589,7 +588,7 @@ def plot_chisquare(data, title, plot_dir=None):
     plt.figure(figure())
     fig, ax1 = plt.subplots(figsize=(14, 7))
 
-    x_labels = [f"{i*15}m" for i in range(len(chi2_values))]
+    x_labels = [f"{i*15}" for i in range(len(chi2_values))]
 
     # Plotting chi-squared values as a line
     color = "tab:blue"
