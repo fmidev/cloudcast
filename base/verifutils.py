@@ -6,6 +6,9 @@ from base.plotutils import *
 import tensorflow as tf
 from fss import make_FSS_loss
 import time
+from scipy.stats import chisquare
+import pywt
+
 
 CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
@@ -26,10 +29,221 @@ def produce_scores(args, predictions):
     mae(args, predictions)
     psd(args, predictions)
     # categorical_scores(args, predictions)
+    chi_squared(args, predictions)
+    change(args, predictions)
     histogram(args, predictions)
     ssim(args, predictions)
     fss(args, predictions)
+    wavelet_scores(args, predictions)
     print("All scores produced")
+
+
+def wavelet_scores(args, predictions):
+
+    # Wavelet Transform
+    def wavelet_transform(image):
+        coeffs2 = pywt.dwt2(image, "haar")
+        LL, (LH, HL, HH) = coeffs2
+        return HH
+
+    gtd = np.asarray(predictions["gt"]["data"])
+    gtt = np.asarray(predictions["gt"]["time"])
+
+    all_sad = {}
+    for i, l in enumerate(predictions):
+        if l == "gt":
+            continue
+
+        all_sad[l] = []
+
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
+
+            # leadtime, x, y, channels
+            assert gt_data.shape == pred_data.shape
+
+            sad = []
+            for lt in range(gt_data.shape[0]):
+                image_gt = gt_data[lt].squeeze(axis=-1)
+                image_fc = pred_data[lt].squeeze(axis=-1)
+
+                HH_gt = wavelet_transform(image_gt)
+                HH_fc = wavelet_transform(image_fc)
+
+                # Calculate Sum of Absolute Differences in Wavelet HH Coefficients
+                sad_wavelet_HH = np.sum(np.abs(HH_gt - HH_fc))
+
+                sad.append(sad_wavelet_HH)
+
+            all_sad[l].append(sad)
+
+    pl = []
+    for l in all_sad:
+        all_sad[l] = np.asarray(all_sad[l], dtype=np.float32)
+        pl.append(np.mean(all_sad[l], axis=0))
+
+    labels = [reduce_label(l) for l in all_sad.keys()]
+    plot_linegraph(
+        pl,
+        labels,
+        title="Sum of absolute differences in wavelet HH coefficients",
+        ylabel="SAD Wavelet HH difference",
+        plot_dir=args.plot_dir,
+        start_from_zero=True,
+        full_hours_only=args.full_hours_only,
+    )
+
+    if args.stats_dir is not None:
+        with open(args.stats_dir + "/stats.txt", "a") as f:
+            for i, s in enumerate(pl):
+                l = labels[i]
+                for lt, v in enumerate(s):
+                    f.write(
+                        "{} Leadtime: {} Sum of absolute differences in wavelet HH coefficients: {:.3f}\n".format(
+                            l, lt, v
+                        )
+                    )
+
+                f.write(f"{l} Mean SAD sum: {np.sum(s):.3f}\n")
+
+
+def change(args, predictions):
+    gtd = np.asarray(predictions["gt"]["data"])
+    gtt = np.asarray(predictions["gt"]["time"])
+
+    all_diff = {}
+    for i, l in enumerate(predictions):
+        if l == "gt":
+            continue
+
+        all_diff[l] = []
+
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
+
+            # leadtime, x, y, channels
+            assert gt_data.shape == pred_data.shape
+
+            # calculate change in data
+            diff = np.mean(gt_data - pred_data, axis=(1, 2, 3)).astype(np.float32)
+
+            all_diff[l].append(diff)
+
+    pl = []
+    for l in all_diff:
+        all_diff[l] = np.asarray(all_diff[l], dtype=np.float32)
+        pl.append(np.mean(all_diff[l], axis=0))
+
+    labels = [reduce_label(l) for l in all_diff.keys()]
+
+    plot_linegraph(
+        pl,
+        labels,
+        title="Mean difference to ground truth",
+        ylabel="Difference",
+        plot_dir=args.plot_dir,
+        start_from_zero=True,
+        full_hours_only=args.full_hours_only,
+    )
+
+
+def chi_squared(args, predictions):
+    gtd = np.asarray(predictions["gt"]["data"])
+    gtt = np.asarray(predictions["gt"]["time"])
+
+    for l in predictions:
+        if l == "gt":
+            continue
+
+        ret = []
+
+        gt_lt = {}
+        pred_lt = {}
+
+        for i in range(args.prediction_len + 1):
+            gt_lt[i] = []
+            pred_lt[i] = []
+
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
+
+            assert (
+                gt_data.shape == pred_data.shape
+            ), "shapes do not match for {}: {} {}".format(
+                l, gt_data.shape, pred_data.shape
+            )
+
+            for i in range(pred_data.shape[0]):
+                gt_lt[i].append(gt_data[i].flatten())
+                pred_lt[i].append(pred_data[i].flatten())
+
+        bins = np.linspace(0, 1, 21)  # Define bins for range [0, 1]
+
+        for i in range(args.prediction_len + 1):
+            gtd = np.asarray(gt_lt[i]).flatten()
+            pred_data = np.asarray(pred_lt[i]).flatten()
+
+            hist_gtd, _ = np.histogram(gtd, bins=bins)
+            hist_pred, _ = np.histogram(pred_data, bins=bins)
+
+            # Add small constant to histogram counts to avoid zero expected frequencies
+            hist_pred = hist_pred + 1e-10
+
+            # Normalize histograms to have the same sum
+            hist_gtd = hist_gtd / np.sum(hist_gtd)
+            hist_pred = hist_pred / np.sum(hist_pred)
+
+            chi2_statistic, p_val_chisquare = chisquare(hist_gtd, f_exp=hist_pred)
+
+            ret.append((chi2_statistic, p_val_chisquare))
+
+        for lt, v in enumerate(ret):
+            print(
+                f"Leadtime: {lt} chi-squared statistic: {v[0]:.3f} p-value: {v[1]:.3f}"
+            )
+
+        if args.stats_dir is not None:
+            with open(args.stats_dir + "/stats.txt", "a") as f:
+                chis = []
+                for lt, v in enumerate(ret):
+                    chis.append(v[0])
+                    f.write(
+                        "{} Leadtime: {} Chi-squared: {:.3f} p-value: {:.3f}\n".format(
+                            l, lt, v[0], v[1]
+                        )
+                    )
+
+                f.write(
+                    f"{l} Summed chi-square values: {np.sum(np.asarray(chis)):.3f}\n"
+                )
+
+        plot_chisquare(
+            ret, f"Chi-squared for {reduce_label(l)}", plot_dir=args.plot_dir
+        )
 
 
 def histogram(args, predictions):
@@ -69,11 +283,11 @@ def mae(args, predictions):
             # shape (forecasts, leadtime, x, y, channels)
             for i in range(ae[label].shape[1]):
                 f.write(
-                    "{} MAE for forecast {}: {:.2f}\n".format(
+                    "{} MAE for forecast {}: {:.3f}\n".format(
                         label, i, np.mean(ae[label][:, i])
                     )
                 )
-            f.write("{} Average MAE value: {:.2f}\n".format(label, np.mean(ae[label])))
+            f.write("{} Average MAE value: {:.3f}\n".format(label, np.mean(ae[label])))
 
 
 def remove_initial_ae(ae, times):
@@ -653,11 +867,11 @@ def calculate_psd(data, args):
 
 
 def psd(args, predictions):
-    psd_values = []
+
+    all_psds = []
 
     for l in predictions:
-        if l == "gt":
-            continue
+        psd_values = []
 
         data = np.asarray(predictions[l]["data"])
         data = np.squeeze(data, axis=-1)
@@ -665,16 +879,28 @@ def psd(args, predictions):
         if len(data.shape) == 3:
             data = np.expand_dims(data, axis=1)
 
-        for i in range(4, 22, 4):  # pick only full hour data
+        if l == "gt":
+            scale_x, scale_y, psd = calculate_psd(data, args)
+            all_psds.append(np.mean(psd, axis=(0, 1)).sum(axis=-1))
+            continue
+
+        leadtimes = range(args.prediction_len + 1)
+
+        if args.full_hours_only:
+            leadtimes = range(4, 22, 4)
+
+        for i in leadtimes:  # pick only full hour data
             scale_x, scale_y, psd = calculate_psd(data[:, i], args)
             psd_values.append(psd)
 
         plot_psd(
             scale_x,
             psd_values,
-            list(range(1, 6)),
+            f"Power Spectral Density for {reduce_label(l)}",
             plot_dir=args.plot_dir,
         )
+
+        all_psds.append(np.mean(psd_values, axis=(0, 1)).sum(axis=-1))
 
         if args.stats_dir is None:
             return
@@ -685,3 +911,13 @@ def psd(args, predictions):
                     "{} PSD value for forecast {}: {:.2f}\n".format(l, i, np.mean(psd))
                 )
             f.write("{} Average PSD value: {:.2f}\n".format(l, np.mean(psd_values)))
+    labels = list(predictions.keys())
+    labels = [reduce_label(l) for l in labels]
+
+    plot_psd_ave(
+        scale_x,
+        all_psds,
+        "Average Power Spectral Density",
+        labels,
+        plot_dir=args.plot_dir,
+    )
