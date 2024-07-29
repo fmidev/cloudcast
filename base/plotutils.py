@@ -211,7 +211,6 @@ def plot_bargraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=
         ax.set_xlabel("bins")
         ax.set_ylabel(ylabel)
 
-        print(x.shape, y.shape)
         label = labels[i]
         # plt.stairs(x, y, label=label)
         title = "histogram for {}".format(labels[i])
@@ -530,15 +529,16 @@ def plot_fss(
                 savefig(plot_dir)
 
 
-def plot_psd(scales, psd_values, lead_times, plot_dir=None):
+def plot_psd(scales, psd_values, title, plot_dir=None):
     plt.figure(figure(), figsize=(10, 6))
-    for i, lead_time in enumerate(lead_times):
+    for i in range(len(psd_values)):
         # Average PSD over all forecasts and sum over y-scales to get 1D PSD
         psd_mean = psd_values[i].mean(axis=0).sum(axis=-1)
-        plt.plot(scales, psd_mean, label=f"Lead Time={lead_time}h")
+        plt.plot(scales, psd_mean, label=f"Lead Time={1+i}h")
 
     psd_values = np.asarray(psd_values)
     ave = np.mean(psd_values, axis=(0, 1)).sum(axis=-1)
+
     plt.plot(
         scales,
         ave,
@@ -548,13 +548,81 @@ def plot_psd(scales, psd_values, lead_times, plot_dir=None):
     )
     plt.xlabel("Horizontal Scale [km]")
     plt.ylabel("Power Spectral Density [%²/km]")
-    plt.title("Power Spectral Density for Different Lead Times")
+    plt.title(title)
     plt.legend()
     plt.grid(True)
     plt.xscale("log")  # Use logarithmic scale for better visualization
     plt.yscale("log")  # Use logarithmic scale for better visualization of y-axis
     plt.gca().invert_xaxis()  # Invert the x-axis for descending order
     plt.autoscale(True, axis="y")  # Auto-scale the y-axis
+
+    if plot_dir is not None:
+        savefig(plot_dir)
+
+
+def plot_psd_ave(scales, psd_values, title, labels, plot_dir=None):
+    plt.figure(figure(), figsize=(10, 6))
+    psd_values = np.asarray(psd_values)
+    print(psd_values.shape)
+
+    for i, psd_mean in enumerate(psd_values):
+        plt.plot(scales, psd_mean, label=f"Mean PSD for {labels[i]}")
+
+    plt.xlabel("Horizontal Scale [km]")
+    plt.ylabel("Power Spectral Density [%²/km]")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.xscale("log")  # Use logarithmic scale for better visualization
+    plt.yscale("log")  # Use logarithmic scale for better visualization of y-axis
+    plt.gca().invert_xaxis()  # Invert the x-axis for descending order
+    plt.autoscale(True, axis="y")  # Auto-scale the y-axis
+
+    if plot_dir is not None:
+        savefig(plot_dir)
+
+
+def plot_chisquare(data, title, plot_dir=None):
+    chi2_values, p_values = zip(*data)
+
+    # Creating the plot
+    plt.figure(figure())
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+
+    x_labels = [f"{i*15}m" for i in range(len(chi2_values))]
+
+    # Plotting chi-squared values as a line
+    color = "tab:blue"
+    ax1.set_xlabel("Forecast leadtime")
+    ax1.set_ylabel("Chi-Squared Value", color=color)
+    ax1.plot(
+        x_labels,
+        chi2_values,
+        marker="",
+        color=color,
+        linestyle="-",
+        label="Chi-Squared",
+    )
+    ax1.tick_params(axis="y", labelcolor=color)
+    ax1.legend(loc="upper left")
+
+    # Creating a second y-axis to plot p-values
+    ax2 = ax1.twinx()
+    color = "gray"
+    ax2.set_ylabel("P-Value", color=color)
+    ax2.scatter(
+        x_labels,
+        p_values,
+        color=color,
+        marker="x",
+        label="P-Value",
+    )
+    ax2.tick_params(axis="y", labelcolor=color)
+    ax2.legend(loc="upper right")
+    ax2.set_ylim(0, 1.1)
+
+    plt.title(title)
+    # plt.autoscale(True, axis="y")  # Auto-scale the y-axis
 
     if plot_dir is not None:
         savefig(plot_dir)
