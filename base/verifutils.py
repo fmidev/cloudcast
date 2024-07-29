@@ -26,15 +26,27 @@ def get_time_for_file(args):
 
 
 def produce_scores(args, predictions):
-    mae(args, predictions)
-    psd(args, predictions)
-    # categorical_scores(args, predictions)
-    chi_squared(args, predictions)
-    change(args, predictions)
-    histogram(args, predictions)
-    ssim(args, predictions)
-    fss(args, predictions)
-    wavelet_scores(args, predictions)
+
+    for score in args.scores:
+        if score == "mae":
+            mae(args, predictions)
+        elif score == "psd":
+            psd(args, predictions)
+        elif score == "categorical":
+            categorical_scores(args, predictions)
+        elif score == "chi_squared":
+            chi_squared(args, predictions)
+        elif score == "change":
+            change(args, predictions)
+        elif score == "histogram":
+            histogram(args, predictions)
+        elif score == "ssim":
+            ssim(args, predictions)
+        elif score == "fss":
+            fss(args, predictions)
+        elif score == "wavelet":
+            wavelet_scores(args, predictions)
+
     print("All scores produced")
 
 

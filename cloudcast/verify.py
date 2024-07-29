@@ -71,7 +71,14 @@ def parse_command_line():
         default=None,
         help="read predictions from file, must be one file per label",
     )
-
+    parser.add_argument(
+        "--scores",
+        action="store",
+        nargs="+",
+        type=str,
+        default=["mae, psd", "chi_squared", "change", "histogram", "fss", "wavelet"],
+        help="list of scores to compute, default is mae, psd, chi_squared, change, histogram, fss, wavelet, other options are: categorical, ssim",
+    )
     parser.add_argument("--full_hours_only", action="store_true", default=False)
 
     args = parser.parse_args()
