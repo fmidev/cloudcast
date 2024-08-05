@@ -9,6 +9,7 @@ scikit-image==0.19.3
 scikit-learn==1.1.2
 tensorflow==2.14.0
 tensorflow-datasets==4.9.3
+tensorflow-metadata==1.14.0
 matplotlib
 basemap
 PyWavelets
