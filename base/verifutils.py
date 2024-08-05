@@ -52,21 +52,31 @@ def produce_scores(args, predictions):
 
 def wavelet_scores(args, predictions):
 
-    # Wavelet Transform
-    def wavelet_transform(image):
-        coeffs2 = pywt.dwt2(image, "haar")
-        LL, (LH, HL, HH) = coeffs2
-        return HH
+    def summarize_wavelet(HH, measure="L1"):
+        if measure == "L1":
+            return np.sum(np.abs(HH))
+        elif measure == "L2":
+            return np.sum(HH**2)
+        elif measure == "entropy":
+            HH_flat = HH.flatten()
+            p = np.abs(HH_flat) / np.sum(np.abs(HH_flat))
+            p = p[p > 0]  # Avoid log(0)
+            return -np.sum(p * np.log2(p))
+        else:
+            raise ValueError("Unknown measure type")
 
     gtd = np.asarray(predictions["gt"]["data"])
     gtt = np.asarray(predictions["gt"]["time"])
 
     all_sad = {}
+    all_energy = {"gt": []}
+    gt_done = False
     for i, l in enumerate(predictions):
         if l == "gt":
             continue
 
         all_sad[l] = []
+        all_energy[l] = []
 
         for pred_times, pred_data in zip(
             predictions[l]["time"], predictions[l]["data"]
@@ -83,48 +93,86 @@ def wavelet_scores(args, predictions):
             assert gt_data.shape == pred_data.shape
 
             sad = []
+            energy = []
+            energy_gt = []
             for lt in range(gt_data.shape[0]):
                 image_gt = gt_data[lt].squeeze(axis=-1)
                 image_fc = pred_data[lt].squeeze(axis=-1)
 
-                HH_gt = wavelet_transform(image_gt)
-                HH_fc = wavelet_transform(image_fc)
+                coeffs2_gt = pywt.dwt2(image_gt, "haar")
+                coeffs2_fc = pywt.dwt2(image_fc, "haar")
+
+                _, (_, _, HH_gt) = coeffs2_gt
+                _, (_, _, HH_fc) = coeffs2_fc
+
+                energy.append(summarize_wavelet(HH_fc, measure="L2"))
+
+                if gt_done is False:
+                    energy_gt.append(summarize_wavelet(HH_gt, measure="L2"))
 
                 # Calculate Sum of Absolute Differences in Wavelet HH Coefficients
                 sad_wavelet_HH = np.sum(np.abs(HH_gt - HH_fc))
-
                 sad.append(sad_wavelet_HH)
 
             all_sad[l].append(sad)
+            all_energy[l].append(energy)
+            if gt_done is False:
+                all_energy["gt"].append(energy_gt)
 
-    pl = []
+        gt_done = True
+
+    sads = []
     for l in all_sad:
         all_sad[l] = np.asarray(all_sad[l], dtype=np.float32)
-        pl.append(np.mean(all_sad[l], axis=0))
+        sads.append(np.mean(all_sad[l], axis=0))
+    energys = []
+    for l in all_energy:
+        all_energy[l] = np.asarray(all_energy[l], dtype=np.float32)
+        energys.append(np.mean(all_energy[l], axis=0))
 
-    labels = [reduce_label(l) for l in all_sad.keys()]
     plot_linegraph(
-        pl,
-        labels,
+        sads,
+        [reduce_label(l) for l in all_sad.keys()],
         title="Sum of absolute differences in wavelet HH coefficients",
         ylabel="SAD Wavelet HH difference",
         plot_dir=args.plot_dir,
         start_from_zero=True,
         full_hours_only=args.full_hours_only,
     )
+    plot_linegraph(
+        energys,
+        [reduce_label(l) for l in all_energy.keys()],
+        title="Wavelet entropy",
+        ylabel="Entropy",
+        plot_dir=args.plot_dir,
+        start_from_zero=True,
+        full_hours_only=args.full_hours_only,
+    )
 
     if args.stats_dir is not None:
+        labels = [reduce_label(l) for l in all_sad.keys()]
         with open(args.stats_dir + "/stats.txt", "a") as f:
-            for i, s in enumerate(pl):
+            for i, s in enumerate(sads):
                 l = labels[i]
                 for lt, v in enumerate(s):
                     f.write(
-                        "{} Leadtime: {} Sum of absolute differences in wavelet HH coefficients: {:.3f}\n".format(
+                        "{} Leadtime: {} Sum of absolute differences in wavelet HH coefficients: {:.1f}\n".format(
                             l, lt, v
                         )
                     )
 
-                f.write(f"{l} Mean SAD sum: {np.sum(s):.3f}\n")
+                f.write(f"{l} Mean SAD sum: {np.sum(s):.1f}\n")
+
+        with open(args.stats_dir + "/stats.txt", "a") as f:
+            labels = [reduce_label(l) for l in all_energy.keys()]
+            for i, s in enumerate(energys):
+                l = labels[i]
+                for lt, v in enumerate(s):
+                    f.write(
+                        "{} Leadtime: {} Wavelet entropy: {:.1f}\n".format(l, lt, v)
+                    )
+
+                f.write(f"{l} Mean Entropy sum: {np.sum(s):.1f}\n")
 
 
 def change(args, predictions):
@@ -205,7 +253,7 @@ def chi_squared(args, predictions):
 
             assert (
                 gt_data.shape == pred_data.shape
-            ), "shapes do not match for {}: {} {}".format(
+            ), "shapes do not match for gt and {}: {} vs {}".format(
                 l, gt_data.shape, pred_data.shape
             )
 
@@ -216,10 +264,10 @@ def chi_squared(args, predictions):
         bins = np.linspace(0, 1, 21)  # Define bins for range [0, 1]
 
         for i in range(args.prediction_len + 1):
-            gtd = np.asarray(gt_lt[i]).flatten()
+            gt_data = np.asarray(gt_lt[i]).flatten()
             pred_data = np.asarray(pred_lt[i]).flatten()
 
-            hist_gtd, _ = np.histogram(gtd, bins=bins)
+            hist_gtd, _ = np.histogram(gt_data, bins=bins)
             hist_pred, _ = np.histogram(pred_data, bins=bins)
 
             # Add small constant to histogram counts to avoid zero expected frequencies
@@ -232,11 +280,6 @@ def chi_squared(args, predictions):
             chi2_statistic, p_val_chisquare = chisquare(hist_gtd, f_exp=hist_pred)
 
             ret.append((chi2_statistic, p_val_chisquare))
-
-        for lt, v in enumerate(ret):
-            print(
-                f"Leadtime: {lt} chi-squared statistic: {v[0]:.3f} p-value: {v[1]:.3f}"
-            )
 
         if args.stats_dir is not None:
             with open(args.stats_dir + "/stats.txt", "a") as f:
@@ -769,7 +812,7 @@ def fss(args, predictions):
 
     bins = tf.constant([[0, 0.15], [0.15, 0.85], [0.85, 1.01]], dtype=tf.float32)
 
-    masks = [3, 5, 9, 13, 17, 27, 45, 60, 80]
+    masks = [3, 5, 9, 13, 19, 29, 45, 63]
     labels = list(predictions.keys())
     labels.remove("gt")
 
@@ -888,13 +931,15 @@ def psd(args, predictions):
         data = np.asarray(predictions[l]["data"])
         data = np.squeeze(data, axis=-1)
 
+        if l == "gt":
+            scale_x, scale_y, psd_values = calculate_psd(data, args)
+            all_psds.append(np.mean(psd_values, axis=0).sum(axis=-1))
+            assert np.isnan(psd_values).any() == False
+
+            continue
+
         if len(data.shape) == 3:
             data = np.expand_dims(data, axis=1)
-
-        if l == "gt":
-            scale_x, scale_y, psd = calculate_psd(data, args)
-            all_psds.append(np.mean(psd, axis=(0, 1)).sum(axis=-1))
-            continue
 
         leadtimes = range(args.prediction_len + 1)
 
