@@ -76,7 +76,7 @@ def parse_command_line():
         action="store",
         nargs="+",
         type=str,
-        default=["mae, psd", "chi_squared", "change", "histogram", "fss", "wavelet"],
+        default=["mae", "psd", "chi_squared", "change", "histogram", "fss", "wavelet"],
         help="list of scores to compute, default is mae, psd, chi_squared, change, histogram, fss, wavelet, other options are: categorical, ssim",
     )
     parser.add_argument("--full_hours_only", action="store_true", default=False)
@@ -97,7 +97,7 @@ def parse_command_line():
         args.start_date = parse_time(args.start_date)
         args.stop_date = parse_time(args.stop_date)
 
-    assert len(args.prediction_file) == 0 or len(args.prediction_file) == len(
+    assert args.prediction_file is None or len(args.prediction_file) == len(
         args.label
     ), "Need one prediction file per label"
 
