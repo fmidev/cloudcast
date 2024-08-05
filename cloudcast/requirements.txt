@@ -11,4 +11,4 @@ tensorflow==2.14.0
 tensorflow-datasets==4.9.3
 matplotlib
 basemap
-pywt
+PyWavelets
