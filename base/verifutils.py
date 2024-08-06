@@ -29,29 +29,37 @@ def produce_scores(args, predictions):
 
     for score in args.scores:
         if score == "mae":
+            print("Calculating MAE")
             mae(args, predictions)
         elif score == "psd":
+            print("Calculating PSD")
             psd(args, predictions)
         elif score == "categorical":
+            print("Calculating categorical scores")
             categorical_scores(args, predictions)
         elif score == "chi_squared":
+            print("Calculating chi-squared")
             chi_squared(args, predictions)
         elif score == "change":
+            print("Calculating change")
             change(args, predictions)
         elif score == "histogram":
+            print("Calculating histogram")
             histogram(args, predictions)
         elif score == "ssim":
+            print("Calculating SSIM")
             ssim(args, predictions)
         elif score == "fss":
+            print("Calculating FSS")
             fss(args, predictions)
         elif score == "wavelet":
+            print("Calculating wavelet scores")
             wavelet_scores(args, predictions)
 
     print("All scores produced")
 
 
 def wavelet_scores(args, predictions):
-
     def summarize_wavelet(HH, measure="L1"):
         if measure == "L1":
             return np.sum(np.abs(HH))
@@ -227,6 +235,7 @@ def chi_squared(args, predictions):
     gtd = np.asarray(predictions["gt"]["data"])
     gtt = np.asarray(predictions["gt"]["time"])
 
+    all_data = []
     for l in predictions:
         if l == "gt":
             continue
@@ -236,7 +245,8 @@ def chi_squared(args, predictions):
         gt_lt = {}
         pred_lt = {}
 
-        for i in range(args.prediction_len + 1):
+        n = predictions[l]["data"][0].shape[0]
+        for i in range(n):
             gt_lt[i] = []
             pred_lt[i] = []
 
@@ -263,7 +273,7 @@ def chi_squared(args, predictions):
 
         bins = np.linspace(0, 1, 21)  # Define bins for range [0, 1]
 
-        for i in range(args.prediction_len + 1):
+        for i in range(n):
             gt_data = np.asarray(gt_lt[i]).flatten()
             pred_data = np.asarray(pred_lt[i]).flatten()
 
@@ -296,9 +306,15 @@ def chi_squared(args, predictions):
                     f"{l} Summed chi-square values: {np.sum(np.asarray(chis)):.3f}\n"
                 )
 
-        plot_chisquare(
-            ret, f"Chi-squared for {reduce_label(l)}", plot_dir=args.plot_dir
-        )
+        if args.result_dir is not None:
+            np.save(
+                "{}/{}_chi_squared.npy".format(args.result_dir, l),
+                np.asarray(ret),
+            )
+        all_data.append(ret)
+
+    labels = [reduce_label(l) for l in predictions.keys()]
+    plot_chisquare(all_data, labels, f"Chi-squared values", plot_dir=args.plot_dir)
 
 
 def histogram(args, predictions):
@@ -521,12 +537,13 @@ def plot_mae_timeseries(args, ae, times):
 
     # if less than leadtime_conditioning forecasts are found for a given time,
     # do not include that to data (because the results are skewed)
-    trim_short_times = True
+    # disable if additional forecasts are included, because then we have less
+    # data to work with
 
-    num_expected_forecasts = args.prediction_len
+    trim_short_times = args.include_additional is None
 
-    if args.full_hours_only:
-        num_expected_forecasts = int(args.prediction_len / 4)
+    first_key = next(iter(ae))
+    num_expected_forecasts = ae[first_key].shape[1]
 
     def process_data(ae, times):
         maets = {}
@@ -945,8 +962,10 @@ def psd(args, predictions):
 
         if args.full_hours_only:
             leadtimes = range(4, 22, 4)
+        if args.hourly_data:
+            leadtimes = range(data.shape[1])
 
-        for i in leadtimes:  # pick only full hour data
+        for i in leadtimes:
             scale_x, scale_y, psd = calculate_psd(data[:, i], args)
             psd_values.append(psd)
 
