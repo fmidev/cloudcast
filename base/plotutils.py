@@ -6,6 +6,8 @@ from datetime import timedelta
 from osgeo import osr
 from base.s3utils import *
 from io import BytesIO
+import os
+import itertools
 
 FIGURE = 0
 
@@ -25,6 +27,8 @@ def savefig(plot_dir):
         img_data.seek(0)
         write_to_s3(fname, img_data)
     else:
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
         plt.savefig(fname)
 
     print(f"Saved {fname}")
@@ -105,7 +109,7 @@ def latlonraster(img_size):
 
 
 def plot_on_map(data, title=None, plot_dir=None):
-    plt.close('all')
+    plt.close("all")
     plt.figure(figure(), figsize=(10, 8))
     m = Basemap(
         llcrnrlon=-0.3,
@@ -142,7 +146,7 @@ def plot_on_map(data, title=None, plot_dir=None):
 
 
 def plot_convlstm(ground_truth, predictions, mnwc):
-    plt.close('all')
+    plt.close("all")
     plt.figure(figure())
 
     fig, axes = plt.subplots(
@@ -168,7 +172,7 @@ def plot_convlstm(ground_truth, predictions, mnwc):
 
 
 def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
-    plt.close('all')
+    plt.close("all")
     assert len(labels) == len(y)
     fig = plt.figure(figure(), figsize=(12, 7))
     ax1 = plt.axes()
@@ -202,7 +206,7 @@ def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
 
 
 def plot_bargraph(data, labels, title=None, xvalues=None, ylabel=None, plot_dir=None):
-    plt.close('all')
+    plt.close("all")
     assert len(data) == len(labels)
     labels = list(map(lambda x: reduce_label(x), labels))
 
@@ -240,7 +244,7 @@ def plot_linegraph(
     add_mean_value_to_label=False,
     full_hours_only=False,
 ):
-    plt.close('all')
+    plt.close("all")
     assert len(data) == len(labels)
     fig = plt.figure(figure(), figsize=(12, 7))
     ax = plt.axes()
@@ -290,7 +294,7 @@ def plot_stamps(
     plot_dir=None,
 ):
     assert len(datas) == len(labels)
-    plt.close('all')
+    plt.close("all")
     nrows = len(datas)
     ncols = datas[0].shape[0]
     if initial_data is not None:
@@ -349,7 +353,7 @@ def plot_stamps(
 def plot_histogram(datas, labels, plot_dir=None):
     assert len(datas) == len(labels)
     n_bins = 50
-    plt.close('all')
+    plt.close("all")
     fig, axs = plt.subplots(
         1, len(datas), sharey=True, tight_layout=False, num=figure()
     )
@@ -375,7 +379,7 @@ def plot_performance_diagram(
     title="Performance diagram",
     plot_dir=None,
 ):
-    plt.close('all')
+    plt.close("all")
     plt.figure(figure(), figsize=(9, 8))
     legend_params = dict(loc=4, fontsize=12, framealpha=1, frameon=True)
     csi_cmap = "Blues"
@@ -473,7 +477,7 @@ def plot_fss(
     full_hours_only=False,
     plot_dir=None,
 ):
-    plt.close('all')
+    plt.close("all")
     domain_x = 2370  # km
     domain_y = 2670
 
@@ -537,7 +541,7 @@ def plot_fss(
 
 
 def plot_psd(scales, psd_values, title, plot_dir=None):
-    plt.close('all')
+    plt.close("all")
     plt.figure(figure(), figsize=(10, 6))
     for i in range(len(psd_values)):
         # Average PSD over all forecasts and sum over y-scales to get 1D PSD
@@ -569,7 +573,7 @@ def plot_psd(scales, psd_values, title, plot_dir=None):
 
 
 def plot_psd_ave(scales, psd_values, title, labels, plot_dir=None):
-    plt.close('all')
+    plt.close("all")
     plt.figure(figure(), figsize=(10, 6))
     psd_values = np.asarray(psd_values)
 
@@ -590,48 +594,47 @@ def plot_psd_ave(scales, psd_values, title, labels, plot_dir=None):
         savefig(plot_dir)
 
 
-def plot_chisquare(data, title, plot_dir=None):
-    plt.close('all')
-    chi2_values, p_values = zip(*data)
+def plot_chisquare(data, labels, title, plot_dir=None):
+    plt.close("all")
 
-    # Creating the plot
     plt.figure(figure())
-    fig, ax1 = plt.subplots(figsize=(14, 7))
+    fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    x_labels = [f"{i*15}" for i in range(len(chi2_values))]
+    colors = itertools.cycle(["b", "r", "g", "c", "m", "y", "k"])
+    markers = itertools.cycle(["o", "s", "D", "^", "v", "<", ">"])
 
-    # Plotting chi-squared values as a line
-    color = "tab:blue"
-    ax1.set_xlabel("Forecast leadtime")
-    ax1.set_ylabel("Chi-Squared Value", color=color)
-    ax1.plot(
-        x_labels,
-        chi2_values,
-        marker="",
-        color=color,
-        linestyle="-",
-        label="Chi-Squared",
-    )
-    ax1.tick_params(axis="y", labelcolor=color)
-    ax1.legend(loc="upper left")
+    ax2 = ax1.twinx()  # Create a second y-axis that shares the same x-axis
 
-    # Creating a second y-axis to plot p-values
-    ax2 = ax1.twinx()
-    color = "gray"
-    ax2.set_ylabel("P-Value", color=color)
-    ax2.scatter(
-        x_labels,
-        p_values,
-        color=color,
-        marker="x",
-        label="P-Value",
-    )
-    ax2.tick_params(axis="y", labelcolor=color)
-    ax2.legend(loc="upper right")
-    ax2.set_ylim(0, 1.1)
+    for i, forecast in enumerate(data):
+        chi_squared, p_values = zip(*forecast)
+        color = next(colors)
+        marker = next(markers)
 
-    plt.title(title)
-    # plt.autoscale(True, axis="y")  # Auto-scale the y-axis
+        # Plot the chi-squared as a line plot
+        ax1.plot(chi_squared, label=f"{labels[i]} Chi-squared", color=color)
+
+        # Plot the p-values as a scatter plot
+        ax2.scatter(
+            range(len(p_values)),
+            p_values,
+            label=f"{labels[i]} p-value",
+            color=color,
+            marker=marker,
+        )
+
+    ax2.set_ylim(0, 1.1)  # Set the y-axis limits for the p-values
+    # Add labels and legend
+    ax1.set_xlabel('Index')
+    ax1.set_ylabel('Chi-squared Value')
+    ax2.set_ylabel('p-value')
+
+    # Combine legends from both axes
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2)
+    plt.grid(True)
+
+    plt.title('Chi-squared and p-values')
 
     if plot_dir is not None:
         savefig(plot_dir)
