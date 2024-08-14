@@ -41,7 +41,7 @@ def parse_command_line():
     parser.add_argument("--dataseries_file", action="store", type=str, required=False)
     parser.add_argument("--label", action="store", nargs="+", type=str, required=True)
     parser.add_argument("--prediction_len", action="store", type=int, default=12)
-    parser.add_argument("--include_additional", action="store", nargs="+", default=[])
+    parser.add_argument("--include_additional", action="store", nargs="+", default=None)
     parser.add_argument(
         "--plot_dir",
         action="store",
@@ -76,10 +76,11 @@ def parse_command_line():
         action="store",
         nargs="+",
         type=str,
-        default=["mae", "psd", "chi_squared", "change", "histogram", "fss", "wavelet"],
-        help="list of scores to compute, default is mae, psd, chi_squared, change, histogram, fss, wavelet, other options are: categorical, ssim",
+        default=["mae", "psd", "chi_squared", "change", "histogram", "fss", "wavelet", "maess"],
+        help="list of scores to compute, default is mae, psd, chi_squared, change, histogram, fss, wavelet, maess, other options are: categorical, ssim",
     )
     parser.add_argument("--full_hours_only", action="store_true", default=False)
+    parser.add_argument("--hourly_data", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -337,45 +338,64 @@ def plot_timeseries(args, predictions):
     )
 
 
-def intersection(opts_list, predictions):
-    # take intersection of predicted data so that we get same amount of forecasts
-    # for same times
-    # sometimes this might differ if for example history is missing and one model
-    # needs more history than another
+def intersect_and_filter(dicts):
+    labels = [x for x in dicts.keys() if x != "gt"]
 
-    labels = list(map(lambda x: x.get_label(), opts_list))
+    assert len(labels) >= 2, "At least two models and ground truth are required"
 
-    def _intersection(lst1, lst2):
-        lst3 = [value for value in lst1 if value in lst2]
-        return lst3
+    # Extract time and data lists for all models
+    times = {label: dicts[label]["time"] for label in labels}
+    data = {label: dicts[label]["data"] for label in labels}
 
-    utimes = None
+    time_c = dicts["gt"]["time"]
+    data_c = dicts["gt"]["data"]
 
-    for i in range(len(labels) - 1):
-        label = labels[i]
-        next_label = labels[i + 1]
-        if utimes == None:
-            utimes = _intersection(
-                predictions[label]["time"], predictions[next_label]["time"]
-            )
-        else:
-            utimes = _intersection(utimes, predictions[next_label]["time"])
+    # Find common times across all models
 
-    ret = {}
+    # required length is N; 21 = 5 hours in 15 min steps
+    N = 21
+    common_times = set(tuple(t) for t in times[labels[0]] if len(t) == N)
 
-    for label in labels:
-        ret[label] = {"time": utimes, "data": []}
+    if len(labels) > 2:
+        for label in labels[1:]:
+            common_times &= set(tuple(t) for t in times[label] if len(t) == N)
 
-        for utime in utimes:
-            idx = predictions[label]["time"].index(utime)
-            ret[label]["data"].append(predictions[label]["data"][idx])
+    common_times = [list(t) for t in common_times]  # Convert back to list
+    common_times = sorted(common_times)
 
-    # copy other
-    for label in predictions:
-        if label not in labels:
-            ret[label] = predictions[label]
+    print(
+        "Found {} common forecasts across {} models".format(
+            len(common_times), len(labels)
+        )
+    )
 
-    return ret
+    assert len(common_times) > 0, "No common forecasts found"
+
+    # Filter data based on common times
+    def filter_model_data(model_data, common_times):
+        filtered_data = {"data": [], "time": []}
+        common_times_set = set(tuple(t) for t in common_times)
+        for t, d in zip(model_data["time"], model_data["data"]):
+            if tuple(t) in common_times_set:
+                filtered_data["time"].append(t)
+                filtered_data["data"].append(d)
+        return filtered_data
+
+    filtered_dict = {
+        label: filter_model_data(dicts[label], common_times) for label in labels
+    }
+
+    flat_time = sorted(list(set(item for sublist in common_times for item in sublist)))
+
+    filtered_data = {"data": [], "time": []}
+    for time, data in zip(time_c, data_c):
+        if time in flat_time:
+            filtered_data["time"].append(time)
+            filtered_data["data"].append(data)
+
+    filtered_dict["gt"] = filtered_data
+
+    return filtered_dict
 
 
 if __name__ == "__main__":
@@ -388,7 +408,6 @@ if __name__ == "__main__":
         assert opts_list[-1].onehot_encoding is False
 
     if args.prediction_file is not None and len(args.prediction_file) > 0:
-
         predictions = {}
         for i, f in enumerate(args.prediction_file):
             assert os.path.exists(f), f"File {f} does not exist"
@@ -412,9 +431,22 @@ if __name__ == "__main__":
     else:
         predictions = predict_many(args, opts_list)
 
-    if len(labels) > 1:
-        predictions = intersection(opts_list, predictions)
+    if args.include_additional is not None:
+        prod, file = args.include_additional[0].split(":")
+        assert prod == "meps", "Only MEPS is supported"
+        data = np.load(file, allow_pickle=True)
+        data = data["arr_0"].item()
 
+        predictions[prod] = data[prod]
+
+    if len(predictions.keys()) > 2:  # more than gt and single model
+        predictions = intersect_and_filter(predictions)
+
+    for k in predictions.keys():
+        if k == "gt":
+            print(f"Found {len(predictions[k]['data'])} ground truth images")
+        else:
+            print(f"Found {len(predictions[k]['data'])} forecasts for {k}")
     plot_timeseries(args, predictions)
     produce_scores(args, predictions)
 
