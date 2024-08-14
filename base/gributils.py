@@ -70,7 +70,7 @@ def read_grib_contents(gh, **kwargs):
         return np.expand_dims(data, axis=2)
 
     img_size = kwargs.get("img_size", None)
-    if img_size is not None:
+    if img_size is not None and img_size != (nj, ni):
         data = np.expand_dims(
             cv2.resize(data, dsize=img_size, interpolation=cv2.INTER_LINEAR), axis=2
         )
