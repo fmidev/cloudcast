@@ -9,7 +9,6 @@ import time
 from scipy.stats import chisquare
 import pywt
 
-
 CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
 
@@ -55,8 +54,87 @@ def produce_scores(args, predictions):
         elif score == "wavelet":
             print("Calculating wavelet scores")
             wavelet_scores(args, predictions)
+        elif score == "maess":
+            print("Calculating MAESS")
+            maess(args, predictions)
 
     print("All scores produced")
+
+
+def maess(args, predictions):
+
+    gtd = np.asarray(predictions["gt"]["data"])
+    ae, times = ae2d(args, predictions)
+
+    n_samples, n_leadtimes, n_x, n_y, _ = ae["persistence"].shape
+
+    def monte_carlo_reference_forecast(observations, num_simulations=50):
+        n_samples, n_features = observations.shape
+        simulated_maes = []
+
+        for _ in range(num_simulations):
+            simulated_forecast_flat = np.random.choice(
+                observations.flatten(), size=n_features, replace=True
+            )
+            simulated_forecast = simulated_forecast_flat.reshape(n_x, n_y, 1)
+            simulated_mae = np.mean(
+                np.abs(
+                    simulated_forecast - observations.reshape(n_samples, n_x, n_y, 1)
+                )
+            )
+
+            simulated_maes.append(simulated_mae)
+
+        return np.mean(simulated_maes)
+
+    reference_mae = monte_carlo_reference_forecast(gtd.reshape(gtd.shape[0], -1))
+
+    maesslts = []
+    selts = []
+
+    for i, l in enumerate(ae.keys()):
+        if l == "persistence":
+            continue
+
+        maesslt = []
+        selt = []
+
+        for leadtime in range(ae[l].shape[1]):
+            mae = np.mean(ae[l][:, leadtime])
+            se = np.std(ae[l][:, leadtime]) / np.sqrt(n_samples)
+            maess = 1 - (mae / reference_mae)
+            maesslt.append(maess)
+            selt.append(se)
+
+        maesslts.append(maesslt)
+        selts.append(selt)
+
+    labels = [reduce_label(l) for l in ae.keys() if l != "persistence"]
+
+    if args.stats_dir is not None:
+        with open(args.stats_dir + "/stats.txt", "a") as f:
+            f.write("Reference MAE: {:.3f}\n".format(reference_mae))
+            for i, (maes, ses) in enumerate(zip(maesslts, selts)):
+                l = reduce_label(labels[i])
+                for lt, (mae, se) in enumerate(zip(maes, ses)):
+                    f.write(
+                        "{} Leadtime: {} MAESS: {:.3f} SE: {:.4f}\n".format(
+                            l, lt, mae, se
+                        )
+                    )
+
+                f.write(f"{l} Mean MAESS: {np.mean(maes):.3f}\n")
+
+    plot_linegraph(
+        maesslts,
+        labels,
+        title="MAE Skill Score",
+        ylabel="MAESS",
+        plot_dir=args.plot_dir,
+        start_from_zero=True,
+        full_hours_only=(args.full_hours_only or args.hourly_data),
+        errors=selts,
+    )
 
 
 def wavelet_scores(args, predictions):
@@ -145,7 +223,7 @@ def wavelet_scores(args, predictions):
         ylabel="SAD Wavelet HH difference",
         plot_dir=args.plot_dir,
         start_from_zero=True,
-        full_hours_only=args.full_hours_only,
+        full_hours_only=(args.full_hours_only or args.hourly_data),
     )
     plot_linegraph(
         energys,
@@ -154,14 +232,14 @@ def wavelet_scores(args, predictions):
         ylabel="Entropy",
         plot_dir=args.plot_dir,
         start_from_zero=True,
-        full_hours_only=args.full_hours_only,
+        full_hours_only=(args.full_hours_only or args.hourly_data),
     )
 
     if args.stats_dir is not None:
         labels = [reduce_label(l) for l in all_sad.keys()]
         with open(args.stats_dir + "/stats.txt", "a") as f:
             for i, s in enumerate(sads):
-                l = labels[i]
+                l = reduce_label(labels[i])
                 for lt, v in enumerate(s):
                     f.write(
                         "{} Leadtime: {} Sum of absolute differences in wavelet HH coefficients: {:.1f}\n".format(
@@ -174,7 +252,7 @@ def wavelet_scores(args, predictions):
         with open(args.stats_dir + "/stats.txt", "a") as f:
             labels = [reduce_label(l) for l in all_energy.keys()]
             for i, s in enumerate(energys):
-                l = labels[i]
+                l = reduce_label(labels[i])
                 for lt, v in enumerate(s):
                     f.write(
                         "{} Leadtime: {} Wavelet entropy: {:.1f}\n".format(l, lt, v)
@@ -227,7 +305,7 @@ def change(args, predictions):
         ylabel="Difference",
         plot_dir=args.plot_dir,
         start_from_zero=True,
-        full_hours_only=args.full_hours_only,
+        full_hours_only=(args.full_hours_only or args.hourly_data),
     )
 
 
@@ -298,19 +376,14 @@ def chi_squared(args, predictions):
                     chis.append(v[0])
                     f.write(
                         "{} Leadtime: {} Chi-squared: {:.3f} p-value: {:.3f}\n".format(
-                            l, lt, v[0], v[1]
+                            reduce_label(l), lt, v[0], v[1]
                         )
                     )
 
                 f.write(
-                    f"{l} Summed chi-square values: {np.sum(np.asarray(chis)):.3f}\n"
+                    f"{reduce_label(l)} Summed chi-square values: {np.sum(np.asarray(chis)):.3f}\n"
                 )
 
-        if args.result_dir is not None:
-            np.save(
-                "{}/{}_chi_squared.npy".format(args.result_dir, l),
-                np.asarray(ret),
-            )
         all_data.append(ret)
 
     labels = [reduce_label(l) for l in predictions.keys()]
@@ -318,7 +391,6 @@ def chi_squared(args, predictions):
 
 
 def histogram(args, predictions):
-    print("Plotting histogram")
     datas = []
     labels = []
 
@@ -326,16 +398,42 @@ def histogram(args, predictions):
         datas.append(predictions[l]["data"])
         labels.append(l)
 
-        if False and args.result_dir is not None:
-            np.save(
-                "{}/{}_{}_histogram.npy".format(
-                    args.result_dir, l, get_time_for_file(args)
-                ),
-                np.histogram(np.asarray(datas[-1]), bins=50),
-            )
-
     datas = np.asarray(datas, dtype=object)
     plot_histogram(datas, labels, plot_dir=args.plot_dir)
+
+    gtd = np.asarray(predictions["gt"]["data"])
+    gtt = np.asarray(predictions["gt"]["time"])
+
+    ret = []
+    for l in predictions:
+        if l == "gt":
+            continue
+
+        diff = []
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
+
+            assert (
+                gt_data.shape == pred_data.shape
+            ), "shapes do not match for gt and {}: {} vs {}".format(
+                l, gt_data.shape, pred_data.shape
+            )
+
+            diff.append(gt_data - pred_data)
+
+        hist_diff, bin_edges_diff = np.histogram(diff, bins=20, density=False)
+
+        ret.append((hist_diff, bin_edges_diff))
+
+    plot_histogram_diff(ret, labels, plot_dir=args.plot_dir)
 
 
 def mae(args, predictions):
@@ -355,10 +453,14 @@ def mae(args, predictions):
             for i in range(ae[label].shape[1]):
                 f.write(
                     "{} MAE for forecast {}: {:.3f}\n".format(
-                        label, i, np.mean(ae[label][:, i])
+                        reduce_label(label), i, np.mean(ae[label][:, i])
                     )
                 )
-            f.write("{} Average MAE value: {:.3f}\n".format(label, np.mean(ae[label])))
+            f.write(
+                "{} Average MAE value: {:.3f}\n".format(
+                    reduce_label(label), np.mean(ae[label])
+                )
+            )
 
 
 def remove_initial_ae(ae, times):
@@ -380,7 +482,6 @@ def remove_initial_ae(ae, times):
 
 # absolute error 2d
 def ae2d(args, predictions):
-    print("Producing error fields")
     ret = {}
     gtt = np.asarray(predictions["gt"]["time"])
     gtd = np.asarray(predictions["gt"]["data"])
@@ -443,19 +544,20 @@ def ae2d(args, predictions):
 
 
 def plot_mae_per_leadtime(args, ae):
-    print("Plotting mae per leadtime")
-
     labels = list(ae.keys())
 
     maelts = []
+    selts = []
     for j, l in enumerate(ae):
         newae = np.moveaxis(ae[l], 0, 1)
         maelt = []
-
+        selt = []
         for i, lt in enumerate(newae):
             maelt.append(np.mean(lt).astype(np.float32))
+            selt.append(np.std(lt) / np.sqrt(len(lt)))
 
         maelts.append(np.asarray(maelt, dtype=np.float32))
+        selts.append(np.asarray(selt, dtype=np.float32))
         labels[j] += " ({:.3f})".format(np.mean(np.asarray(maelt)))
 
         if args.result_dir is not None:
@@ -471,7 +573,8 @@ def plot_mae_per_leadtime(args, ae):
         ylabel="mae",
         plot_dir=args.plot_dir,
         start_from_zero=True,
-        full_hours_only=args.full_hours_only,
+        full_hours_only=(args.full_hours_only or args.hourly_data),
+        errors=selts,
     )
 
 
@@ -480,7 +583,6 @@ def plot_mae2d(args, ae, times):
     # (9, 4, 128, 128, 1)
     # (forecasts, leadtimes, x, y, channels)
     # merge 0, 1 so that all mae2d fields are merged to one dimension
-    print("Plotting mae on map")
 
     if times is not None:
         title = "MAE between {}..{}".format(
@@ -533,8 +635,6 @@ def plot_mae2d(args, ae, times):
 
 
 def plot_mae_timeseries(args, ae, times):
-    print("Plotting mae timeseries")
-
     # if less than leadtime_conditioning forecasts are found for a given time,
     # do not include that to data (because the results are skewed)
     # disable if additional forecasts are included, because then we have less
@@ -642,8 +742,6 @@ def categorize(arr):
 
 
 def categorical_scores(args, predictions):
-    print("Plotting categorical scores")
-
     gtd = predictions["gt"]["data"]
     gtt = predictions["gt"]["time"]
 
@@ -704,18 +802,8 @@ def categorical_scores(args, predictions):
             plot_dir=args.plot_dir,
         )
 
-        if args.result_dir is not None:
-            np.save(
-                "{}/{}_{}_categoricalscores.npy".format(
-                    args.result_dir, l, get_time_for_file(args)
-                ),
-                np.asarray(catscores),
-            )
-
 
 def ssim(args, predictions):
-    print("Plotting SSIM")
-
     num_expected_forecasts = args.prediction_len
 
     if args.full_hours_only:
@@ -764,12 +852,6 @@ def ssim(args, predictions):
 
         ssims[-1] = np.average(np.asarray(ssims[-1]), axis=0).astype(np.float32)
 
-        if False and args.result_dir is not None:
-            np.save(
-                "{}/{}_{}_ssim.npy".format(args.result_dir, l, get_time_for_file(args)),
-                ssims[-1],
-            )
-
     plot_linegraph(
         ssims,
         list(predictions.keys()),
@@ -778,7 +860,7 @@ def ssim(args, predictions):
         ),
         ylabel="ssim",
         plot_dir=args.plot_dir,
-        full_hours_only=args.full_hours_only,
+        full_hours_only=(args.full_hours_only or args.hourly),
     )
 
 
@@ -809,8 +891,12 @@ def fss(args, predictions):
                 loss = 1 - lf(y_true, y_pred).numpy()
                 datas.append(loss)
 
-            assert (args.full_hours_only and len(datas) == len(pred_times)) or (
-                args.full_hours_only is False and len(datas) == args.prediction_len + 1
+            assert (
+                (args.full_hours_only or args.hourly_data)
+                and len(datas) == len(pred_times)
+            ) or (
+                (args.full_hours_only or args.hourly_data) is False
+                and len(datas) == args.prediction_len + 1
             )
 
             arr.append(datas)
@@ -827,7 +913,7 @@ def fss(args, predictions):
 
     obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2]
 
-    bins = tf.constant([[0, 0.15], [0.15, 0.85], [0.85, 1.01]], dtype=tf.float32)
+    bins = tf.constant([[0, 0.125], [0.125, 0.875], [0.875, 1.01]], dtype=tf.float32)
 
     masks = [3, 5, 9, 13, 19, 29, 45, 63]
     labels = list(predictions.keys())
@@ -836,7 +922,7 @@ def fss(args, predictions):
     fsss = []
     img_sizes = []
 
-    print("Producing FSS for mask sizes: {}".format(masks))
+    #    print("Producing FSS for mask sizes: {}".format(masks))
 
     for l in predictions:
         if l == "gt":
@@ -857,7 +943,28 @@ def fss(args, predictions):
             )
             label_arr.append(mask_arr)
             stop = time.time()
-            print("FSS for: {} mask size: {} in {:.1f}s".format(l, m, stop - start))
+
+            if args.stats_dir is None:
+                continue
+
+            with open(args.stats_dir + "/stats.txt", "a") as f:
+                mask_arr = np.asarray(mask_arr)  # (predictions, leadtime, category)
+                for cat in range(mask_arr.shape[2]):
+                    for lt in range(mask_arr.shape[1]):
+                        f.write(
+                            "{} FSS cat {} mask size {} leadtime {}: {:.3f}\n".format(
+                                reduce_label(l),
+                                cat,
+                                m,
+                                lt,
+                                np.nanmean(mask_arr[:, lt, cat]),
+                            )
+                        )
+                    f.write(
+                        "{} FSS cat {} mask size {} mean value: {:.2f}\n".format(
+                            reduce_label(l), cat, m, np.mean(mask_arr[:, :, cat])
+                        )
+                    )
 
         fsss.append(label_arr)
 
@@ -944,7 +1051,6 @@ def psd(args, predictions):
 
     for l in predictions:
         psd_values = []
-
         data = np.asarray(predictions[l]["data"])
         data = np.squeeze(data, axis=-1)
 
@@ -979,14 +1085,20 @@ def psd(args, predictions):
         all_psds.append(np.mean(psd_values, axis=(0, 1)).sum(axis=-1))
 
         if args.stats_dir is None:
-            return
+            continue
 
         with open(args.stats_dir + "/stats.txt", "a") as f:
             for i, psd in enumerate(psd_values):
                 f.write(
-                    "{} PSD value for forecast {}: {:.2f}\n".format(l, i, np.mean(psd))
+                    "{} PSD value for forecast {}: {:.2f}\n".format(
+                        reduce_label(l), i, np.mean(psd)
+                    )
                 )
-            f.write("{} Average PSD value: {:.2f}\n".format(l, np.mean(psd_values)))
+            f.write(
+                "{} Average PSD value: {:.2f}\n".format(
+                    reduce_label(l), np.mean(psd_values)
+                )
+            )
     labels = list(predictions.keys())
     labels = [reduce_label(l) for l in labels]
 
