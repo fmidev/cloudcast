@@ -76,11 +76,36 @@ def parse_command_line():
         action="store",
         nargs="+",
         type=str,
-        default=["mae", "psd", "chi_squared", "change", "histogram", "fss", "wavelet", "maess"],
+        default=[
+            "mae",
+            "psd",
+            "chi_squared",
+            "change",
+            "histogram",
+            "fss",
+            "wavelet",
+            "maess",
+        ],
         help="list of scores to compute, default is mae, psd, chi_squared, change, histogram, fss, wavelet, maess, other options are: categorical, ssim",
     )
-    parser.add_argument("--full_hours_only", action="store_true", default=False)
-    parser.add_argument("--hourly_data", action="store_true", default=False)
+    parser.add_argument(
+        "--full_hours_only",
+        action="store_true",
+        default=False,
+        help="Only predict for full hours (leadtime=1h,2h,...)",
+    )
+    parser.add_argument(
+        "--hourly_prediction_only",
+        action="store_true",
+        default=False,
+        help="Make a prediction every hour, in 15 min intervals",
+    )
+    parser.add_argument(
+        "--hourly_data",
+        action="store_true",
+        default=False,
+        help="Data is hourly. Used in conjunction with --prediction_file",
+    )
 
     args = parser.parse_args()
 
@@ -101,6 +126,10 @@ def parse_command_line():
     assert args.prediction_file is None or len(args.prediction_file) == len(
         args.label
     ), "Need one prediction file per label"
+
+    assert args.full_hours_only is False or (
+        args.full_hours_only and args.prediction_file is not None
+    ), "--prediction_file is required with --full_hours_only"
 
     return args
 
@@ -149,6 +178,7 @@ def predict(args, opts):
         enable_debug=True,
         **vars(args),
         leadtime_conditioning=args.prediction_len,
+        hourly_prediction=args.hourly_prediction_only,
     )
 
     d = lds.get_dataset()
@@ -179,6 +209,9 @@ def predict(args, opts):
         xy_times = list(map(lambda x: x.decode("utf8"), xy_times))
 
         prediction_time = datetime.datetime.strptime(xy_times[-1], "%Y%m%dT%H%M%S")
+
+        if args.hourly_prediction_only and xy_times[-2][-4:] != "0000":
+            continue
 
         if len(forecast) > 0 and len(forecast) % num_expected_forecasts == 0:
             predictions[opts.get_label()]["time"].append(times.copy())

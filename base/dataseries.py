@@ -252,6 +252,7 @@ class LazyDataSeries:
         self.debug = kwargs.get("enable_debug", False)
         self.filenames = kwargs.get("filenames", None)
         self.analysis_time = kwargs.get("analysis_time", None)
+        self.hourly_prediction = kwargs.get("hourly_prediction", False)
         operating_mode = kwargs.get("operating_mode", "TRAIN")
 
         self.cache = kwargs.get("enable_cache", False)
@@ -368,6 +369,12 @@ class LazyDataSeries:
 
         while i <= len(self.elements) - (self.n_channels + n_fut):
             x = list(self.elements[i : i + self.n_channels])
+
+            # if we are making predictions at full hours, skip all the data
+            # where last input data (=latest time) is not at full hour
+            if self.hourly_prediction and x[-1][-4:] != "0000":
+                i += step
+                continue
 
             for lt in range(self.leadtime_conditioning):
                 x_ = copy.deepcopy(x)
