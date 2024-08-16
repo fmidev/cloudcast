@@ -149,7 +149,7 @@ def save_model_info(args, opts, duration, hist, model_dir):
             "opts": opts.__dict__,
             "duration": str(duration),
             "finished": now,
-            "hostname": os.environ["HOSTNAME"],
+            "hostname": os.environ.get("HOSTNAME", "no-hostname"),
         }
         json.dump(data, fp, default=str)
 
