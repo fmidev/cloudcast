@@ -8,6 +8,7 @@ from base.s3utils import *
 from io import BytesIO
 import os
 import itertools
+from matplotlib.colors import LinearSegmentedColormap
 
 FIGURE = 0
 
@@ -126,12 +127,15 @@ def plot_on_map(data, title=None, plot_dir=None):
         lon_0=15.0,
     )
 
+    colors = [(1, 1, 1), (1, 0, 0)]  # White to red
+    n_bins = 100  # Number of bins in the colormap
+    cmap_name = "white_to_red"
+    cm = LinearSegmentedColormap.from_list(cmap_name, colors, N=n_bins)
+
     lons, lats = latlonraster(data.shape)
 
     x, y = m(lons, lats)
-    cs = m.pcolormesh(
-        x, y, data, shading="auto", vmin=0, vmax=0.7
-    )  # ,cmap=plt.cm.Greys)
+    cs = m.pcolormesh(x, y, data, shading="auto", vmin=0, vmax=0.7, cmap=cm)
 
     m.drawcoastlines()
     m.drawmapboundary()
@@ -143,32 +147,6 @@ def plot_on_map(data, title=None, plot_dir=None):
 
     if plot_dir is not None:
         savefig(plot_dir)
-
-
-def plot_convlstm(ground_truth, predictions, mnwc):
-    plt.close("all")
-    plt.figure(figure())
-
-    fig, axes = plt.subplots(
-        3, ground_truth.shape[0], figsize=(16, 7), constrained_layout=True
-    )
-
-    for idx, ax in enumerate(axes[0]):
-        ax.imshow(np.squeeze(ground_truth[idx]), cmap="gray_r")
-        ax.set_title(f"ground truth frame {idx}")
-        ax.axis("off")
-
-    for idx, ax in enumerate(axes[1]):
-        ax.imshow(np.squeeze(predictions[idx]), cmap="gray_r")
-        ax.set_title(f"prediction frame {idx}")
-        ax.axis("off")
-
-    for idx, ax in enumerate(axes[2]):
-        ax.imshow(np.squeeze(mnwc[idx]), cmap="gray_r")
-        ax.set_title(f"mnwc frame {idx}")
-        ax.axis("off")
-
-    plt.show()
 
 
 def plot_normal(x, y, y2, labels, title=None, xlabels=None, plot_dir=None):
@@ -243,9 +221,12 @@ def plot_linegraph(
     start_from_zero=False,
     add_mean_value_to_label=False,
     full_hours_only=False,
+    errors=None,
 ):
     plt.close("all")
     assert len(data) == len(labels)
+    assert errors is None or len(errors) == len(data)
+
     fig = plt.figure(figure(), figsize=(12, 7))
     ax = plt.axes()
     ax.set_xlabel("leadtime")
@@ -264,15 +245,26 @@ def plot_linegraph(
 
     labels = list(map(lambda x: reduce_label(x), labels))
 
-    for i, mae in enumerate(data):
-        mae = np.asarray(mae)
-        x = xreal[np.isfinite(mae)]
-        y = mae[np.isfinite(mae)]
+    if errors is None:
+        for i, mae in enumerate(data):
+            mae = np.asarray(mae)
+            x = xreal[np.isfinite(mae)]
+            y = mae[np.isfinite(mae)]
 
-        label = labels[i]
-        if add_mean_value_to_label:
-            label = "{} mean: {:.3f}".format(label, np.mean(mae))
-        ax.plot(x, y, label=label, linestyle="-", marker="o")
+            label = labels[i]
+            if add_mean_value_to_label:
+                label = "{} mean: {:.3f}".format(label, np.mean(mae))
+            ax.plot(x, y, label=label, linestyle="-", marker="o")
+    else:
+        for i, mae in enumerate(data):
+            mae = np.asarray(mae)
+            x = xreal[np.isfinite(mae)]
+            y = mae[np.isfinite(mae)]
+
+            label = labels[i]
+            if add_mean_value_to_label:
+                label = "{} mean: {:.3f}".format(label, np.mean(mae))
+            ax.errorbar(x, y, yerr=errors[i], label=label, linestyle="-", marker="o")
 
     ax.set_xticks(xreal)
     ax.set_xticklabels(xlabels)
@@ -369,6 +361,30 @@ def plot_histogram(datas, labels, plot_dir=None):
 
     if plot_dir is not None:
         savefig(plot_dir)
+
+
+def plot_histogram_diff(datas, labels, plot_dir=None):
+    for i, (hist_diff, bin_edges_diff) in enumerate(datas):
+        plt.figure(figure(), figsize=(10, 6))
+
+        bin_centers_diff = (bin_edges_diff[:-1] + bin_edges_diff[1:]) / 2
+
+        plt.bar(
+            bin_centers_diff,
+            hist_diff,
+            width=bin_edges_diff[1] - bin_edges_diff[0],
+            alpha=0.7,
+            label="Difference",
+        )
+
+        plt.title(f"Histogram of differences for {reduce_label(labels[i])}")
+        plt.xlabel("Value")
+        plt.ylabel("Probability Density")
+        plt.legend()
+        plt.grid(True)
+
+        if plot_dir is not None:
+            savefig(plot_dir)
 
 
 def plot_performance_diagram(
@@ -546,7 +562,7 @@ def plot_psd(scales, psd_values, title, plot_dir=None):
     for i in range(len(psd_values)):
         # Average PSD over all forecasts and sum over y-scales to get 1D PSD
         psd_mean = psd_values[i].mean(axis=0).sum(axis=-1)
-        plt.plot(scales, psd_mean, label=f"Lead Time={1+i}h")
+        plt.plot(scales, psd_mean, label=f"Lead Time={i}h")
 
     psd_values = np.asarray(psd_values)
     ave = np.mean(psd_values, axis=(0, 1)).sum(axis=-1)
@@ -624,9 +640,9 @@ def plot_chisquare(data, labels, title, plot_dir=None):
 
     ax2.set_ylim(0, 1.1)  # Set the y-axis limits for the p-values
     # Add labels and legend
-    ax1.set_xlabel('Index')
-    ax1.set_ylabel('Chi-squared Value')
-    ax2.set_ylabel('p-value')
+    ax1.set_xlabel("Index")
+    ax1.set_ylabel("Chi-squared Value")
+    ax2.set_ylabel("p-value")
 
     # Combine legends from both axes
     lines, labels = ax1.get_legend_handles_labels()
@@ -634,7 +650,7 @@ def plot_chisquare(data, labels, title, plot_dir=None):
     ax1.legend(lines + lines2, labels + labels2)
     plt.grid(True)
 
-    plt.title('Chi-squared and p-values')
+    plt.title("Chi-squared and p-values")
 
     if plot_dir is not None:
         savefig(plot_dir)
