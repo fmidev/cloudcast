@@ -286,6 +286,10 @@ def plot_stamps(
     plot_dir=None,
 ):
     assert len(datas) == len(labels)
+
+    for i in range(1,len(datas)):
+        assert datas[i].shape == datas[0].shape
+
     plt.close("all")
     nrows = len(datas)
     ncols = datas[0].shape[0]
