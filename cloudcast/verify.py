@@ -371,7 +371,7 @@ def plot_timeseries(args, predictions):
     )
 
 
-def intersect_and_filter(dicts):
+def intersect_and_filter(args, dicts):
     labels = [x for x in dicts.keys() if x != "gt"]
 
     assert len(labels) >= 2, "At least two models and ground truth are required"
@@ -386,12 +386,14 @@ def intersect_and_filter(dicts):
     # Find common times across all models
 
     # required length is N; 21 = 5 hours in 15 min steps
-    N = 21
-    common_times = set(tuple(t) for t in times[labels[0]] if len(t) == N)
+    N = args.prediction_len + 1
+    if args.hourly_data:
+        N = int(np.ceil(N / 4))
 
-    if len(labels) > 2:
-        for label in labels[1:]:
-            common_times &= set(tuple(t) for t in times[label] if len(t) == N)
+    common_times = set(tuple(t) for t in times[labels[0]] if len(t) >= N)
+
+    for label in labels[1:]:
+        common_times &= set(tuple(t) for t in times[label] if len(t) >= N)
 
     common_times = [list(t) for t in common_times]  # Convert back to list
     common_times = sorted(common_times)
@@ -418,6 +420,9 @@ def intersect_and_filter(dicts):
         label: filter_model_data(dicts[label], common_times) for label in labels
     }
 
+    for label in labels:
+        assert len(filtered_dict[label]["data"]) == len(common_times)
+
     flat_time = sorted(list(set(item for sublist in common_times for item in sublist)))
 
     filtered_data = {"data": [], "time": []}
@@ -425,10 +430,66 @@ def intersect_and_filter(dicts):
         if time in flat_time:
             filtered_data["time"].append(time)
             filtered_data["data"].append(data)
+        else:
+            print(f"Skipping ground truth for {time}: not in forecasted times")
 
     filtered_dict["gt"] = filtered_data
+    gt_set = set(filtered_data["time"])
+
+    for l in labels:
+        filtered_times = []
+        filtered_data = []
+        model = filtered_dict[l]
+        for times, data in zip(model["time"], model["data"]):
+            # Check if all times in the sublist are in gt_set
+            if all(time in gt_set for time in times):
+                # If all times are valid, add them to the filtered lists
+                filtered_times.append(times)
+                filtered_data.append(data)
+            else:
+                print(
+                    "Skipping {} forecast with atime {}: not in ground truth".format(
+                        l, times[0]
+                    )
+                )
+        # Update the model dictionary with the filtered lists
+        filtered_dict[l]["time"] = filtered_times
+        filtered_dict[l]["data"] = filtered_data
+
+    for label in labels:
+        assert len(filtered_dict[label]["data"]) > 0
+
+    common_times = list(
+        set([item for sublist in filtered_dict[labels[0]]["time"] for item in sublist])
+    )
+
+    # Reverse check: are all common times in the ground truth?
+    for t in common_times:
+        assert (
+            t in filtered_dict["gt"]["time"]
+        ), f"Forecast time {t} not found in ground truth"
 
     return filtered_dict
+
+
+def amend_exim_with_analysis_time(gt, exim):
+
+    new_times = []
+    new_data = []
+
+    for i, (times, datas) in enumerate(zip(exim["time"], exim["data"])):
+        times = [datetime.datetime.strptime(t, "%Y%m%dT%H%M%S") for t in times]
+        analysis_time = times[0] - timedelta(minutes=15)
+        analysis_data = np.expand_dims(
+            gt["data"][gt["time"].index(analysis_time)], axis=0
+        )
+
+        new_times.append([analysis_time] + times)
+        new_data.append(np.concatenate((analysis_data, datas), axis=0))
+
+        assert len(new_times[-1]) == 5
+        assert new_data[-1].shape[0] == 5
+    return {"time": new_times, "data": new_data}
 
 
 if __name__ == "__main__":
@@ -465,21 +526,33 @@ if __name__ == "__main__":
         predictions = predict_many(args, opts_list)
 
     if args.include_additional is not None:
-        prod, file = args.include_additional[0].split(":")
-        assert prod == "meps", "Only MEPS is supported"
-        data = np.load(file, allow_pickle=True)
-        data = data["arr_0"].item()
+        for i, f in enumerate(args.include_additional):
+            prod, file = f.split(":")
+            assert os.path.exists(file), f"File {file} does not exist"
 
-        predictions[prod] = data[prod]
+            print("Reading additional predictions for {} from {}".format(prod, file))
+            data = np.load(file, allow_pickle=True)
+
+            if "arr_0" in data.keys():
+                data = data["arr_0"].item()
+
+            predictions[prod] = data[prod]
+
+    if "exim" in predictions.keys():
+        # exim is missing analysis time data, add it
+        predictions["exim"] = amend_exim_with_analysis_time(
+            predictions["gt"], predictions["exim"]
+        )
 
     if len(predictions.keys()) > 2:  # more than gt and single model
-        predictions = intersect_and_filter(predictions)
+        predictions = intersect_and_filter(args, predictions)
 
     for k in predictions.keys():
         if k == "gt":
             print(f"Found {len(predictions[k]['data'])} ground truth images")
         else:
             print(f"Found {len(predictions[k]['data'])} forecasts for {k}")
+
     plot_timeseries(args, predictions)
     produce_scores(args, predictions)
 
