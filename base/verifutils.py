@@ -9,7 +9,7 @@ import time
 from scipy.stats import chisquare
 import pywt
 
-CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
+CATEGORIES = ["clear", "partly-cloudy", "mostly-cloudy", "overcast"]
 
 WRITE_RESULTS = bool(os.environ.get("WRITE_RESULTS", None))
 
@@ -928,18 +928,31 @@ def fss(args, predictions):
             arr.append(datas)
         return arr
 
-    obs_cat = categorize(predictions["gt"]["data"], [0.125, 0.875])
+    bins = [[0, 0.0625], [0.0625, 0.5], [0.5, 0.9375], [0.9375, 1.0]]
+    thresholds = [x[1] for x in bins[:-1]]
+    #bins = [0.0625, 0.5, 0.9375]
+    obs_cat = categorize(predictions["gt"]["data"], categories=thresholds)
     observed_cat0 = np.count_nonzero(obs_cat == 0)
     observed_cat1 = np.count_nonzero(obs_cat == 1)
     observed_cat2 = np.count_nonzero(obs_cat == 2)
+    observed_cat3 = np.count_nonzero(obs_cat == 3)
 
-    obs_frac_cat0 = observed_cat0 / (observed_cat0 + observed_cat1 + observed_cat2)
-    obs_frac_cat1 = observed_cat1 / (observed_cat0 + observed_cat1 + observed_cat2)
-    obs_frac_cat2 = observed_cat2 / (observed_cat0 + observed_cat1 + observed_cat2)
+    obs_frac_cat0 = observed_cat0 / (
+        observed_cat0 + observed_cat1 + observed_cat2 + observed_cat3
+    )
+    obs_frac_cat1 = observed_cat1 / (
+        observed_cat0 + observed_cat1 + observed_cat2 + observed_cat3
+    )
+    obs_frac_cat2 = observed_cat2 / (
+        observed_cat0 + observed_cat1 + observed_cat2 + observed_cat3
+    )
+    obs_frac_cat3 = observed_cat3 / (
+        observed_cat0 + observed_cat1 + observed_cat2 + observed_cat3
+    )
 
-    obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2]
+    obs_frac = [obs_frac_cat0, obs_frac_cat1, obs_frac_cat2, obs_frac_cat3]
 
-    bins = tf.constant([[0, 0.125], [0.125, 0.875], [0.875, 1.01]], dtype=tf.float32)
+    bins = tf.constant(bins, dtype=tf.float32)
 
     growth_rate = 1.5
     n_masks = 12
@@ -960,7 +973,7 @@ def fss(args, predictions):
     saved = {
         "labels": labels,
         "mask_size": masks,
-        "categories": [[0, 0.125], [0.125, 0.875], [0.875, 1.01]],
+        "categories": bins.numpy(),
         "obs_frac": obs_frac,
         "fss": [],
     }
@@ -1012,9 +1025,6 @@ def fss(args, predictions):
             saved["fss"].append(label_arr)
 
     if WRITE_RESULTS:
-        saved["scale_x"] = scale_x
-        saved["labels"] = labels
-
         season = get_season(args)
         np.save(f"/tmp/fss-{season}.npy", saved, allow_pickle=True)
 
