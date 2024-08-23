@@ -11,6 +11,18 @@ import pywt
 
 CATEGORIES = ["cloudy", "partly-cloudy", "clear"]
 
+WRITE_RESULTS = bool(os.environ.get("WRITE_RESULTS", None))
+
+
+def get_season(args):
+    seasons = ["summer", "winter", "spring", "autumn", "all-seasons"]
+
+    for s in seasons:
+        if s in args.prediction_file[0]:
+            return s
+
+    return None
+
 
 def get_time_for_file(args):
     if args.start_date is None:
@@ -87,15 +99,17 @@ def maess(args, predictions):
 
         return np.mean(simulated_maes)
 
-    reference_mae = monte_carlo_reference_forecast(gtd.reshape(gtd.shape[0], -1))
+    def climatological_reference_forecast(observations):
+        clim_mean = np.mean(gtd, axis=(0)).flatten()
+        return np.mean(np.abs(observations - clim_mean))
+
+    #    reference_mae = monte_carlo_reference_forecast(gtd.reshape(gtd.shape[0], -1))
+    reference_mae = climatological_reference_forecast(gtd.reshape(gtd.shape[0], -1))
 
     maesslts = []
     selts = []
 
     for i, l in enumerate(ae.keys()):
-        if l == "persistence":
-            continue
-
         maesslt = []
         selt = []
 
@@ -109,7 +123,19 @@ def maess(args, predictions):
         maesslts.append(maesslt)
         selts.append(selt)
 
-    labels = [reduce_label(l) for l in ae.keys() if l != "persistence"]
+    labels = [reduce_label(l) for l in ae.keys()]
+
+    if WRITE_RESULTS:
+        saved = {
+            "maess": maesslts,
+            "se": selts,
+            "labels": labels,
+            "reference_mae": reference_mae,
+            "times": times,
+        }
+
+        season = get_season(args)
+        np.save(f"/tmp/maess-{season}.npy", saved, allow_pickle=True)
 
     if args.stats_dir is not None:
         with open(args.stats_dir + "/stats.txt", "a") as f:
@@ -734,11 +760,11 @@ def calculate_categorical_score(category, cm, score):
     return calc_score(TN, FP, FN, TP, score)
 
 
-def categorize(arr):
+def categorize(arr, categories=[0.15, 0.85]):
     # cloudy = 2 when cloudiness > 85%
     # partly = 1 when 15% >= cloudiness >= 85%
     # clear = 0  when cloudiness < 15%
-    return np.digitize(arr, [0.15, 0.85]).astype(np.int8)
+    return np.digitize(arr, categories).astype(np.int8)
 
 
 def categorical_scores(args, predictions):
@@ -902,7 +928,7 @@ def fss(args, predictions):
             arr.append(datas)
         return arr
 
-    obs_cat = categorize(predictions["gt"]["data"])
+    obs_cat = categorize(predictions["gt"]["data"], [0.125, 0.875])
     observed_cat0 = np.count_nonzero(obs_cat == 0)
     observed_cat1 = np.count_nonzero(obs_cat == 1)
     observed_cat2 = np.count_nonzero(obs_cat == 2)
@@ -915,7 +941,14 @@ def fss(args, predictions):
 
     bins = tf.constant([[0, 0.125], [0.125, 0.875], [0.875, 1.01]], dtype=tf.float32)
 
-    masks = [3, 5, 9, 13, 19, 29, 45, 63]
+    growth_rate = 1.5
+    n_masks = 12
+
+    masks = [1]
+    for i in range(1, n_masks):
+        next_value = masks[-1] + int(np.ceil(growth_rate**i))
+        masks.append(next_value)
+
     labels = list(predictions.keys())
     labels.remove("gt")
 
@@ -923,6 +956,14 @@ def fss(args, predictions):
     img_sizes = []
 
     #    print("Producing FSS for mask sizes: {}".format(masks))
+
+    saved = {
+        "labels": labels,
+        "mask_size": masks,
+        "categories": [[0, 0.125], [0.125, 0.875], [0.875, 1.01]],
+        "obs_frac": obs_frac,
+        "fss": [],
+    }
 
     for l in predictions:
         if l == "gt":
@@ -967,6 +1008,17 @@ def fss(args, predictions):
                     )
 
         fsss.append(label_arr)
+        if WRITE_RESULTS:
+            saved["fss"].append(label_arr)
+
+    if WRITE_RESULTS:
+        saved["scale_x"] = scale_x
+        saved["labels"] = labels
+
+        season = get_season(args)
+        np.save(f"/tmp/fss-{season}.npy", saved, allow_pickle=True)
+
+    ####################################
 
     fsss = np.asarray(fsss)
     fsss = np.moveaxis(fsss, -1, 1)
@@ -1015,8 +1067,8 @@ def calculate_psd(data, args):
 
     # Number of spatial points
     nx, ny = data.shape[-2:]
-    dx = 2500 * (949 - 1.0) / nx / 1000
-
+    dx = 2500 * (949 - 1.0) / (nx - 1.0) / 1000
+    dy = 2500 * (1069 - 1.0) / (ny - 1.0) / 1000
     # Perform Fourier transform over spatial dimensions
     f_transform = np.fft.fft2(data, axes=(-2, -1))
     f_transform = np.fft.fftshift(f_transform)
@@ -1024,7 +1076,7 @@ def calculate_psd(data, args):
     psd = np.abs(f_transform) ** 2
     # Calculate spatial frequencies
     kx = np.fft.fftfreq(nx, d=dx)
-    ky = np.fft.fftfreq(ny, d=dx)
+    ky = np.fft.fftfreq(ny, d=dy)
     kx = np.fft.fftshift(kx)
     ky = np.fft.fftshift(ky)
 
@@ -1049,6 +1101,11 @@ def psd(args, predictions):
 
     all_psds = []
 
+    saved = {
+        "psd_lt": [],
+        "psd_mean": [],
+    }
+
     for l in predictions:
         psd_values = []
         data = np.asarray(predictions[l]["data"])
@@ -1059,6 +1116,7 @@ def psd(args, predictions):
             all_psds.append(np.mean(psd_values, axis=0).sum(axis=-1))
             assert np.isnan(psd_values).any() == False
 
+            saved["psd_mean"].append(all_psds[-1])
             continue
 
         if len(data.shape) == 3:
@@ -1084,6 +1142,12 @@ def psd(args, predictions):
 
         all_psds.append(np.mean(psd_values, axis=(0, 1)).sum(axis=-1))
 
+        if WRITE_RESULTS:
+            saved["psd_lt"].append(
+                [np.mean(psd, axis=0).sum(axis=-1) for psd in psd_values]
+            )
+            saved["psd_mean"].append(np.mean(psd_values, axis=(0, 1)).sum(axis=-1))
+
         if args.stats_dir is None:
             continue
 
@@ -1101,6 +1165,13 @@ def psd(args, predictions):
             )
     labels = list(predictions.keys())
     labels = [reduce_label(l) for l in labels]
+
+    if WRITE_RESULTS:
+        saved["scale_x"] = scale_x
+        saved["labels"] = labels
+
+        season = get_season(args)
+        np.save(f"/tmp/psd-{season}.npy", saved, allow_pickle=True)
 
     plot_psd_ave(
         scale_x,
