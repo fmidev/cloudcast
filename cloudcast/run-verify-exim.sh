@@ -4,6 +4,9 @@ labels="
 unet-mae-hist=4-dt=True-topo=False-terrain=False-lc=20-oh=False-sun=False-img_size=512x512
 "
 
+export WRITE_RESULTS=1
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+export PYTHONUNBUFFERED=1
 
 base=$HOME/cloudcast/data/official-verification/full-resolution-949
 seasons="spring summer all-seasons"

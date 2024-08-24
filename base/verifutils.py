@@ -9,8 +9,6 @@ import time
 from scipy.stats import chisquare
 import pywt
 
-CATEGORIES = ["clear", "partly-cloudy", "mostly-cloudy", "overcast"]
-
 WRITE_RESULTS = bool(os.environ.get("WRITE_RESULTS", None))
 
 
@@ -928,9 +926,9 @@ def fss(args, predictions):
             arr.append(datas)
         return arr
 
-    bins = [[0, 0.0625], [0.0625, 0.5], [0.5, 0.9375], [0.9375, 1.0]]
+    bins = [[0, 0.0625], [0.0625, 0.5], [0.5, 0.9375], [0.9375, 1.01]]
     thresholds = [x[1] for x in bins[:-1]]
-    #bins = [0.0625, 0.5, 0.9375]
+
     obs_cat = categorize(predictions["gt"]["data"], categories=thresholds)
     observed_cat0 = np.count_nonzero(obs_cat == 0)
     observed_cat1 = np.count_nonzero(obs_cat == 1)
@@ -955,7 +953,7 @@ def fss(args, predictions):
     bins = tf.constant(bins, dtype=tf.float32)
 
     growth_rate = 1.5
-    n_masks = 12
+    n_masks = 13
 
     masks = [1]
     for i in range(1, n_masks):
@@ -1027,8 +1025,6 @@ def fss(args, predictions):
     if WRITE_RESULTS:
         season = get_season(args)
         np.save(f"/tmp/fss-{season}.npy", saved, allow_pickle=True)
-
-    ####################################
 
     fsss = np.asarray(fsss)
     fsss = np.moveaxis(fsss, -1, 1)

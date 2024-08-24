@@ -11,7 +11,7 @@ import itertools
 from matplotlib.colors import LinearSegmentedColormap
 
 FIGURE = 0
-
+CATEGORIES = ["clear", "partly-cloudy", "mostly-cloudy", "overcast"]
 
 def figure():
     global FIGURE
@@ -500,8 +500,6 @@ def plot_fss(
     plt.close("all")
     domain_x = 2370  # km
     domain_y = 2670
-
-    CATEGORIES = ["clearsky", "partly-cloudy", "cloudy"]
 
     factor = 60 if full_hours_only else 15
 
