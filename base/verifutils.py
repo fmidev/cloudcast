@@ -67,8 +67,68 @@ def produce_scores(args, predictions):
         elif score == "maess":
             print("Calculating MAESS")
             maess(args, predictions)
-
+        elif score == "frequency_bias":
+            print("Calculating frequency bias")
+            frequency_bias(args, predictions)
     print("All scores produced")
+
+
+def frequency_bias(args, predictions):
+    gtd = np.asarray(predictions["gt"]["data"])
+    gtt = np.asarray(predictions["gt"]["time"])
+    categories = [0.0625, 0.5, 0.9375]
+
+    all_fb = {}
+    for i, l in enumerate(predictions):
+        if l == "gt":
+            continue
+
+        all_fb[l] = []
+
+        for pred_times, pred_data in zip(
+            predictions[l]["time"], predictions[l]["data"]
+        ):
+            if args.full_hours_only is False:
+                a = np.where(gtt == pred_times[0])[0][0]
+                b = np.where(gtt == pred_times[-1])[0][0]
+                gt_data = gtd[a : b + 1]
+            else:
+                idx = np.where(np.isin(gtt, pred_times))
+                gt_data = gtd[idx]
+
+            # leadtime, x, y, channels
+            assert gt_data.shape == pred_data.shape
+
+            # remove initial data
+            gt_cat = categorize(gt_data, categories=categories).reshape(
+                gt_data.shape[0], -1
+            )[1:, :]
+            pred_cat = categorize(pred_data, categories=categories).reshape(
+                pred_data.shape[0], -1
+            )[1:, :]
+
+            obs_counts = np.zeros((gt_cat.shape[0], 4))
+            pred_counts = np.zeros((gt_cat.shape[0], 4))
+
+            for cat in range(4):
+                obs_counts[:, cat] = (gt_cat == cat).sum(axis=1)
+                pred_counts[:, cat] = (pred_cat == cat).sum(axis=1)
+
+            fb = np.where(obs_counts > 0, pred_counts / obs_counts, np.nan)
+            all_fb[l].append(fb)
+
+        all_fb[l] = np.asarray(all_fb[l], dtype=np.float32)
+        all_fb[l] = np.nanmean(all_fb[l], axis=0)
+
+    if WRITE_RESULTS:
+        saved = {
+            "fb": list(all_fb.values()),
+            "categories": categories,
+            "labels": list(all_fb.keys()),
+        }
+
+        season = get_season(args)
+        np.save(f"/tmp/fb-{season}.npy", saved, allow_pickle=True)
 
 
 def maess(args, predictions):
@@ -294,8 +354,9 @@ def change(args, predictions):
         if l == "gt":
             continue
 
-        all_diff[l] = []
+        all_diff[l] = {"mean": [], "2d": []}
 
+        twod = []
         for pred_times, pred_data in zip(
             predictions[l]["time"], predictions[l]["data"]
         ):
@@ -311,16 +372,31 @@ def change(args, predictions):
             assert gt_data.shape == pred_data.shape
 
             # calculate change in data
-            diff = np.mean(gt_data - pred_data, axis=(1, 2, 3)).astype(np.float32)
+            diff = np.nanmean(gt_data - pred_data, axis=(1, 2, 3)).astype(np.float32)
 
-            all_diff[l].append(diff)
+            twod.append(gt_data - pred_data)
+            all_diff[l]["mean"].append(diff)
+
+        twod = np.asarray(twod)
+        print(twod.shape)
+
+        all_diff[l]["2d"] = np.nanmean(twod, axis=0)
 
     pl = []
     for l in all_diff:
-        all_diff[l] = np.asarray(all_diff[l], dtype=np.float32)
-        pl.append(np.mean(all_diff[l], axis=0))
+        all_diff[l]["mean"] = np.asarray(all_diff[l]["mean"], dtype=np.float32)
+        pl.append(np.mean(all_diff[l]["mean"], axis=0))
 
     labels = [reduce_label(l) for l in all_diff.keys()]
+
+    if WRITE_RESULTS:
+        saved = {"bias": [], "2d": [], "labels": labels}
+        for l in all_diff:
+            saved["bias"].append(all_diff[l]["mean"])
+            saved["2d"].append(all_diff[l]["2d"])
+
+        season = get_season(args)
+        np.save(f"/tmp/bias-{season}.npy", saved, allow_pickle=True)
 
     plot_linegraph(
         pl,
