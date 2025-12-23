@@ -1,0 +1,16 @@
+timm==1.0.9
+torch
+einops==0.8.0
+numpy>=2.1.0
+matplotlib
+randomname
+zarr
+xarray
+scipy
+lightning==2.5.1
+dask
+anemoi-datasets
+rioxarray
+jsonargparse[signatures]>=4.27.7
+mlflow
+omegaconf

@@ -1,0 +1,33 @@
+{
+  "target_geom_name": "MEPS2500D",
+  "source_producer": "503",
+  "target_producer": "503",
+  "hours": "0",
+  "write_mode": "all",
+  "origintimes": "",
+  "filename_template": "data/nwcsaf-surface.{file_type}",
+  "allowed_missing_values": "0",
+  "use_cache_for_reads": false,
+  "file_type": "grib2",
+
+  "processqueue": [
+  {
+      "use_cache_for_reads": false,
+      "allowed_missing_values": 550,
+      "leveltype": "height",
+      "levels": "0",
+      "plugins": [
+        {
+          "name": "transformer",
+          "source_param": "NWCSAF_EFFCLD-0TO1",
+          "target_param": "NWCSAF_EFFCLD-0TO1",
+	  "change_missing_value_to": 0.5,
+	  "grib2_discipline": 0,
+	  "grib2_parameter_category": 6,
+	  "grib2_parameter_number": 32,
+	  "extra_file_metadata": "latitudeOfSouthernPoleInDegrees=-90"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "source_producer": "4",
+  "target_producer": "4",
+  "target_geom_name": "MEPS2500D",
+  "hours": "",
+  "file_write": "single",
+  "origintime": "",
+  "forecast_type": "cf",
+  "file_type": "grib2",
+  "filename_template": "data/meps-pressure.grib2",
+  "allowed_missing_values": "0",
+  "use_cache_for_reads": false,
+
+  "processqueue": [
+    {
+      "leveltype": "pressure",
+      "levels": "1000,925,850,700,500",
+      "plugins": [
+        {
+          "name": "transformer",
+          "target_param": "Z-M2S2"
+        },
+        {
+          "name": "transformer",
+          "target_param": "T-K"
+        },
+        {
+          "name": "transformer",
+          "target_param": "U-MS"
+        },
+        {
+          "name": "transformer",
+          "target_param": "V-MS"
+        },
+        {
+          "name": "transformer",
+          "target_param": "RH-0TO1",
+	  "grib2_discipline": 0,
+	  "grib2_parameter_category": 1,
+	  "grib2_parameter_number": 1
+        }
+      ]
+    }
+  ]
+}

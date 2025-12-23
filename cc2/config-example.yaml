@@ -1,0 +1,79 @@
+seed_everything: 42
+ckpt_path: null
+
+model:
+  class_path: cc2CRPS_L.cc2CRPSModel
+  init_args:
+    hidden_dim: 128
+    num_heads: 8
+    encoder1_depth: 2
+    encoder2_depth: 2
+    decoder1_depth: 2
+    decoder2_depth: 2
+    learning_rate: 1e-3
+    patch_size: 4
+    window_size: 8
+    use_scheduled_sampling: false
+    use_gradient_checkpointing: false
+    model_family: swinu
+    loss_fn:
+      class_path: loss.mse.MSELoss
+      init_args: {}
+data:
+  data_path: ../data/era5-86x97.zarr
+  prognostic_params:
+  - tcc
+  forcing_params:
+  - insolation
+  - t_1000
+  - t_500
+  - t_700
+  - t_850
+  - t_925
+  - u_1000
+  - u_500
+  - u_700
+  - u_850
+  - u_925
+  - v_1000
+  - v_500
+  - v_700
+  - v_850
+  - v_925
+  - z_1000
+  - z_500
+  - z_700
+  - z_850
+  - z_925
+  static_forcing_params: []
+  batch_size: 16
+  train_start: 1994-01-01
+  train_end: 1994-02-01
+  val_start: 1994-02-01
+  val_end: 1994-02-05
+
+trainer:
+  max_epochs: 25
+  logger:
+  - class_path: lightning.pytorch.loggers.MLFlowLogger
+    init_args:
+      experiment_name: "cc2"
+      log_model: false
+      save_dir: "./mlruns"
+  enable_model_summary: false
+  accumulate_grad_batches: 1
+  num_nodes: 1
+  devices: 1
+  strategy: auto
+  callbacks:
+  - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    init_args:
+      monitor: "val_loss"
+      mode: "min"
+      save_last: true
+  - class_path: lightning.pytorch.callbacks.ModelSummary
+    init_args:
+      max_depth: 2
+  - class_path: callback.callback.CleanupFailedRunCallback
+  - class_path: callback.ew_callbacks.EarlyWarningCallback
+

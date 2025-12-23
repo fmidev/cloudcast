@@ -1,0 +1,53 @@
+dates:
+  start: 2025-12-17 04:00:00
+  end: 2025-12-17 05:00:00
+  frequency: 1h
+
+input:
+  pipe:
+  - join:
+    - netcdf:
+        path: data/nwcsaf-surface.nc
+        param: [cc]
+    - grib:
+        path: data/meps-pressure.nc
+        param:
+        - r_1000
+        - r_925
+        - r_850
+        - r_700
+        - r_500
+        - t_1000
+        - t_925
+        - t_850
+        - t_700
+        - t_500
+        - z_1000
+        - z_925
+        - z_850
+        - z_700
+        - z_500
+        - u_1000
+        - u_925
+        - u_850
+        - u_700
+        - u_500
+        - v_1000
+        - v_925
+        - v_850
+        - v_700
+        - v_500
+    - forcings:
+        template: ${input.pipe.0.join.0.netcdf}
+        param:
+        - insolation
+        - cos_julian_day
+        - sin_julian_day
+        - cos_local_time
+        - sin_local_time
+  - rename:
+      param:
+        cc: tcc
+statistics:
+  allow_nans: [tcc]
+  end: 2025-12-17 05:00:00

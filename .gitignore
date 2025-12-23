@@ -1,0 +1,12 @@
+data
+.venv
+__pycache__
+*/*/__pycache__
+models
+runs
+log
+figures
+generated_run_name.txt
+next_run.txt
+lightning_logs
+mlruns
