@@ -73,19 +73,28 @@ def _compute_conditional_bias(
         ("broken", 0.5, 0.875),
         ("overcast", 0.875, 1.0),
     ]
+    assert y_pred.shape == y_true.shape
 
-    initial_cc = _ensure_btchw(initial_cc)  # [B,C,H,W]
     y_pred = _ensure_btchw(y_pred)  # [B,T,C,H,W]
     y_true = _ensure_btchw(y_true)  # [B,T,C,H,W]
     B, T, C, H, W = y_pred.shape
+
+    conditioning = []
+    for t in range(T):
+        if t == 0:
+            conditioning.append(initial_cc)  # [B,C,H,W]
+        else:
+            conditioning.append(y_true[:, t - 1])  # [B,C,H,W]
+
+    conditioning = torch.stack(conditioning, dim=1)  # [B,T,C,H,W]
 
     results = {}
 
     for name, low, high in bins:
         if name == "overcast":
-            mask = (initial_cc >= low) & (initial_cc <= high)
+            mask = (conditioning >= low) & (conditioning <= high)
         else:
-            mask = (initial_cc >= low) & (initial_cc < high)
+            mask = (conditioning >= low) & (conditioning < high)
 
         n_pixels = mask.sum()
         if n_pixels > 0:
