@@ -140,6 +140,26 @@ def read_data(run_name, ensemble_only):
     return truth, predictions, dates
 
 
+def check_that_all_files_exist(runs, paths):
+    def _check_files(path):
+        print(f"Checking {path} exists ...")
+        for f in ("predictions.pt", "dates.pt"):
+            f = f"{path}/{f}"
+            if not os.path.exists(f):
+                raise ValueError(f"File {f} does not exist")
+
+    for run_name in runs:
+        if "/" in run_name:
+            run_dir = f"runs/{run_name}"
+        else:
+            run_dir = get_latest_run_dir(f"runs/{run_name}")
+
+        _check_files(f"{run_dir}/test-output")
+
+    for path in paths:
+        _check_files(path)
+
+
 def intersection(all_truth, all_predictions, all_dates):
     # 1. Build intersection of all forecast sequences
     all_sets = [set(map(tuple, d.numpy())) for d in all_dates]
@@ -240,6 +260,8 @@ def equalize_datasets(labels, all_truth, all_predictions, all_dates):
 
 def prepare_data(args, ensemble_only: bool = False):
     all_truth, all_predictions, all_dates = [], [], []
+
+    check_that_all_files_exist(args.run_name, args.path_name)
 
     if args.run_name:
         for run_name in tqdm(args.run_name, desc="Reading data"):
