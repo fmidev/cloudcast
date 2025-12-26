@@ -19,15 +19,16 @@ class BSPLoss(nn.Module):
     def __init__(
         self,
         n_bins: int | None = None,
-        eps: float = 1e-8,  # epsilon in energy ratio
         gamma: float = 0.0,  # exponent for bin weights
-        kmax_frac: float = 0.707,  # remove all bins below nyquist (assuming 5km spacing)
+        kmax_frac: float = 0.707,  # keep bins up to kmax_frac
+        use_log_ratio: bool = False,
     ):
         super().__init__()
         self.n_bins = n_bins
-        self.eps = eps
+        self.eps = 1e-8
         self.gamma = gamma
         self.kmax_frac = kmax_frac
+        self.use_log_ratio = use_log_ratio
 
         self.k = None  # will be filled once we know n_bins
 
@@ -88,9 +89,13 @@ class BSPLoss(nn.Module):
         E_pred = E_pred[:, valid]
         E_true = E_true[:, valid]
 
-        # BSP kernel: (1 - E_pred/E_true)^2
-        ratio = (E_pred + eps) / (E_true + eps)
-        bsp_bins = (1.0 - ratio) ** 2  # [BTC, n_bins]
+        if self.use_log_ratio:
+            log_ratio = torch.log(E_pred + eps) - torch.log(E_true + eps)
+            bsp_bins = log_ratio**2
+        else:
+            # BSP kernel: (1 - E_pred/E_true)^2
+            ratio = (E_pred + eps) / (E_true + eps)
+            bsp_bins = (1.0 - ratio) ** 2  # [BTC, n_bins]
 
         # optional bin weights λ_k ∝ k^gamma
         if self.gamma != 0.0:
