@@ -54,9 +54,11 @@ def mae(
 
     results_df = pd.DataFrame(results)
     if not results_df.empty:
-        results_df = results_df.sort_values(by="mae", ascending=True)
+        results_df = results_df.sort_values(
+            by=["timestep", "mae"], ascending=[True, True]
+        )
 
-    results_df.to_csv(f"{save_path}/results/mae.csv")
+    results_df.to_csv(f"{save_path}/results/mae.csv", index=False)
 
     return results_df
 
@@ -86,9 +88,7 @@ def mae2d(
     return results
 
 
-def plot_mae_timeseries(
-    df: pd.DataFrame, save_path="runs/verification"
-):
+def plot_mae_timeseries(df: pd.DataFrame, save_path="runs/verification"):
     if df.empty:
         print("No results to plot.")
         return

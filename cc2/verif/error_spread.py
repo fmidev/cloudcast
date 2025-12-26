@@ -40,11 +40,16 @@ def error_spread(
         # Append results in long format
         for j in range(std.shape[0]):
             results.append(
-                {"model": run_name[i], "timestep": j, "std": std[j].item(), "rmse": rmse[j].item()}
+                {
+                    "model": run_name[i],
+                    "timestep": j,
+                    "std": std[j].item(),
+                    "rmse": rmse[j].item(),
+                }
             )
 
     results_df = pd.DataFrame(results)
-    results_df.to_csv(f"{save_path}/results/error_spread.csv")
+    results_df.to_csv(f"{save_path}/results/error_spread.csv", index=False)
 
     return results_df
 
@@ -65,7 +70,7 @@ def plot_error_spread(df: pd.DataFrame, save_path="runs/verification"):
         y="rmse",
         hue="model",
         style="model",  # Optional: Different marker/line style for each model (useful for B&W)
-        markers=True, 
+        markers=True,
         dashes=False,
     )
     sns.lineplot(
@@ -73,8 +78,8 @@ def plot_error_spread(df: pd.DataFrame, save_path="runs/verification"):
         x="timestep",
         y="std",
         hue="model",
-        style="model", 
-        markers=True,  
+        style="model",
+        markers=True,
         dashes=True,
     )
 

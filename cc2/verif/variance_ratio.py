@@ -41,14 +41,12 @@ def variance_ratio(
 
     df = pd.DataFrame(results)
     if not df.empty:
-        df = df.sort_values(by=["timestep", "model"])
+        df = df.sort_values(by=["timestep", "variance_ratio"], ascending=[True, False])
     df.to_csv(f"{save_path}/results/variance_ratio.csv", index=False)
     return df
 
 
-def plot_variance_ratio(
-    df: pd.DataFrame, save_path="runs/verification"
-):
+def plot_variance_ratio(df: pd.DataFrame, save_path="runs/verification"):
     if df.empty:
         print("No variance_ratio results to plot.")
         return

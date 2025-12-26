@@ -78,7 +78,9 @@ def highk_power_ratio(
 
     df = pd.DataFrame(results)
     if not df.empty:
-        df = df.sort_values(by=["timestep", "model"])
+        df = df.sort_values(
+            by=["timestep", "highk_power_ratio"], ascending=[True, False]
+        )
     df.to_csv(f"{save_path}/results/highk_power_ratio.csv", index=False)
     return df
 

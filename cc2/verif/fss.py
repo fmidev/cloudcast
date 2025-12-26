@@ -132,13 +132,13 @@ def fss(
     observed_categories_frac = [x / observed_sum for x in observed_categories]
     results.append(observed_categories_frac)
 
-    torch.save(results, f"{save_path}/results/fss.pt")
+    torch.save(results, f"{save_path}/results/fss_leadtime.pt")
 
     m = 2  # mask index = 6px
 
     x = torch.arange(results[0].shape[2])
 
-    df=[]
+    df = []
     for i in range(n_models):
         for c in range(len(categories)):
             for t in range(results[0].shape[2]):
@@ -155,7 +155,7 @@ def fss(
 
     df = pd.DataFrame(df)
     if not df.empty:
-        df = df.sort_values(by=["category","timestep", "model"])
+        df = df.sort_values(by=["category", "timestep", "model"])
 
     df.to_csv(f"{save_path}/results/fss.csv", index=False)
     return results, df

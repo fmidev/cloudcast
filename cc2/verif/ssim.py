@@ -67,9 +67,11 @@ def ssim(
 
     results_df = pd.DataFrame(results)
     if not results_df.empty:
-        results_df = results_df.sort_values(by="ssim", ascending=False)
+        results_df = results_df.sort_values(
+            by=["timestep", "ssim"], ascending=[True, False]
+        )
 
-    results_df.to_csv(f"{save_path}/results/ssim.csv")
+    results_df.to_csv(f"{save_path}/results/ssim.csv", index=False)
 
     return results_df
 

@@ -92,7 +92,7 @@ def spectral_coherence_bands(
 
     df = pd.DataFrame(results)
     if not df.empty:
-        df = df.sort_values(by=["timestep", "model"])
+        df = df.sort_values(by=["timestep", "coherence_mid"], ascending=[True, False])
     df.to_csv(f"{save_path}/results/spectral_coherence.csv", index=False)
     return df
 
