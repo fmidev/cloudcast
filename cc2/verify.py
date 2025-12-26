@@ -103,14 +103,10 @@ def read_data_from_dir(file_path):
         f"{file_path}/dates.pt", map_location=torch.device("cpu"), weights_only=True
     )
 
-    if truth.ndim == 6:
-        # squeeze "member" dim from truth
-        truth = truth[:, 0, :, :, :]
-
     return truth, predictions, dates
 
 
-def read_data(run_name, ensemble_only):
+def read_data(run_name):
     if "/" in run_name:
         run_dir = f"runs/{run_name}"
     else:
@@ -122,13 +118,8 @@ def read_data(run_name, ensemble_only):
 
     truth, predictions, dates = read_data_from_dir(file_path)
 
-    if not ensemble_only and predictions.ndim == 6:
-        # predictions are from pgu_ens, pick first member
-        print("Using member 0/{}".format(predictions.shape[1]))
-        predictions = predictions[:, 0, :, :, :]
-
     assert (
-        ensemble_only or predictions.ndim == 5
+        predictions.ndim == 5
     ), "Predictions should be 5D tensor (batch, time, channel, height, width), got {}".format(
         predictions.shape
     )
@@ -141,12 +132,14 @@ def read_data(run_name, ensemble_only):
 
 
 def check_that_all_files_exist(runs, paths):
+    pbar = tqdm(total=3 * (len(runs) + len(paths)), desc="Checking files")
+
     def _check_files(path):
-        print(f"Checking {path} exists ...")
-        for f in ("predictions.pt", "dates.pt"):
+        for f in ("predictions.pt", "dates.pt", "truth.pt"):
             f = f"{path}/{f}"
             if not os.path.exists(f):
                 raise ValueError(f"File {f} does not exist")
+            pbar.update(1)
 
     for run_name in runs:
         if "/" in run_name:
@@ -158,6 +151,8 @@ def check_that_all_files_exist(runs, paths):
 
     for path in paths:
         _check_files(path)
+
+    pbar.close()
 
 
 def intersection(all_truth, all_predictions, all_dates):
@@ -258,7 +253,7 @@ def equalize_datasets(labels, all_truth, all_predictions, all_dates):
     return all_truth, all_predictions, all_dates
 
 
-def prepare_data(args, ensemble_only: bool = False):
+def prepare_data(args):
     all_truth, all_predictions, all_dates = [], [], []
 
     check_that_all_files_exist(args.run_name, args.path_name)
@@ -266,11 +261,7 @@ def prepare_data(args, ensemble_only: bool = False):
     if args.run_name:
         for run_name in tqdm(args.run_name, desc="Reading data"):
 
-            truth, predictions, dates = read_data(run_name, ensemble_only)
-
-            if ensemble_only and predictions.ndim == 5:
-                print(f"Skipping run {run_name}, not an ensemble")
-                continue
+            truth, predictions, dates = read_data(run_name)
 
             all_truth.append(truth)
             all_predictions.append(predictions)
