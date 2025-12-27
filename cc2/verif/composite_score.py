@@ -143,22 +143,15 @@ def composite_score(
             else np.nan
         )
 
-        # SSIM (exponential decay, smaller is better)
-        # ssim_val = (
-        #    avg_leads(df_ssim[df_ssim["model"] == m], "ssim")
-        #    if not df_ssim.empty
-        #    else np.nan
-        # )
-        # S_ssim = float(math.exp(-(ssim_val**2))) if not np.isnan(ssim_val) else np.nan
         ssim_val = (
             avg_leads(df_ssim[df_ssim["model"] == m], "ssim")
             if not df_ssim.empty
             else np.nan
         )
-        #ssim_max = 0.1  # Focus on 0-0.1 range
-        #S_ssim = (
+        # ssim_max = 0.1  # Focus on 0-0.1 range
+        # S_ssim = (
         #    max(0.0, 1.0 - ssim_val / ssim_max) if not np.isnan(ssim_val) else np.nan
-        #)
+        # )
         S_ssim = ssim_val
 
         # Compute weighted score (ignoring NaNs)
