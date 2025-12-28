@@ -388,16 +388,37 @@ class cc2module(L.LightningModule):
         truth = torch.concatenate(self.test_truth)
         dates = torch.concatenate(self.test_dates)
 
-        torch.save(predictions, f"{self.test_output_directory}/predictions.pt")
-        torch.save(truth, f"{self.test_output_directory}/truth.pt")
-        torch.save(dates, f"{self.test_output_directory}/dates.pt")
-        print(
-            f"Wrote files predictions.pt, truth.pt and dates.pt to {self.test_output_directory}"
-        )
+        if self.trainer.world_size > 1:
+            # Gather across all DDP ranks
+            predictions = self.all_gather(predictions)
+            truth = self.all_gather(truth)
+            dates = self.all_gather(dates)
 
-        print(f"Predictions shape: {predictions.shape}")
-        print(f"Truth shape: {truth.shape}")
-        print(f"Dates shape: {dates.shape}")
+            # all_gather adds a new dimension [world_size, ...], so reshape
+            predictions = predictions.reshape(-1, *predictions.shape[2:])
+            truth = truth.reshape(-1, *truth.shape[2:])
+
+            # Dates is 2D [batch, time], so flatten only first two dims
+            dates = dates.reshape(-1, dates.shape[-1])
+
+            # Sort by dates to restore chronological order
+            sort_idx = torch.argsort(dates[:, 0])
+            predictions = predictions[sort_idx]
+            truth = truth[sort_idx]
+            dates = dates[sort_idx]
+
+        # Only rank 0 writes to avoid duplicate writes
+        if self.trainer.is_global_zero:
+            torch.save(predictions, f"{self.test_output_directory}/predictions.pt")
+            torch.save(truth, f"{self.test_output_directory}/truth.pt")
+            torch.save(dates, f"{self.test_output_directory}/dates.pt")
+            print(
+                f"Wrote files predictions.pt, truth.pt and dates.pt to {self.test_output_directory}"
+            )
+            print(f"Predictions shape: {predictions.shape}")
+            print(f"Truth shape: {truth.shape}")
+            print(f"Dates shape: {dates.shape}")
+
 
     def on_test_end(self):
         self._write_results_on_test_predict_end()
