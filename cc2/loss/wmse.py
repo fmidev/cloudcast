@@ -42,4 +42,4 @@ class WeightedMSELoss(nn.Module):
         loss = (weights * residual**2).mean()
 
         assert torch.isfinite(loss).all(), f"Non-finite values at loss: {loss}"
-        return {"loss": loss, "mse_loss": loss}
+        return {"loss": loss}
