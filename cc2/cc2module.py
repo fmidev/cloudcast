@@ -60,6 +60,7 @@ class cc2module(L.LightningModule):
         test_output_directory: str | None = None,
         use_rollout_weighting: bool = False,
         use_statistics_from_checkpoint: bool = True,
+        use_residual_adapter_head: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -93,6 +94,7 @@ class cc2module(L.LightningModule):
                 "autoregressive_mode",
                 "use_deep_refinement_head",
                 "use_hard_skip",
+                "use_residual_adapter_head"
             ]
         }
 

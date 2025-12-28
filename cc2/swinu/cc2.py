@@ -316,6 +316,20 @@ class cc2model(nn.Module):
             stride=2,
         )
 
+        self.use_residual_adapter_head = config.use_residual_adapter_head
+
+        if self.use_residual_adapter_head:
+            self.residual_alpha = nn.Parameter(torch.tensor(0.0))
+
+            self.residual_adapter_head = nn.Sequential(
+                nn.Conv2d(1, 8, kernel_size=1),
+                nn.ReLU(),
+                nn.Conv2d(8, 1, kernel_size=3, padding=1),
+            )
+
+            nn.init.zeros_(self.residual_adapter_head[-1].weight)
+            nn.init.zeros_(self.residual_adapter_head[-1].bias)
+
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]
 
@@ -510,6 +524,12 @@ class cc2model(nn.Module):
         output = self.project_to_image(x)
         output_ref = self.refinement_head(output.squeeze(2))
         output = output + output_ref.unsqueeze(2)
+
+        if self.use_residual_adapter_head:
+            B, T, C, H, W = output.shape
+            output = output.view(B * T, C, H, W)
+            output = output + self.residual_alpha * self.residual_adapter_head(output)
+            output = output.view(B, T, C, H, W)
 
         output = depad_tensor(output, padding_info)
 
