@@ -144,19 +144,37 @@ class cc2module(L.LightningModule):
 
         self.model_configured = True
 
+    def _check_trainable(self):
+        trainable = set()
+
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                trainable.add(name)
+
+        rank_zero_info(f"Trainable layers: {trainable}")
+
     def _freeze_layers(self) -> None:
         if len(self.hparams.freeze_layers) == 0:
             return
 
         frozen = []
+
         for l in self.hparams.freeze_layers:
+            # start with submodules
             for name, module in self.model.named_modules():
                 if name.startswith(l):
                     for param in module.parameters():
                         param.requires_grad = False
                     frozen.append(name)
 
+            # also direct parameters on the model (not in submodules)
+            for name, param in self.model.named_parameters(recurse=False):
+                if name.startswith(l):
+                    param.requires_grad = False
+                    frozen.append(name)
+
         rank_zero_info(f"Froze layers: {frozen}")
+        self._check_trainable()
 
     def _build_model(self) -> None:
         if self.hparams.model_family == "pgu":
