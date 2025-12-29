@@ -322,9 +322,11 @@ class cc2model(nn.Module):
             self.residual_alpha = nn.Parameter(torch.tensor(0.0))
 
             self.residual_adapter_head = nn.Sequential(
-                nn.Conv2d(1, 8, kernel_size=1),
-                nn.ReLU(),
-                nn.Conv2d(8, 1, kernel_size=3, padding=1),
+                nn.Conv2d(1, 128, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(128, 128, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(128, 1, kernel_size=3, padding=1),
             )
 
             nn.init.zeros_(self.residual_adapter_head[-1].weight)
