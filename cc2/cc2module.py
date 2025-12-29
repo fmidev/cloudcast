@@ -94,7 +94,7 @@ class cc2module(L.LightningModule):
                 "autoregressive_mode",
                 "use_deep_refinement_head",
                 "use_hard_skip",
-                "use_residual_adapter_head"
+                "use_residual_adapter_head",
             ]
         }
 
@@ -363,10 +363,8 @@ class cc2module(L.LightningModule):
         analysis_time = data[0][:, -1, ...].unsqueeze(1)
 
         predictions = torch.concatenate((analysis_time, predictions), dim=1)
-        truth = torch.concatenate((analysis_time, data[1]), dim=1)
 
         self.test_predictions.append(predictions)
-        self.test_truth.append(truth)
         self.test_dates.append(torch.concatenate((dates[0][:, -1:], dates[1]), dim=1))
 
         return {
@@ -376,49 +374,60 @@ class cc2module(L.LightningModule):
             "truth": data[1],
         }
 
+    def _gather(self, prediction, truth, dates):
+        # Gather across all DDP ranks
+        predictions = self.all_gather(predictions)
+
+        # all_gather adds a new dimension [world_size, ...], so reshape
+        predictions = predictions.reshape(-1, *predictions.shape[2:])
+
+        dates = self.all_gather(dates)
+
+        # Dates is 2D [batch, time], so flatten only first two dims
+        dates = dates.reshape(-1, dates.shape[-1])
+
+        # Sort by dates to restore chronological order
+        sort_idx = torch.argsort(dates[:, 0])
+        predictions = predictions[sort_idx]
+        dates = dates[sort_idx]
+
+        if len(truth):
+            truth = self.all_gather(truth)
+            truth = truth.reshape(-1, *truth.shape[2:])
+            truth = truth[sort_idx]
+
+        return predictions, truth, dates
+
     def _write_results_on_test_predict_end(self):
+        def _write(tensor, filename):
+            torch.save(tensor, filename)
+            print(f"Wrote file {filename} (shape: {tensor.shape})")
+
         # Get the run directory from the checkpoint path
         if self.test_output_directory is None:
             run_dir = self.run_dir if self.run_dir is not None else "."
-            self.test_output_directory = f"{run_dir}/test-output/"
+            self.test_output_directory = f"{run_dir}/test-output"
 
         os.makedirs(self.test_output_directory, exist_ok=True)
 
         predictions = torch.concatenate(self.test_predictions)
-        truth = torch.concatenate(self.test_truth)
         dates = torch.concatenate(self.test_dates)
 
+        truth = []
+        if len(self.test_truth):
+            truth = torch.concatenate(self.test_truth)
+
         if self.trainer.world_size > 1:
-            # Gather across all DDP ranks
-            predictions = self.all_gather(predictions)
-            truth = self.all_gather(truth)
-            dates = self.all_gather(dates)
-
-            # all_gather adds a new dimension [world_size, ...], so reshape
-            predictions = predictions.reshape(-1, *predictions.shape[2:])
-            truth = truth.reshape(-1, *truth.shape[2:])
-
-            # Dates is 2D [batch, time], so flatten only first two dims
-            dates = dates.reshape(-1, dates.shape[-1])
-
-            # Sort by dates to restore chronological order
-            sort_idx = torch.argsort(dates[:, 0])
-            predictions = predictions[sort_idx]
-            truth = truth[sort_idx]
-            dates = dates[sort_idx]
+            predictions, truth, dates = self._gather(predictions, truth, dates)
 
         # Only rank 0 writes to avoid duplicate writes
         if self.trainer.is_global_zero:
-            torch.save(predictions, f"{self.test_output_directory}/predictions.pt")
-            torch.save(truth, f"{self.test_output_directory}/truth.pt")
-            torch.save(dates, f"{self.test_output_directory}/dates.pt")
-            print(
-                f"Wrote files predictions.pt, truth.pt and dates.pt to {self.test_output_directory}"
-            )
-            print(f"Predictions shape: {predictions.shape}")
-            print(f"Truth shape: {truth.shape}")
-            print(f"Dates shape: {dates.shape}")
+            _write(predictions, f"{self.test_output_directory}/predictions.pt")
 
+            if len(truth):
+                _write(truth, f"{self.test_output_directory}/truth.pt")
+
+            _write(dates, f"{self.test_output_directory}/dates.pt")
 
     def on_test_end(self):
         self._write_results_on_test_predict_end()
