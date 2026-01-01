@@ -213,6 +213,7 @@ def roll_forecast(
                     y_pred_full=next_pred,
                     y_true_delta=y_true_delta,
                     y_pred_delta=tendency,
+                    global_step=step,
                 )
             )
 
