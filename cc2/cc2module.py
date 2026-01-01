@@ -392,7 +392,7 @@ class cc2module(L.LightningModule):
             "truth": data[1],
         }
 
-    def _gather(self, prediction, truth, dates):
+    def _gather(self, predictions, truth, dates):
         # Gather across all DDP ranks
         predictions = self.all_gather(predictions)
 
