@@ -319,7 +319,7 @@ class cc2model(nn.Module):
         self.use_residual_adapter_head = config.use_residual_adapter_head
 
         if self.use_residual_adapter_head:
-            self.residual_alpha = nn.Parameter(torch.tensor(0.0))
+            self.residual_alpha = nn.Parameter(torch.tensor(1e-2))
 
             self.residual_adapter_head = nn.Sequential(
                 nn.Conv2d(1, 128, kernel_size=3, padding=1),
