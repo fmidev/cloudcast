@@ -11,6 +11,7 @@ from swinu.layers import (
     PatchEmbedLossless,
     DWConvResidual3D,
     MultiScaleRefinementHead,
+    ResidualAdapter,
     get_padded_size,
     pad_tensors,
     pad_tensor,
@@ -317,8 +318,17 @@ class cc2model(nn.Module):
         )
 
         self.use_residual_adapter_head = config.use_residual_adapter_head
+        self.use_residual_io_adapter = config.use_residual_io_adapter
 
-        if self.use_residual_adapter_head:
+        if config.use_residual_io_adapter:
+            self.residual_input_adapter = ResidualAdapter(
+                embed_dim=64,
+            )
+            self.residual_output_adapter = ResidualAdapter(
+                embed_dim=128,
+            )
+
+        elif self.use_residual_adapter_head:
             self.residual_alpha = nn.Parameter(torch.tensor(1e-2))
 
             self.residual_adapter_head = nn.Sequential(
@@ -516,6 +526,9 @@ class cc2model(nn.Module):
             data.shape
         )
 
+        if self.use_residual_io_adapter:
+            data = self.residual_input_adapter(data)
+
         data, padding_info = pad_tensor(data, self.patch_size, 1)
         forcing, _ = pad_tensor(forcing, self.patch_size, 1)
 
@@ -527,7 +540,10 @@ class cc2model(nn.Module):
         output_ref = self.refinement_head(output.squeeze(2))
         output = output + output_ref.unsqueeze(2)
 
-        if self.use_residual_adapter_head:
+        if self.use_residual_io_adapter:
+            output = self.residual_output_adapter(output)
+
+        elif self.use_residual_adapter_head:
             B, T, C, H, W = output.shape
             output = output.view(B * T, C, H, W)
             output = output + self.residual_alpha * self.residual_adapter_head(output)

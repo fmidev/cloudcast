@@ -61,11 +61,16 @@ class cc2module(L.LightningModule):
         use_rollout_weighting: bool = False,
         use_statistics_from_checkpoint: bool = True,
         use_residual_adapter_head: bool = False,
+        use_residual_io_adapter: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
 
         self.model_configured = False
+
+        assert (use_residual_adapter_head and use_residual_io_adapter == False) or (
+            use_residual_adapter_head == False
+        )
 
         # Extract only model-specific parameters
         model_kwargs = {
@@ -95,6 +100,7 @@ class cc2module(L.LightningModule):
                 "use_deep_refinement_head",
                 "use_hard_skip",
                 "use_residual_adapter_head",
+                "use_residual_io_adapter",
             ]
         }
 
@@ -234,6 +240,10 @@ class cc2module(L.LightningModule):
             msg += f" using run directory {self.run_dir}"
 
         print(msg)
+
+    def on_train_batch_start(self, batch, batch_idx):
+        if getattr(self.hparams, "force_frozen_backbone_to_eval", False):
+            self._force_frozen_backbone_to_eval()
 
     def on_train_start(self) -> None:
         self.max_epochs = self.trainer.max_epochs
