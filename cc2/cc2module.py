@@ -62,6 +62,7 @@ class cc2module(L.LightningModule):
         use_statistics_from_checkpoint: bool = True,
         use_residual_adapter_head: bool = False,
         use_residual_io_adapter: bool = False,
+        force_frozen_backbone_to_eval: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -150,7 +151,30 @@ class cc2module(L.LightningModule):
 
         self.model_configured = True
 
-    def _check_trainable(self):
+    def _store_trainable_module_names(self) -> None:
+        trainable_modules = set()
+        for module_name, module in self.model.named_modules():
+            for p in module.parameters(recurse=False):
+                if p.requires_grad:
+                    trainable_modules.add(module_name)
+                    break
+
+        self._trainable_module_names = trainable_modules
+        rank_zero_info("Backbone will be set to eval to disable dropouts")
+
+    def _force_frozen_backbone_to_eval(self) -> None:
+        if not hasattr(self, "_trainable_module_names"):
+            return
+
+        # 1) everything deterministic
+        self.model.eval()
+
+        # 2) re-enable training behavior only on modules that own trainable params
+        for module_name, module in self.model.named_modules():
+            if module_name in self._trainable_module_names:
+                module.train()
+
+    def _print_trainable_layers(self):
         trainable = set()
 
         for name, param in self.model.named_parameters():
@@ -180,7 +204,8 @@ class cc2module(L.LightningModule):
                     frozen.append(name)
 
         rank_zero_info(f"Froze layers: {frozen}")
-        self._check_trainable()
+        self._store_trainable_module_names()
+        self._print_trainable_layers()
 
     def _build_model(self) -> None:
         if self.hparams.model_family == "pgu":
