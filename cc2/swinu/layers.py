@@ -107,6 +107,9 @@ class PatchEmbedLossless(nn.Module):
     ):
         super().__init__()
         assert type(input_resolution) in (list, tuple)
+        assert (
+            embed_dim >= 2
+        ), "embed_dim must be at least 2 to hold data and forcing info"
         H, W = input_resolution
         if isinstance(patch_size, (list, tuple)):
             ps = int(patch_size[0])
@@ -130,11 +133,7 @@ class PatchEmbedLossless(nn.Module):
         # Choose d_data so we can reconstruct data exactly (start with full C*ps*ps, but cap by embed_dim-1)
         full_data_dim = self.Cd * ps * ps
         if data_dim_override is None:
-            self.d_data = (
-                min(full_data_dim, self.embed_dim - 1)
-                if self.embed_dim >= 2
-                else self.embed_dim
-            )
+            self.d_data = min(full_data_dim, self.embed_dim - 1)
         else:
             self.d_data = int(data_dim_override)
             assert 1 <= self.d_data <= self.embed_dim, "invalid data_dim_override"
@@ -147,20 +146,17 @@ class PatchEmbedLossless(nn.Module):
             eye = torch.eye(full_data_dim, self.d_data)
             self.proj_data.weight.copy_(eye.t())
 
-        # --- Forcings: also patchify (exact), then compress to remaining dims ---
         self.unfold_force = nn.Unfold(kernel_size=ps, stride=ps)
         self.d_force = max(0, self.embed_dim - self.d_data)
-        if self.d_force > 0:
-            self.proj_force = nn.Linear(self.Cf * ps * ps, self.d_force, bias=True)
-            nn.init.xavier_uniform_(self.proj_force.weight)
-            nn.init.zeros_(self.proj_force.bias)
-        else:
-            self.proj_force = None
 
-        # Optional: a light fusion to keep interface identical (no change in dim)
-        self.fusion = (
-            nn.Identity()
-        )  # keep simple; you can swap to nn.Linear(embed_dim, embed_dim)
+        assert self.d_force > 0
+
+        self.proj_force = nn.Linear(self.Cf * ps * ps, self.d_force, bias=True)
+        nn.init.xavier_uniform_(self.proj_force.weight)
+        nn.init.zeros_(self.proj_force.bias)
+
+        # Backwards compat
+        self.fusion = nn.Identity()
 
     def forward(self, data, forcing):
         """
@@ -184,37 +180,22 @@ class PatchEmbedLossless(nn.Module):
 
             # project to token dims
             td = self.proj_data(u_d)  # [B,P,d_data]
-            if self.d_force > 0:
-                tf = self.proj_force(u_f)  # [B,P,d_force]
-                tok = torch.cat([td, tf], dim=-1)  # [B,P,embed_dim]
-            else:
-                tok = td
-            # optional fusion (kept Identity)
-            tok = self.fusion(tok)
+            tf = self.proj_force(u_f)  # [B,P,d_force]
+            tok = torch.cat([td, tf], dim=-1)  # [B,P,embed_dim]
             tokens_per_t.append(tok)
 
         x_tokens = torch.stack(tokens_per_t, dim=1)  # [B,T,P,D]
 
-        # future forcing token (kept for API compatibility)
         f_future = None
         if Tf > T:
             u_ff = self.unfold_force(forcing[:, T]).transpose(1, 2)  # [B,P,Cf*ps*ps]
-            if self.d_force > 0:
-                tfut = self.proj_force(u_ff)  # [B,P,d_force]
-                # pad zeros for the data part to keep same D
-                zeros = torch.zeros(
-                    B, u_ff.shape[1], self.d_data, device=u_ff.device, dtype=u_ff.dtype
-                )
-                f_future = torch.cat([zeros, tfut], dim=-1)  # [B,P,D]
-            else:
-                f_future = torch.zeros(
-                    B,
-                    u_ff.shape[1],
-                    self.embed_dim,
-                    device=u_ff.device,
-                    dtype=u_ff.dtype,
-                )
-            f_future = self.fusion(f_future).unsqueeze(1)  # [B,1,P,D]
+            tfut = self.proj_force(u_ff)  # [B,P,d_force]
+            # pad zeros for the data part to keep same D
+            zeros = torch.zeros(
+                B, u_ff.shape[1], self.d_data, device=u_ff.device, dtype=u_ff.dtype
+            )
+            f_future = torch.cat([zeros, tfut], dim=-1)  # [B,P,D]
+            f_future = f_future.unsqueeze(1)  # [B,1,P,D]
 
         return x_tokens, f_future
 

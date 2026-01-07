@@ -341,9 +341,8 @@ class cc2model(nn.Module):
         for t in range(T):
             x_tokens[:, t] = x_tokens[:, t] + self.pos_embed
 
-        if hasattr(self, "post_pe_norm"):
-            x_tokens = self.post_pe_norm(x_tokens)
-            x_tokens = x_tokens * self.post_pe_gain
+        x_tokens = self.post_pe_norm(x_tokens)
+        x_tokens = x_tokens * self.post_pe_gain
 
         return x_tokens, f_future
 
