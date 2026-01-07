@@ -249,16 +249,6 @@ class cc2model(nn.Module):
             embed_dim=self.embed_dim * 2,
             undo_scale=False,
         )
-        # Patch expansion for upsampling to original resolution
-
-        self.patch_expand = PatchExpand(
-            self.embed_dim * 2, self.embed_dim // 4, scale_factor=1
-        )
-
-        self.final_expand = nn.Linear(
-            self.embed_dim // 4,
-            self.patch_size**2 * len(config.prognostic_params),
-        )
 
         # Step identification embeddings
         self.step_id_embeddings = nn.Parameter(torch.randn(2, self.embed_dim * 2))
