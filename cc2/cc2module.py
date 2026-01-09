@@ -63,6 +63,7 @@ class cc2module(L.LightningModule):
         use_residual_adapter_head: bool = False,
         use_residual_io_adapter: bool = False,
         force_frozen_backbone_to_eval: bool = False,
+        use_high_pass_filter: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -102,6 +103,7 @@ class cc2module(L.LightningModule):
                 "use_hard_skip",
                 "use_residual_adapter_head",
                 "use_residual_io_adapter",
+                "use_high_pass_filter",
             ]
         }
 

@@ -958,3 +958,50 @@ class ResidualAdapter(nn.Module):
         xt = x.reshape(B * T, C, H, W)
         xt = xt + self.alpha * self.net(xt)
         return xt.reshape(B, T, C, H, W)
+
+
+class HighPassFilter2d(nn.Module):
+    """
+    High-pass filter for 2D fields via subtracting a local low-pass (box blur).
+
+    Computes: y = x - LP(x), where LP is avg_pool2d with stride=1.
+
+    Supports inputs:
+      - [N, C, H, W]
+      - [B, T, C, H, W]  (will be flattened to [B*T, C, H, W] internally)
+
+    Notes:
+      - kernel_size must be odd.
+      - This is a cheap approximation to high-pass filtering that is stable and differentiable.
+    """
+
+    def __init__(self, kernel_size: int = 9):
+        super().__init__()
+        if kernel_size % 2 != 1:
+            raise ValueError(f"kernel_size must be odd, got {kernel_size}")
+        self.kernel_size = kernel_size
+        self.padding = kernel_size // 2
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 4:
+            x_lp = F.avg_pool2d(
+                x,
+                kernel_size=self.kernel_size,
+                stride=1,
+                padding=self.padding,
+            )
+            return x - x_lp
+
+        if x.dim() == 5:
+            B, T, C, H, W = x.shape
+            xt = x.reshape(B * T, C, H, W)
+            xt_lp = F.avg_pool2d(
+                xt,
+                kernel_size=self.kernel_size,
+                stride=1,
+                padding=self.padding,
+            )
+            xt_hp = xt - xt_lp
+            return xt_hp.reshape(B, T, C, H, W)
+
+        raise ValueError(f"Expected 4D or 5D tensor, got shape {tuple(x.shape)}")

@@ -12,6 +12,7 @@ from swinu.layers import (
     DWConvResidual3D,
     MultiScaleRefinementHead,
     ResidualAdapter,
+    HighPassFilter2d,
     get_padded_size,
     pad_tensors,
     pad_tensor,
@@ -309,6 +310,7 @@ class cc2model(nn.Module):
 
         self.use_residual_adapter_head = config.use_residual_adapter_head
         self.use_residual_io_adapter = config.use_residual_io_adapter
+        self.use_high_pass_filter = config.use_high_pass_filter
 
         if config.use_residual_io_adapter:
             self.residual_input_adapter = ResidualAdapter(
@@ -331,6 +333,10 @@ class cc2model(nn.Module):
 
             nn.init.zeros_(self.residual_adapter_head[-1].weight)
             nn.init.zeros_(self.residual_adapter_head[-1].bias)
+
+            if self.use_high_pass_filter:
+                self.high_pass_filter = HighPassFilter2d(kernel_size=11)
+                self.residual_alpha_late = nn.Parameter(torch.tensor(1e-2))
 
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]
@@ -508,6 +514,18 @@ class cc2model(nn.Module):
 
         return delta_pred2
 
+    def _adapter_step_id(self, step: int) -> int:
+        """
+        0 = first rollout step (teacher-forced / clean history)
+        1 = subsequent rollout steps (model-conditioned), when not using scheduled sampling
+        """
+        if not self.autoregressive_mode:
+            return 0
+
+        if (not self.use_scheduled_sampling) and (step > 0):
+            return 1
+        return 0
+
     def forward(self, data, forcing, step):
         assert (
             data.ndim == 5
@@ -532,11 +550,27 @@ class cc2model(nn.Module):
         if self.use_residual_io_adapter:
             output = self.residual_output_adapter(output)
 
-        elif self.use_residual_adapter_head:
+        elif self.use_residual_adapter_head and self.use_high_pass_filter is False:
             B, T, C, H, W = output.shape
             output = output.view(B * T, C, H, W)
             output = output + self.residual_alpha * self.residual_adapter_head(output)
             output = output.view(B, T, C, H, W)
+
+        elif self.use_residual_adapter_head and self.use_high_pass_filter:
+            B, T, C, H, W = output.shape
+            output = output.view(B * T, C, H, W)
+            r = self.residual_adapter_head(output)
+            r_hp = self.high_pass_filter(r)
+
+            step_id = self._adapter_step_id(step)
+
+            alpha0 = self.residual_alpha.clamp(-0.1, 0.1)
+            alpha1 = self.residual_alpha_late.clamp(-0.02, 0.02)
+
+            alpha = alpha0 if step_id == 0 else alpha1
+
+            output = output + alpha * r_hp
+            output = output.reshape(B, T, C, H, W)
 
         output = depad_tensor(output, padding_info)
 
