@@ -70,6 +70,8 @@ class cc2module(L.LightningModule):
         force_frozen_backbone_to_eval: bool = False,
         use_high_pass_filter: bool = False,
         use_lora: bool = False,
+        lora_r: int = 4,
+        lora_alpha: int = 4,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -275,8 +277,8 @@ class cc2module(L.LightningModule):
 
             inject_lora_decoder2(
                 self.model,
-                r=4,
-                alpha=4,
+                r=self.hparams.lora_r,
+                alpha=self.hparams.lora_alpha,
                 lora_dropout=0.0,
                 attn_where="cross",
                 attn_which="qv",
