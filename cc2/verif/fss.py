@@ -142,7 +142,7 @@ def fss(
     for i in range(n_models):
         for c in range(len(categories)):
             for t in range(results[0].shape[2]):
-                fss_1d = results[i][c, m, t]
+                fss_1d = results[i][c, :, t].mean()
                 df.append(
                     {
                         "model": run_name[i],
