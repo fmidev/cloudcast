@@ -28,7 +28,7 @@ from verif.composite_score import (
     plot_component_contributions,
 )
 from verif.ssim import ssim, plot_ssim
-
+from verif.hist import hist, plot_hist
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -50,7 +50,7 @@ def get_args():
             "highk_power_ratio",
             "spectral_coherence",
             "change_metrics",
-            "error-spread",
+            "hist",
             "ssim",
         ],
         help="Score to produce",
@@ -437,11 +437,15 @@ if __name__ == "__main__":
 
             plot_fss(labels, results_t, args.save_path)
 
-        elif score == "error-spread":
-            _all_truth, _all_predictions, _ = prepare_data(args, True)
-            results = error_spread(labels, _all_truth, _all_predictions, args.save_path)
-            print(results)
-            plot_error_spread(results)
+        elif score == "hist":
+            if args.plot_only:
+                results = pd.read_csv(f"{args.save_path}/results/{score}.csv")
+            else:
+                results = hist(
+                    labels, all_truth, all_predictions, args.save_path
+                )
+
+            plot_hist(labels, results, args.save_path)
 
         elif score == "variance_ratio":
             if args.plot_only:
