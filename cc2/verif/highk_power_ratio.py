@@ -2,7 +2,7 @@
 import torch
 import pandas as pd
 from torch.fft import rfft2
-from verif.fft_utils import ensure_btchw, radial_bins_rfft
+from verif.fft_utils import ensure_btchw, radial_bins_rfft, band_masks_from_wavelengths
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -15,13 +15,13 @@ def highk_power_ratio(
     all_truth: torch.Tensor,
     all_predictions: torch.Tensor,
     save_path: str,
-    top_frac: float = 0.20,
+    dx_km: float = 5.0,
+    high_km: float = 30.0,
     n_bins: int | None = None,
 ):
     """
-    For each timestep: compute PSD via rfft2, average over channels,
-    radial-bin to PSD(k). High-k power ratio = mean_k>=k0 PSD_pred / mean_k>=k0 PSD_true.
-    Saves {save_path}/results/highk_power_ratio.csv
+    High-k power ratio over *physical* high-k band (<high_km, default <30 km):
+      mean PSD_pred over bins / mean PSD_true over bins (same bins).
     """
     results = []
 
@@ -31,29 +31,37 @@ def highk_power_ratio(
         assert y_pred.shape == y_true.shape
 
         B, T, C, H, W = y_pred.shape
-        # compute once per timestep, average over batch
+
         for t in range(T):
             yp = y_pred[:, t].to(device)  # [B,C,H,W]
             yt = y_true[:, t].to(device)
-            # average PSD over batch
-            psd_pred_bins = []
-            psd_true_bins = []
 
-            # rfft grid bins (from one example) — same for all batch elems
             X0 = rfft2(yp[0], norm="ortho")
             Hf, Wf = X0.shape[-2], X0.shape[-1]
-            bin_index, counts, nb = radial_bins_rfft(
-                Hf, Wf, device=yp.device, n_bins=n_bins
+            bin_index, counts, nb, edges, rmax = radial_bins_rfft(
+                Hf, Wf, device=yp.device, n_bins=n_bins, return_meta=True
             )
             flat_idx = bin_index.flatten()
 
-            for b in range(yp.shape[0]):
+            # Use the SAME physical definition as above: high-k < 30 km
+            _, high_mask, _ = band_masks_from_wavelengths(
+                edges=edges,
+                rmax=rmax,
+                dx_km=dx_km,
+                mid_km=(30.0, 60.0),
+                high_km=high_km,
+            )
+
+            psd_pred_bins = []
+            psd_true_bins = []
+
+            for b in range(B):
                 X = rfft2(yp[b], norm="ortho")  # [C,Hf,Wf]
                 Y = rfft2(yt[b], norm="ortho")
+
                 PX = (X.real**2 + X.imag**2).mean(dim=0)  # [Hf,Wf]
                 PY = (Y.real**2 + Y.imag**2).mean(dim=0)
 
-                # radial mean
                 def bin_mean(Z):
                     zb = Z.reshape(-1, Hf * Wf)
                     sums = torch.zeros(zb.shape[0], nb, device=Z.device, dtype=Z.dtype)
@@ -66,11 +74,12 @@ def highk_power_ratio(
             PSDp = torch.stack(psd_pred_bins, dim=0).mean(0)  # [nb]
             PSDt = torch.stack(psd_true_bins, dim=0).mean(0)  # [nb]
 
-            k0 = int((1.0 - top_frac) * nb)
-            k0 = max(0, min(nb - 1, k0))
-            hi_pred = PSDp[k0:].mean()
-            hi_true = PSDt[k0:].mean()
-            ratio = (hi_pred / (hi_true + 1e-8)).item()
+            if high_mask.any():
+                hi_pred = PSDp[high_mask].mean()
+                hi_true = PSDt[high_mask].mean()
+                ratio = (hi_pred / (hi_true + 1e-8)).item()
+            else:
+                ratio = float("nan")
 
             results.append(
                 {"model": run_name[i], "timestep": t, "highk_power_ratio": ratio}

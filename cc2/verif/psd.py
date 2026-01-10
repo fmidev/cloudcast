@@ -58,7 +58,7 @@ def _radial_bin(kx, ky, psd2, k_max=None):
     edges = torch.linspace(0.0, k_max, nr + 1, device=device, dtype=dtype)
 
     bin_idx = torch.bucketize(kr.reshape(-1), edges, right=False) - 1
-    bin_idx = bin_idx.clamp(min=0, max=nr - 1).reshape(nx, ny)
+    bin_idx = bin_idx.clamp(min=0).reshape(nx, ny)
 
     Pk = []
     counts = []
@@ -420,7 +420,7 @@ def plot_psd(
         plt.clf()
 
     # absolute_psd()
-    # absolute_1h_psd()
+    absolute_1h_psd()
     anomaly_psd()
     anomaly_1h_psd()
     anomaly_psd_leadtime()

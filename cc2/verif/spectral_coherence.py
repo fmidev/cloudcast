@@ -2,7 +2,7 @@
 import torch
 import pandas as pd
 from torch.fft import rfft2
-from verif.fft_utils import ensure_btchw, radial_bins_rfft
+from verif.fft_utils import ensure_btchw, radial_bins_rfft, band_masks_from_wavelengths
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -15,14 +15,16 @@ def spectral_coherence_bands(
     all_truth: torch.Tensor,
     all_predictions: torch.Tensor,
     save_path: str,
-    k_mid: float = 0.30,
-    k_high: float = 0.60,
+    dx_km: float = 5.0,
+    mid_km=(30.0, 60.0),
+    high_km=30.0,
     n_bins: int | None = None,
 ):
     """
-    For each timestep: compute coherence(k) = Re(X * conj(Y)) / sqrt(PSD_x * PSD_y),
-    then report two points: Coh(k_mid), Coh(k_high).
-    Saves {save_path}/results/spectral_coherence.csv
+    Computes coherence over *physical* bands:
+      mid: 30-60 km
+      high: <30 km
+    Band-averages Coh(k) over the corresponding radial bins.
     """
     results = []
 
@@ -37,30 +39,35 @@ def spectral_coherence_bands(
             yp = y_pred[:, t].to(device)  # [B,C,H,W]
             yt = y_true[:, t].to(device)
 
-            # build bins once from first sample
+            # bins + meta (edges, rmax) — same for all batch elems at this (H,W)
             X0 = rfft2(yp[0], norm="ortho")
             Hf, Wf = X0.shape[-2], X0.shape[-1]
-            bin_index, counts, nb = radial_bins_rfft(
-                Hf, Wf, device=yp.device, n_bins=n_bins
+            bin_index, counts, nb, edges, rmax = radial_bins_rfft(
+                Hf, Wf, device=yp.device, n_bins=n_bins, return_meta=True
             )
             flat_idx = bin_index.flatten()
 
-            # accumulate binned PSD and cross-power over batch
+            mid_mask, high_mask, _ = band_masks_from_wavelengths(
+                edges=edges, rmax=rmax, dx_km=dx_km, mid_km=mid_km, high_km=high_km
+            )
+
             PSDx_list, PSDy_list, Rxy_list = [], [], []
 
-            for b in range(yp.shape[0]):
+            for b in range(B):
                 X = rfft2(yp[b], norm="ortho")  # [C,Hf,Wf]
                 Y = rfft2(yt[b], norm="ortho")
 
                 PX = (X.real**2 + X.imag**2).mean(dim=0)  # [Hf,Wf]
                 PY = (Y.real**2 + Y.imag**2).mean(dim=0)
-                Rxy = (X * torch.conj(Y)).mean(dim=0).real
+                Rxy = (
+                    (X * torch.conj(Y)).mean(dim=0).real
+                )  # keep your current definition
 
                 def bin_mean(Z):
-                    zb = Z.reshape(-1, Hf * Wf)
+                    zb = Z.reshape(-1, Hf * Wf)  # [1, Hf*Wf]
                     sums = torch.zeros(zb.shape[0], nb, device=Z.device, dtype=Z.dtype)
                     sums.index_add_(1, flat_idx, zb)
-                    return (sums / counts).squeeze(0)
+                    return (sums / counts).squeeze(0)  # [nb]
 
                 PSDx_list.append(bin_mean(PX[None, ...]))
                 PSDy_list.append(bin_mean(PY[None, ...]))
@@ -70,16 +77,11 @@ def spectral_coherence_bands(
             PSDy = torch.stack(PSDy_list, dim=0).mean(0).clamp_min(1e-8)
             Rxy = torch.stack(Rxy_list, dim=0).mean(0)
 
-            denom = (PSDx.sqrt() * PSDy.sqrt()).clamp_min(1e-8)
-            Coh = (Rxy / denom).clamp(-1.0, 1.0)  # [nb]
+            Coh = (Rxy / (PSDx.sqrt() * PSDy.sqrt()).clamp_min(1e-8)).clamp(-1.0, 1.0)
 
-            def pick_band(target: float) -> float:
-                idx = int(target * (nb - 1))
-                idx = max(0, min(nb - 1, idx))
-                return Coh[idx].item()
-
-            c_mid = pick_band(k_mid)
-            c_high = pick_band(k_high)
+            # Robust band averages (handle empty masks)
+            c_mid = Coh[mid_mask].mean().item() if mid_mask.any() else float("nan")
+            c_high = Coh[high_mask].mean().item() if high_mask.any() else float("nan")
 
             results.append(
                 {
