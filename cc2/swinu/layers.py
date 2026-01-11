@@ -6,7 +6,9 @@ from math import sqrt, ceil
 from timm.models.layers import DropPath
 
 
-def make_window_key_mask(H, W, Hpad, Wpad, ws, device, repeat_factor):
+def make_window_key_mask(
+    H: int, W: int, Hpad: int, Wpad: int, ws: int, device: str, repeat_factor: int
+) -> torch.Tensor:
     # 1 inside real image, 0 in padded area
     base = torch.zeros((Hpad, Wpad), dtype=torch.bool, device=device)
     base[:H, :W] = False  # valid -> False (not masked)
@@ -21,7 +23,7 @@ def make_window_key_mask(H, W, Hpad, Wpad, ws, device, repeat_factor):
     return mask
 
 
-def get_padded_size(H, W, patch_size, num_merges=1):
+def get_padded_size(H: int, W: int, patch_size: int, num_merges: int = 1) -> tuple:
     # Calculate required factor for divisibility
     required_factor = patch_size * (2**num_merges)
 
@@ -32,7 +34,7 @@ def get_padded_size(H, W, patch_size, num_merges=1):
     return target_h, target_w
 
 
-def pad_tensor(tensor, patch_size, num_merges=1):
+def pad_tensor(tensor: torch.Tensor, patch_size: int, num_merges: int = 1) -> dict:
     H, W = tensor.shape[-2:]
     target_h, target_w = get_padded_size(H, W, patch_size, num_merges)
 
@@ -65,7 +67,7 @@ def pad_tensor(tensor, patch_size, num_merges=1):
     return padded_tensor, padding_info
 
 
-def pad_tensors(tensors, patch_size, num_merges=1):
+def pad_tensors(tensors: list, patch_size: int, num_merges: int = 1):
     padded_list = []
     for t in tensors:
         padded, pad_info = pad_tensor(t, patch_size, num_merges)
@@ -74,7 +76,7 @@ def pad_tensors(tensors, patch_size, num_merges=1):
     return padded_list, pad_info
 
 
-def depad_tensor(tensor, padding_info):
+def depad_tensor(tensor: torch.Tensor, padding_info: dict) -> torch.Tensor:
     if padding_info["pad_h"] == 0 and padding_info["pad_w"] == 0:
         return tensor
 
