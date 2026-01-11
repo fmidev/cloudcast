@@ -18,6 +18,7 @@ from swinu.layers import (
     pad_tensor,
     depad_tensor,
 )
+from swinu.unet import LatentObsUNet2
 from types import SimpleNamespace
 from torch.utils.checkpoint import checkpoint
 
@@ -335,8 +336,22 @@ class cc2model(nn.Module):
             nn.init.zeros_(self.residual_adapter_head[-1].bias)
 
             if self.use_high_pass_filter:
-                self.high_pass_filter = HighPassFilter2d(kernel_size=11)
-                self.residual_alpha_late = nn.Parameter(torch.tensor(1e-2))
+                self.high_pass_filter = HighPassFilter2d(kernel_size=7)
+                self.residual_alpha0_raw = nn.Parameter(
+                    torch.tensor(0.1, dtype=torch.float32)
+                )
+                self.residual_alpha1_raw = nn.Parameter(
+                    torch.tensor(0.5, dtype=torch.float32)
+                )
+
+        self.use_obs_head = config.use_obs_head
+
+        if self.use_obs_head:
+            self.obs_head = LatentObsUNet2(
+                latent_dim=self.embed_dim * 2,  # decoder2 dim
+                base_channels=64,
+                num_groups=8,
+            )
 
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]
@@ -526,6 +541,45 @@ class cc2model(nn.Module):
             return 1
         return 0
 
+    def _tokens_to_output(
+        self,
+        x_tokens: torch.Tensor,
+        padding_info: dict,
+        step: int,
+        use_refine: bool = True,
+    ) -> torch.Tensor:
+        out = self.project_to_image(x_tokens)
+
+        if use_refine:
+            out_ref = self.refinement_head(out.squeeze(2))
+            out = out + out_ref.unsqueeze(2)
+
+        if self.use_residual_io_adapter:
+            out = self.residual_output_adapter(out)
+        elif self.use_residual_adapter_head and not self.use_high_pass_filter:
+            B, T, C, H, W = out.shape
+            out2 = out.view(B * T, C, H, W)
+            out2 = out2 + self.residual_alpha * self.residual_adapter_head(out2)
+            out = out2.view(B, T, C, H, W)
+        elif self.use_residual_adapter_head and self.use_high_pass_filter:
+            B, T, C, H, W = out.shape
+            out2 = out.view(B * T, C, H, W)
+            r = self.residual_adapter_head(out2)
+            r_hp = self.high_pass_filter(r)
+
+            step_id = self._adapter_step_id(step)
+
+            alpha0 = 0.2 * torch.tanh(self.residual_alpha0_raw)  # in [-0.1, 0.1]
+            alpha1 = 0.05 * torch.tanh(self.residual_alpha1_raw)  # in [-0.02, 0.02]
+
+            alpha = alpha0 if step_id == 0 else alpha1
+
+            out2 = out2 + alpha * r_hp
+            out = out2.reshape(B, T, C, H, W)
+
+        out = depad_tensor(out, padding_info)
+        return out
+
     def forward(self, data, forcing, step):
         assert (
             data.ndim == 5
@@ -541,38 +595,48 @@ class cc2model(nn.Module):
 
         x, f_future = self.patch_embedding(data, forcing)
         x, skip = self.encode(x)
-        x = self.decode(x, step, skip, f_future)
+        x_core = self.decode(x, step, skip, f_future)
 
-        output = self.project_to_image(x)
-        output_ref = self.refinement_head(output.squeeze(2))
-        output = output + output_ref.unsqueeze(2)
+        out_core = self._tokens_to_output(x_core, padding_info, step)
 
-        if self.use_residual_io_adapter:
-            output = self.residual_output_adapter(output)
+        if self.use_obs_head:
+            # latent correction on decoder2 tokens (P = h_patches * w_patches)
+            x_obs = self.obs_head(x_core, H=self.h_patches, W=self.w_patches)
+            out_obs = self._tokens_to_output(
+                x_obs, padding_info, step, use_refine=False
+            )
+            return {"core": out_core, "obs": out_obs}
 
-        elif self.use_residual_adapter_head and self.use_high_pass_filter is False:
-            B, T, C, H, W = output.shape
-            output = output.view(B * T, C, H, W)
-            output = output + self.residual_alpha * self.residual_adapter_head(output)
-            output = output.view(B, T, C, H, W)
+        # output = self.project_to_image(x)
+        # output_ref = self.refinement_head(output.squeeze(2))
+        # output = output + output_ref.unsqueeze(2)
 
-        elif self.use_residual_adapter_head and self.use_high_pass_filter:
-            B, T, C, H, W = output.shape
-            output = output.view(B * T, C, H, W)
-            r = self.residual_adapter_head(output)
-            r_hp = self.high_pass_filter(r)
+        # if self.use_residual_io_adapter:
+        #    output = self.residual_output_adapter(output)
 
-            step_id = self._adapter_step_id(step)
+        # elif self.use_residual_adapter_head and self.use_high_pass_filter is False:
+        #    B, T, C, H, W = output.shape
+        #    output = output.view(B * T, C, H, W)
+        #    output = output + self.residual_alpha * self.residual_adapter_head(output)
+        #    output = output.view(B, T, C, H, W)
 
-            alpha0 = self.residual_alpha.clamp(-0.1, 0.1)
-            alpha1 = self.residual_alpha_late.clamp(-0.02, 0.02)
+        # elif self.use_residual_adapter_head and self.use_high_pass_filter:
+        #    B, T, C, H, W = output.shape
+        #    output = output.view(B * T, C, H, W)
+        #    r = self.residual_adapter_head(output)
+        #    r_hp = self.high_pass_filter(r)
 
-            alpha = alpha0 if step_id == 0 else alpha1
+        #    step_id = self._adapter_step_id(step)
 
-            output = output + alpha * r_hp
-            output = output.reshape(B, T, C, H, W)
+        #    alpha0 = 0.2 * torch.tanh(self.residual_alpha0_raw)  # in [-0.1, 0.1]
+        #    alpha1 = 0.05 * torch.tanh(self.residual_alpha1_raw)  # in [-0.02, 0.02]
 
-        output = depad_tensor(output, padding_info)
+        #    alpha = alpha0 if step_id == 0 else alpha1
+
+        #    output = output + alpha * r_hp
+        #    output = output.reshape(B, T, C, H, W)
+
+        # output = depad_tensor(output, padding_info)
 
         assert list(output.shape[-2:]) == list(
             self.real_input_resolution

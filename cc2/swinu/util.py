@@ -161,8 +161,10 @@ def roll_forecast(
 
     # Initialize empty lists for multi-step evaluation
     all_losses = []
-    all_predictions = []
-    all_tendencies = []
+    all_predictions_obs = []
+    all_tendencies_obs = []
+    all_predictions_core = []
+    all_tendencies_core = []
 
     metrics = {}
 
@@ -190,10 +192,18 @@ def roll_forecast(
         else:
             input_state = torch.cat([previous_state, current_state], dim=1)
 
-        tendency = model(input_state, step_forcing, t)
+        tendency_out = model(input_state, step_forcing, t)
+
+        if isinstance(tendency_out, dict):
+            tendency_core = tendency_out["core"]  # used for AR update
+            tendency_obs = tendency_out["obs"]  # used for loss
+        else:
+            tendency_core = tendency_out
+            tendency_obs = tendency_out
 
         # Add the predicted tendency to get the next state
-        next_pred = current_state + tendency
+        next_pred_core = current_state + tendency_core
+        next_pred_obs = current_state + tendency_obs
 
         # Compute loss for this step
         if loss_fn is not None:
@@ -210,9 +220,9 @@ def roll_forecast(
             all_losses.append(
                 loss_fn(
                     y_true_full=y_true_full,
-                    y_pred_full=next_pred,
+                    y_pred_full=next_pred_obs,
                     y_true_delta=y_true_delta,
-                    y_pred_delta=tendency,
+                    y_pred_delta=tendency_obs,
                     global_step=step,
                 )
             )
@@ -224,31 +234,37 @@ def roll_forecast(
                     p_pred * torch.ones_like(current_state[:, :1, :, :, :])
                 )
 
-                pred_clamped = ste_clamp(next_pred, True)
+                pred_core_clamped = ste_clamp(next_pred_core, True)
 
                 next_gt = y[:, t : t + 1, ...]
-                next_state = mask_next * pred_clamped + (1 - mask_next) * next_gt
+                next_state_core = (
+                    mask_next * pred_core_clamped + (1 - mask_next) * next_gt
+                )
 
                 metrics["ss_mask_next"] = mask_next.float().mean()
             else:
                 # Training without SS
-                next_state = ste_clamp(next_pred, True)
+                next_state_core = ste_clamp(next_pred_core, True)
 
         else:
             # eval/inference always use clamped prediction
-            next_state = ste_clamp(next_pred, False)
+            next_state_core = ste_clamp(next_pred_core, False)
+
+        # Materialized obs prediction for saving/verification (never fed back)
+        if model.training:
+            next_state_obs = ste_clamp(next_pred_obs, True)
+        else:
+            next_state_obs = ste_clamp(next_pred_obs, False)
 
         # Store the prediction
-        all_predictions.append(next_state.detach())
-        all_tendencies.append(tendency.detach())
+        all_predictions_core.append(next_state_core.detach())
+        all_tendencies_core.append(tendency_core.detach())
+        all_predictions_obs.append(next_state_obs.detach())
+        all_tendencies_obs.append(tendency_obs.detach())
 
         # Update current state for next iteration
         previous_state = current_state
-        current_state = next_state
-
-    # Stack predictions into a single tensor
-    tendencies = torch.cat(all_tendencies, dim=1)
-    predictions = torch.cat(all_predictions, dim=1)
+        current_state = next_state_core
 
     loss = None
 
@@ -281,9 +297,16 @@ def roll_forecast(
 
             loss[k] = torch.stack(loss[k])
 
-    assert tendencies.ndim == 5
+    assert tendencies_core.ndim == 5
 
     if loss is not None:
         loss.update(metrics)
 
-    return loss, tendencies, predictions
+    out = {
+        "tendencies_core": torch.cat(all_tendencies_core, dim=1),
+        "predictions_core": torch.cat(all_predictions_core, dim=1),
+        "tendencies_obs": torch.cat(all_tendencies_obs, dim=1),
+        "predictions_obs": torch.cat(all_predictions_obs, dim=1),
+    }
+
+    return loss, out

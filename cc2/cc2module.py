@@ -72,6 +72,7 @@ class cc2module(L.LightningModule):
         use_lora: bool = False,
         lora_r: int = 4,
         lora_alpha: int = 4,
+        use_obs_head: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -113,6 +114,7 @@ class cc2module(L.LightningModule):
                 "use_residual_io_adapter",
                 "use_high_pass_filter",
                 "use_lora",
+                "use_obs_head",
             ]
         }
 
@@ -322,7 +324,7 @@ class cc2module(L.LightningModule):
     def training_step(self, batch, batch_idx):
         data, forcing = batch
 
-        loss, tendencies, predictions = self._roll_forecast(
+        loss, outs = self._roll_forecast(
             self.model,
             data,
             forcing,
@@ -335,6 +337,9 @@ class cc2module(L.LightningModule):
             ss_pred_max=self.ss_pred_max,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
         )
+
+        tendencies = outs["tendencies_core"]
+        predictions = outs["predictions_core"]
 
         self.log("train_loss", loss["loss"], sync_dist=False)
 
@@ -368,7 +373,7 @@ class cc2module(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         data, forcing = batch
 
-        loss, tendencies, predictions = self._roll_forecast(
+        loss, outs = self._roll_forecast(
             self.model,
             data,
             forcing,
@@ -377,6 +382,9 @@ class cc2module(L.LightningModule):
             use_scheduled_sampling=False,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
         )
+
+        tendencies = outs["tendencies_core"]
+        predictions = outs["predictions_core"]
 
         self.log("val_loss", loss["loss"], sync_dist=False)
 
@@ -407,7 +415,7 @@ class cc2module(L.LightningModule):
     def test_step(self, batch, batch_idx):
         data, forcing, dates = batch
 
-        _, tendencies, predictions = self._roll_forecast(
+        _, outs = self._roll_forecast(
             self,
             data,
             forcing,
@@ -416,6 +424,10 @@ class cc2module(L.LightningModule):
             use_scheduled_sampling=False,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
         )
+
+        # Choose obs-space outputs if available, otherwise fall back to core
+        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
+        predictions = outs.get("predictions_obs", outs["predictions_core"])
 
         # We want to include the analysis time also
         analysis_time = data[0][:, -1, ...].unsqueeze(1)
@@ -437,7 +449,7 @@ class cc2module(L.LightningModule):
     def predict_step(self, batch, batch_idx):
         data, forcing, dates = batch
 
-        _, tendencies, predictions = self._roll_forecast(
+        _, outs = self._roll_forecast(
             self,
             data,
             forcing,
@@ -446,6 +458,9 @@ class cc2module(L.LightningModule):
             use_scheduled_sampling=False,
             use_rollout_weighting=False,
         )
+
+        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
+        predictions = outs.get("predictions_obs", outs["predictions_core"])
 
         # We want to include the analysis time also
         analysis_time = data[0][:, -1, ...].unsqueeze(1)
