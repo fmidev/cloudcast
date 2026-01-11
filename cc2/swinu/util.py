@@ -297,7 +297,7 @@ def roll_forecast(
 
             loss[k] = torch.stack(loss[k])
 
-    assert tendencies_core.ndim == 5
+    assert all_tendencies_core[0].ndim == 5
 
     if loss is not None:
         loss.update(metrics)
