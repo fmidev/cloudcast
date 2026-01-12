@@ -64,6 +64,7 @@ class cc2module(L.LightningModule):
         force_frozen_backbone_to_eval: bool = False,
         use_high_pass_filter: bool = False,
         use_obs_head: bool = False,
+        obs_head_base_channels: int = 64,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -104,6 +105,7 @@ class cc2module(L.LightningModule):
                 "use_residual_io_adapter",
                 "use_high_pass_filter",
                 "use_obs_head",
+                "obs_head_base_channels",
             ]
         }
 

@@ -344,7 +344,7 @@ class cc2model(nn.Module):
         if self.use_obs_head:
             self.obs_head = LatentObsUNet2(
                 latent_dim=self.embed_dim * 2,  # decoder2 dim
-                base_channels=64,
+                base_channels=config.obs_head_base_channels,
                 num_groups=8,
             )
 
