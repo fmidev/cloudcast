@@ -22,11 +22,6 @@ from common.util import (
     find_latest_checkpoint_path,
     strip_prefix,
 )
-from swinu.lora import (
-    freeze_all_except_lora,
-    inject_lora_decoder2,
-)
-
 from typing import Optional, Callable
 
 
@@ -69,9 +64,6 @@ class cc2module(L.LightningModule):
         use_residual_io_adapter: bool = False,
         force_frozen_backbone_to_eval: bool = False,
         use_high_pass_filter: bool = False,
-        use_lora: bool = False,
-        lora_r: int = 4,
-        lora_alpha: int = 4,
         use_obs_head: bool = False,
     ):
         super().__init__()
@@ -113,7 +105,6 @@ class cc2module(L.LightningModule):
                 "use_residual_adapter_head",
                 "use_residual_io_adapter",
                 "use_high_pass_filter",
-                "use_lora",
                 "use_obs_head",
             ]
         }
@@ -268,31 +259,7 @@ class cc2module(L.LightningModule):
             load_result = self.model.load_state_dict(state_dict, strict=False)
             rank_zero_info(f"Weight loading results: {load_result}")
 
-        if self.hparams.use_lora:
-            assert (
-                len(self.hparams.freeze_layers) == 0
-            ), "LoRA freezes the model automatically"
-            assert (
-                self.hparams.force_frozen_backbone_to_eval
-            ), "LoRA requires eval to frozen weights"
-            assert self.hparams.branch_from_run, "LoRA requires branch_from_run"
-
-            inject_lora_decoder2(
-                self.model,
-                r=self.hparams.lora_r,
-                alpha=self.hparams.lora_alpha,
-                lora_dropout=0.0,
-                attn_where="cross",
-                attn_which="qv",
-                mlp_which="down",
-                disable_stochastic=True,
-            )
-            freeze_all_except_lora(self.model)
-            self._store_trainable_module_names()
-            self._print_trainable_layers()
-
-        else:
-            self._freeze_layers()
+        self._freeze_layers()
 
         rank = get_rank()
 
