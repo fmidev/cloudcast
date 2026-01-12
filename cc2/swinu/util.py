@@ -197,6 +197,7 @@ def roll_forecast(
         if isinstance(tendency_out, dict):
             tendency_core = tendency_out["core"]  # used for AR update
             tendency_obs = tendency_out["obs"]  # used for loss
+            metrics.update(tendency_out.get("diag", {}))
         else:
             tendency_core = tendency_out
             tendency_obs = tendency_out

@@ -584,11 +584,21 @@ class cc2model(nn.Module):
 
         if self.use_obs_head:
             # latent correction on decoder2 tokens (P = h_patches * w_patches)
-            x_obs = self.obs_head(x_core, H=self.h_patches, W=self.w_patches)
+            want_diag = not self.training
+
+            obs_diag = {}
+
+            if want_diag:
+                x_obs, obs_diag = self.obs_head(
+                    x_core, H=self.h_patches, W=self.w_patches, return_diag=True
+                )
+            else:
+                x_obs = self.obs_head(x_core, H=self.h_patches, W=self.w_patches)
+
             out_obs = self._tokens_to_output(
                 x_obs, padding_info, step, use_refine=False
             )
-            return {"core": out_core, "obs": out_obs}
+            return {"core": out_core, "obs": out_obs, "diag": obs_diag}
 
         # output = self.project_to_image(x)
         # output_ref = self.refinement_head(output.squeeze(2))
