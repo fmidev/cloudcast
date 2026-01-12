@@ -638,6 +638,8 @@ class cc2model(nn.Module):
 
         # output = depad_tensor(output, padding_info)
 
+        output = out_core
+
         assert list(output.shape[-2:]) == list(
             self.real_input_resolution
         ), f"Output shape {output.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
