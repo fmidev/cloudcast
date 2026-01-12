@@ -929,39 +929,6 @@ class MultiScaleRefinementHead(nn.Module):
         return self.global_gamma * y
 
 
-class ResidualAdapter(nn.Module):
-    """
-    Residual conv adapter operating in image space on prognostic inputs.
-    Expects x as [B, T, C, H, W] and returns same shape.
-    """
-
-    def __init__(self, embed_dim: int, alpha_init: float = 1e-2):
-        super().__init__()
-        self.alpha = nn.Parameter(torch.tensor(alpha_init, dtype=torch.float32))
-
-        self.net = nn.Sequential(
-            nn.Conv2d(1, embed_dim, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(embed_dim, embed_dim, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(embed_dim, 1, kernel_size=3, padding=1),
-        )
-
-        # Identity init: start as no-op
-        nn.init.zeros_(self.net[-1].weight)
-        nn.init.zeros_(self.net[-1].bias)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, C, H, W]
-        if x.dim() != 5:
-            raise ValueError(f"Expected [B,T,C,H,W], got {tuple(x.shape)}")
-
-        B, T, C, H, W = x.shape
-        xt = x.reshape(B * T, C, H, W)
-        xt = xt + self.alpha * self.net(xt)
-        return xt.reshape(B, T, C, H, W)
-
-
 class HighPassFilter2d(nn.Module):
     """
     High-pass filter for 2D fields via subtracting a local low-pass (box blur).

@@ -11,7 +11,6 @@ from swinu.layers import (
     PatchEmbedLossless,
     DWConvResidual3D,
     MultiScaleRefinementHead,
-    ResidualAdapter,
     HighPassFilter2d,
     get_padded_size,
     pad_tensors,
@@ -305,18 +304,9 @@ class cc2model(nn.Module):
         )
 
         self.use_residual_adapter_head = config.use_residual_adapter_head
-        self.use_residual_io_adapter = config.use_residual_io_adapter
         self.use_high_pass_filter = config.use_high_pass_filter
 
-        if config.use_residual_io_adapter:
-            self.residual_input_adapter = ResidualAdapter(
-                embed_dim=64,
-            )
-            self.residual_output_adapter = ResidualAdapter(
-                embed_dim=128,
-            )
-
-        elif self.use_residual_adapter_head:
+        if self.use_residual_adapter_head:
             self.residual_alpha = nn.Parameter(torch.tensor(1e-2))
 
             self.residual_adapter_head = nn.Sequential(
@@ -537,9 +527,7 @@ class cc2model(nn.Module):
             out_ref = self.refinement_head(out.squeeze(2))
             out = out + out_ref.unsqueeze(2)
 
-        if self.use_residual_io_adapter:
-            out = self.residual_output_adapter(out)
-        elif self.use_residual_adapter_head and not self.use_high_pass_filter:
+        if self.use_residual_adapter_head and not self.use_high_pass_filter:
             B, T, C, H, W = out.shape
             out2 = out.view(B * T, C, H, W)
             out2 = out2 + self.residual_alpha * self.residual_adapter_head(out2)
@@ -569,9 +557,6 @@ class cc2model(nn.Module):
         ), "Input data tensor shape should be [B, T, C, H, W], is: {}".format(
             data.shape
         )
-
-        if self.use_residual_io_adapter:
-            data = self.residual_input_adapter(data)
 
         data, padding_info = pad_tensor(data, self.patch_size, 1)
         forcing, _ = pad_tensor(forcing, self.patch_size, 1)
@@ -604,10 +589,7 @@ class cc2model(nn.Module):
         # output_ref = self.refinement_head(output.squeeze(2))
         # output = output + output_ref.unsqueeze(2)
 
-        # if self.use_residual_io_adapter:
-        #    output = self.residual_output_adapter(output)
-
-        # elif self.use_residual_adapter_head and self.use_high_pass_filter is False:
+        # if self.use_residual_adapter_head and self.use_high_pass_filter is False:
         #    B, T, C, H, W = output.shape
         #    output = output.view(B * T, C, H, W)
         #    output = output + self.residual_alpha * self.residual_adapter_head(output)

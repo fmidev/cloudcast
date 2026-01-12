@@ -60,7 +60,6 @@ class cc2module(L.LightningModule):
         use_rollout_weighting: bool = False,
         use_statistics_from_checkpoint: bool = True,
         use_residual_adapter_head: bool = False,
-        use_residual_io_adapter: bool = False,
         force_frozen_backbone_to_eval: bool = False,
         use_high_pass_filter: bool = False,
         use_obs_head: bool = False,
@@ -70,10 +69,6 @@ class cc2module(L.LightningModule):
         self.save_hyperparameters()
 
         self.model_configured = False
-
-        assert (use_residual_adapter_head and use_residual_io_adapter == False) or (
-            use_residual_adapter_head == False
-        )
 
         # Extract only model-specific parameters
         model_kwargs = {
@@ -102,7 +97,6 @@ class cc2module(L.LightningModule):
                 "autoregressive_mode",
                 "use_deep_refinement_head",
                 "use_residual_adapter_head",
-                "use_residual_io_adapter",
                 "use_high_pass_filter",
                 "use_obs_head",
                 "obs_head_base_channels",
