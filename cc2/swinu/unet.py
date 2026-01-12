@@ -195,7 +195,7 @@ class LatentObsUNet2(nn.Module):
                     "alpha": float(alpha.detach().cpu()),
                     "gate_mean": float(gate.mean().detach().cpu()),
                     "gate_p90": float(
-                        torch.quantile(gate.detach().flatten(), 0.90).cpu()
+                        torch.quantile(gate.detach().flatten().float(), 0.90).cpu()
                     ),
                     "r_lf_rms": float(r_lf.pow(2).mean().sqrt().detach().cpu()),
                     "r_hf_rms": float(r_hf.pow(2).mean().sqrt().detach().cpu()),
