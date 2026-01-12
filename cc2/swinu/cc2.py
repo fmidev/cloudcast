@@ -262,11 +262,6 @@ class cc2model(nn.Module):
 
         self.skip_proj = nn.Linear(self.embed_dim, self.embed_dim * 2)
 
-        self.use_hard_skip = config.use_hard_skip
-
-        if self.use_hard_skip:
-            self.skip_fuse = nn.Linear(self.embed_dim * 4, self.embed_dim * 2)
-
         self.use_gradient_checkpointing = config.use_gradient_checkpointing
         self.use_scheduled_sampling = config.use_scheduled_sampling
 
@@ -503,18 +498,6 @@ class cc2model(nn.Module):
         skip_token = skip[:, -1, :, :]  # shape: [B, num_tokens, embed_dim]
         assert skip_token.ndim == 3
         skip_proj = self.skip_proj(skip_token)  # [B, num_tokens, embed_dim*2]
-
-        if self.use_hard_skip:
-            # Hard skip fusion path
-            assert (
-                x2.shape[1] == skip_proj.shape[1]
-            ), f"Shape mismatch: x2 {x2.shape} vs skip_proj {skip_proj.shape}"
-
-            # Concatenate along channel dim: [B, P, 4D]
-            x2 = torch.cat([x2, skip_proj], dim=-1)
-
-            # Fuse back to decoder2 dim: [B, P, 2D]
-            x2 = self.skip_fuse(x2)
 
         if self.use_gradient_checkpointing:
             for block, dwres in zip(self.decoder2, self.dwres_d2):
