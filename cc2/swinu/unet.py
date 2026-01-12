@@ -45,36 +45,77 @@ class LatentObsUNet2(nn.Module):
         # alpha = bound * tanh(alpha_raw)
         # initialize so alpha ~= alpha_init
         # For small values: tanh(z) ~ z, so alpha_raw ~ alpha_init/bound
-        self.alpha_raw = nn.Parameter(torch.tensor(self.alpha_init / self.alpha_bound, dtype=torch.float32))
+        self.alpha_raw = nn.Parameter(
+            torch.tensor(self.alpha_init / self.alpha_bound, dtype=torch.float32)
+        )
 
         # Encoder
         self.in0 = ConvBlock(latent_dim, base_channels, num_groups)
         self.in1 = ConvBlock(base_channels, base_channels, num_groups)
 
-        self.down1 = nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding=1, bias=False)
+        self.down1 = nn.Conv2d(
+            base_channels,
+            base_channels * 2,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
         self.d10 = ConvBlock(base_channels * 2, base_channels * 2, num_groups)
         self.d11 = ConvBlock(base_channels * 2, base_channels * 2, num_groups)
 
-        self.down2 = nn.Conv2d(base_channels * 2, base_channels * 4, kernel_size=3, stride=2, padding=1, bias=False)
+        self.down2 = nn.Conv2d(
+            base_channels * 2,
+            base_channels * 4,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
         self.d20 = ConvBlock(base_channels * 4, base_channels * 4, num_groups)
         self.d21 = ConvBlock(base_channels * 4, base_channels * 4, num_groups)
 
         # Decoder
-        self.up1 = nn.Conv2d(base_channels * 4, base_channels * 2, kernel_size=1, bias=False)
+        self.up1 = nn.Conv2d(
+            base_channels * 4, base_channels * 2, kernel_size=1, bias=False
+        )
         self.u10 = ConvBlock(base_channels * 4, base_channels * 2, num_groups)  # concat
         self.u11 = ConvBlock(base_channels * 2, base_channels * 2, num_groups)
 
-        self.up0 = nn.Conv2d(base_channels * 2, base_channels, kernel_size=1, bias=False)
+        self.up0 = nn.Conv2d(
+            base_channels * 2, base_channels, kernel_size=1, bias=False
+        )
         self.u00 = ConvBlock(base_channels * 2, base_channels, num_groups)  # concat
         self.u01 = ConvBlock(base_channels, base_channels, num_groups)
 
-        self.out_conv = nn.Conv2d(base_channels, latent_dim, kernel_size=3, padding=1, bias=True)
+        # --- LF/HF residual heads + gate ---
+        # HF: full-res residual in latent space
+        self.out_hf = nn.Conv2d(
+            base_channels, latent_dim, kernel_size=3, padding=1, bias=True
+        )
+        # LF: compute on pooled features -> upsample -> latent residual
+        self.out_lf = nn.Conv2d(
+            base_channels, latent_dim, kernel_size=3, padding=1, bias=True
+        )
+        # Gate: spatial confidence in [0,1]
+        self.gate_head = nn.Conv2d(
+            base_channels, 1, kernel_size=3, padding=1, bias=True
+        )
+        # Coarse pooling factor for LF branch (2 is conservative; 4 is stronger)
+        self.lf_pool = 4
 
-        # Identity init: start as no-op
-        nn.init.zeros_(self.out_conv.weight)
-        nn.init.zeros_(self.out_conv.bias)
+        # Identity init: start as near no-op
+        nn.init.zeros_(self.out_hf.weight)
+        nn.init.zeros_(self.out_hf.bias)
+        nn.init.zeros_(self.out_lf.weight)
+        nn.init.zeros_(self.out_lf.bias)
+        # Gate starts small-ish (but alpha is already tiny); bias<0 pushes sigmoid->small
+        nn.init.zeros_(self.gate_head.weight)
+        nn.init.constant_(self.gate_head.bias, -2.0)
 
-    def forward(self, x_tokens: torch.Tensor, H: int, W: int) -> torch.Tensor:
+    def forward(
+        self, x_tokens: torch.Tensor, H: int, W: int, return_diag: bool = False
+    ) -> torch.Tensor | tuple:
         if x_tokens.dim() != 4:
             raise ValueError(f"Expected [B,T,P,D], got {tuple(x_tokens.shape)}")
         B, T, P, D = x_tokens.shape
@@ -94,10 +135,10 @@ class LatentObsUNet2(nn.Module):
         Hp, Wp = x.shape[-2], x.shape[-1]
 
         # Encoder
-        x0 = self.in1(self.in0(x))                    # [BT, C, Hp, Wp]
-        x1 = self.down1(x0)                           # [BT, 2C, Hp/2, Wp/2]
+        x0 = self.in1(self.in0(x))  # [BT, C, Hp, Wp]
+        x1 = self.down1(x0)  # [BT, 2C, Hp/2, Wp/2]
         x1 = self.d11(self.d10(x1))
-        x2 = self.down2(x1)                           # [BT, 4C, Hp/4, Wp/4]
+        x2 = self.down2(x1)  # [BT, 4C, Hp/4, Wp/4]
         x2 = self.d21(self.d20(x2))
 
         # Decoder
@@ -118,15 +159,48 @@ class LatentObsUNet2(nn.Module):
         u0 = torch.cat([u0, s0], dim=1)
         u0 = self.u01(self.u00(u0))
 
-        r = self.out_conv(u0)  # [BT, D, Hp, Wp]
+        # --- LF branch: pooled -> residual -> upsample ---
+        if self.lf_pool > 1:
+            u0_lf = F.avg_pool2d(
+                u0, kernel_size=self.lf_pool, stride=self.lf_pool, ceil_mode=False
+            )
+            r_lf = self.out_lf(u0_lf)
+            r_lf = F.interpolate(r_lf, size=u0.shape[-2:], mode="nearest")
+        else:
+            r_lf = self.out_lf(u0)
+
+        # --- HF branch: full-res residual ---
+        r_hf = self.out_hf(u0)
+
+        # Spatial gate in [0,1]
+        gate = torch.sigmoid(self.gate_head(u0))  # [BT,1,Hp,Wp]
+
+        # Combine residuals (gate applied to both)
+        r = gate * (r_lf + r_hf)  # [BT,D,Hp,Wp]
 
         # unpad
         if pad_h or pad_w:
             r = r[..., :H, :W]
+            gate = gate[..., :H, :W]
 
         alpha = self.alpha_bound * torch.tanh(self.alpha_raw)
-        y = x[..., :H, :W] + alpha * r  # residual in latent space
-
-        # back to tokens: [BT, D, H, W] -> [B,T,P,D]
+        y = x[..., :H, :W] + alpha * r  # residual in latent space (gated LF+HF)
         yt = y.view(B * T, D, H * W).transpose(1, 2).contiguous()  # [BT, P, D]
-        return yt.view(B, T, H * W, D)
+        # back to tokens: [BT, D, H, W] -> [B,T,P,D]
+        y_tokens = yt.view(B, T, H * W, D)
+
+        if return_diag:
+            with torch.no_grad():
+                diag = {
+                    "alpha": float(alpha.detach().cpu()),
+                    "gate_mean": float(gate.mean().detach().cpu()),
+                    "gate_p90": float(
+                        torch.quantile(gate.detach().flatten(), 0.90).cpu()
+                    ),
+                    "r_lf_rms": float(r_lf.pow(2).mean().sqrt().detach().cpu()),
+                    "r_hf_rms": float(r_hf.pow(2).mean().sqrt().detach().cpu()),
+                    "r_rms": float(r.pow(2).mean().sqrt().detach().cpu()),
+                }
+            return y_tokens, diag
+
+        return y_tokens
