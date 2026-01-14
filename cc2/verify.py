@@ -30,6 +30,7 @@ from verif.composite_score import (
 from verif.ssim import ssim, plot_ssim
 from verif.hist import hist, plot_hist
 
+
 def get_args():
     parser = argparse.ArgumentParser()
 
@@ -65,6 +66,12 @@ def get_args():
         "--plot_only",
         action="store_true",
         help="If set, only plot the results without running the verification.",
+    )
+    parser.add_argument(
+        "--crop",
+        type=int,
+        default=0,
+        help="Crop pixels from each side",
     )
 
     args = parser.parse_args()
@@ -266,6 +273,7 @@ def equalize_datasets(labels, all_truth, all_predictions, all_dates):
     return all_truth, all_predictions, all_dates
 
 
+
 def prepare_data(args):
     all_truth, all_predictions, all_dates = [], [], []
     truth_cache = {}
@@ -280,6 +288,7 @@ def prepare_data(args):
             all_truth.append(truth)
             all_predictions.append(predictions)
             all_dates.append(dates)
+
     if args.path_name:
         for path_name in tqdm(args.path_name, desc="Reading data"):
 
@@ -289,10 +298,21 @@ def prepare_data(args):
             all_predictions.append(predictions)
             all_dates.append(dates)
 
-    if len(all_dates) == 1:
-        return all_truth, all_predictions, all_dates
+        # return all_truth, all_predictions, all_dates
 
-    return equalize_datasets(get_labels(args), all_truth, all_predictions, all_dates)
+    if len(all_dates) > 1:
+        all_truth, all_predictions, all_dates = equalize_datasets(
+            get_labels(args), all_truth, all_predictions, all_dates
+        )
+
+    if args.crop:
+        # B, T, C, H, W
+        c = args.crop
+        print(f"Cropping with c={c}")
+        all_truth = [x[:, :, :, c:-c, c:-c] for x in all_truth]
+        all_predictions = [x[:, :, :, c:-c, c:-c] for x in all_predictions]
+
+    return all_truth, all_predictions, all_dates
 
 
 def plot_one_stamp(truth, predictions, dates, filename):
@@ -441,9 +461,7 @@ if __name__ == "__main__":
             if args.plot_only:
                 results = pd.read_csv(f"{args.save_path}/results/{score}.csv")
             else:
-                results = hist(
-                    labels, all_truth, all_predictions, args.save_path
-                )
+                results = hist(labels, all_truth, all_predictions, args.save_path)
 
             plot_hist(labels, results, args.save_path)
 
