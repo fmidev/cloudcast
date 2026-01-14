@@ -330,6 +330,7 @@ class cc2model(nn.Module):
                 )
 
         self.use_obs_head = config.use_obs_head
+        self.use_obs_head_skip = config.use_obs_head_skip
 
         if self.use_obs_head:
             self.obs_head = LatentObsUNet2(
@@ -573,12 +574,25 @@ class cc2model(nn.Module):
 
             obs_diag = {}
 
+            # build ctx from the same skip tokens decoder2 uses
+            if self.use_obs_head_skip:
+                skip_token = skip[:, -1, :, :]  # [B, P, D]
+                skip_proj = self.skip_proj(skip_token)  # [B, P, D2]
+            else:
+                skip_proj = None
+
             if want_diag:
                 x_obs, obs_diag = self.obs_head(
-                    x_core, H=self.h_patches, W=self.w_patches, return_diag=True
+                    x_core,
+                    H=self.h_patches,
+                    W=self.w_patches,
+                    ctx_tokens=skip_proj,
+                    return_diag=True,
                 )
             else:
-                x_obs = self.obs_head(x_core, H=self.h_patches, W=self.w_patches)
+                x_obs = self.obs_head(
+                    x_core, H=self.h_patches, W=self.w_patches, ctx_tokens=skip_proj
+                )
 
             out_obs = self._tokens_to_output(
                 x_obs, padding_info, step, use_refine=False

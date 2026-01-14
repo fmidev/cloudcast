@@ -64,6 +64,7 @@ class cc2module(L.LightningModule):
         use_high_pass_filter: bool = False,
         use_obs_head: bool = False,
         obs_head_base_channels: int = 64,
+        use_obs_head_skip: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -99,6 +100,7 @@ class cc2module(L.LightningModule):
                 "use_residual_adapter_head",
                 "use_high_pass_filter",
                 "use_obs_head",
+                "use_obs_head_skip",
                 "obs_head_base_channels",
             ]
         }

@@ -34,23 +34,28 @@ class LatentObsUNet2(nn.Module):
         latent_dim: int,
         base_channels: int = 64,
         num_groups: int = 8,
+        ctx_channels: int = 32,
+        ctx_detach: bool = True,  # for rollout_length=1
     ):
         super().__init__()
         self.latent_dim = latent_dim
         self.base = base_channels
         self.num_groups = num_groups
+        self.ctx_channels = ctx_channels
+        self.ctx_detach = ctx_detach
+
         self.alpha_bound = 0.1
         self.alpha_init = 1e-3
-
-        # alpha = bound * tanh(alpha_raw)
-        # initialize so alpha ~= alpha_init
-        # For small values: tanh(z) ~ z, so alpha_raw ~ alpha_init/bound
         self.alpha_raw = nn.Parameter(
             torch.tensor(self.alpha_init / self.alpha_bound, dtype=torch.float32)
         )
 
+        self.ctx_1x1 = nn.Conv2d(latent_dim, ctx_channels, kernel_size=1, bias=False)
+
         # Encoder
-        self.in0 = ConvBlock(latent_dim, base_channels, num_groups)
+        in_ch = latent_dim + ctx_channels
+
+        self.in0 = ConvBlock(in_ch, base_channels, num_groups)
         self.in1 = ConvBlock(base_channels, base_channels, num_groups)
 
         self.down1 = nn.Conv2d(
@@ -114,15 +119,19 @@ class LatentObsUNet2(nn.Module):
         nn.init.constant_(self.gate_head.bias, -2.0)
 
     def forward(
-        self, x_tokens: torch.Tensor, H: int, W: int, return_diag: bool = False
+        self,
+        x_tokens: torch.Tensor,
+        H: int,
+        W: int,
+        ctx_tokens: torch.Tensor | None = None,
+        return_diag: bool = False,
     ) -> torch.Tensor | tuple:
-        if x_tokens.dim() != 4:
-            raise ValueError(f"Expected [B,T,P,D], got {tuple(x_tokens.shape)}")
+        assert x_tokens.dim() == 4, f"Expected [B,T,P,D], got {tuple(x_tokens.shape)}"
+
         B, T, P, D = x_tokens.shape
-        if P != H * W:
-            raise ValueError(f"P mismatch: P={P} vs H*W={H*W} (H={H}, W={W})")
-        if D != self.latent_dim:
-            raise ValueError(f"D mismatch: D={D} vs latent_dim={self.latent_dim}")
+
+        assert P == H * W, "P mismatch: P={P} vs H*W={H*W} (H={H}, W={W})"
+        assert D == self.latent_dim, "D mismatch: D={D} vs latent_dim={self.latent_dim}"
 
         xt = x_tokens.reshape(B * T, P, D).transpose(1, 2).contiguous()  # [B*T, D, P]
         x = xt.view(B * T, D, H, W)  # [B*T, D, H, W]
@@ -134,8 +143,39 @@ class LatentObsUNet2(nn.Module):
             x = F.pad(x, (0, pad_w, 0, pad_h))
         Hp, Wp = x.shape[-2], x.shape[-1]
 
+        # Context
+
+        if ctx_tokens is None:
+            ctx = torch.zeros(
+                (B * T, self.ctx_channels, Hp, Wp), device=x.device, dtype=x.dtype
+            )
+        else:
+            assert (
+                ctx_tokens.dim() == 3
+            ), f"ctx_tokens must be [B,P,D], got {tuple(ctx_tokens.shape)}"
+            assert (
+                ctx_tokens.shape[1] == H * W and ctx_tokens.shape[2] == D
+            ), f"ctx_tokens mismatch: expected [B,{H*W},{D}], got {tuple(ctx_tokens.shape)}"
+
+            ct = ctx_tokens
+            if self.ctx_detach:
+                ct = ct.detach()
+
+            assert T == 1
+            ct = (
+                ct.reshape(B * T, H * W, D)
+                .transpose(1, 2)
+                .contiguous()
+                .view(B * T, D, H, W)
+            )
+            if pad_h or pad_w:
+                ct = F.pad(ct, (0, pad_w, 0, pad_h))
+            ctx = self.ctx_1x1(ct)  # [BT, ctx_channels, Hp, Wp]
+
+        xin = torch.cat([x, ctx], dim=1)  # [BT, D+ctx_channels, Hp, Wp]
+
         # Encoder
-        x0 = self.in1(self.in0(x))  # [BT, C, Hp, Wp]
+        x0 = self.in1(self.in0(xin))  # [BT, C, Hp, Wp]
         x1 = self.down1(x0)  # [BT, 2C, Hp/2, Wp/2]
         x1 = self.d11(self.d10(x1))
         x2 = self.down2(x1)  # [BT, 4C, Hp/4, Wp/4]
@@ -200,6 +240,11 @@ class LatentObsUNet2(nn.Module):
                     "r_lf_rms": float(r_lf.pow(2).mean().sqrt().detach().cpu()),
                     "r_hf_rms": float(r_hf.pow(2).mean().sqrt().detach().cpu()),
                     "r_rms": float(r.pow(2).mean().sqrt().detach().cpu()),
+                    "ctx_rms": (
+                        float(ctx[..., :H, :W].pow(2).mean().sqrt().detach().cpu())
+                        if ctx_tokens is not None
+                        else 0.0
+                    ),
                 }
             return y_tokens, diag
 
