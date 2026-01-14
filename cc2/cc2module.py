@@ -301,8 +301,8 @@ class cc2module(L.LightningModule):
             use_rollout_weighting=self.hparams.use_rollout_weighting,
         )
 
-        tendencies = outs["tendencies_core"]
-        predictions = outs["predictions_core"]
+        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
+        predictions = outs.get("predictions_obs", outs["predictions_core"])
 
         self.log("train_loss", loss["loss"], sync_dist=False)
 
@@ -346,8 +346,8 @@ class cc2module(L.LightningModule):
             use_rollout_weighting=self.hparams.use_rollout_weighting,
         )
 
-        tendencies = outs["tendencies_core"]
-        predictions = outs["predictions_core"]
+        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
+        predictions = outs.get("predictions_obs", outs["predictions_core"])
 
         self.log("val_loss", loss["loss"], sync_dist=False)
 
