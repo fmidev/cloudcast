@@ -17,7 +17,7 @@ from swinu.layers import (
     pad_tensor,
     depad_tensor,
 )
-from swinu.unet import LatentObsUNet2
+from swinu.unet import ObsStateUNetResidual
 from types import SimpleNamespace
 from torch.utils.checkpoint import checkpoint
 
@@ -333,10 +333,11 @@ class cc2model(nn.Module):
         self.use_obs_head_skip = config.use_obs_head_skip
 
         if self.use_obs_head:
-            self.obs_head = LatentObsUNet2(
-                latent_dim=self.embed_dim * 2,  # decoder2 dim
+            self.obs_head = ObsStateUNetResidual(
                 base_channels=config.obs_head_base_channels,
                 num_groups=8,
+                ctx_channels=32,
+                ctx_token_dim=self.embed_dim * 2,
             )
 
     def patch_embedding(self, x, forcing):
@@ -568,68 +569,39 @@ class cc2model(nn.Module):
 
         out_core = self._tokens_to_output(x_core, padding_info, step)
 
-        if self.use_obs_head:
-            # latent correction on decoder2 tokens (P = h_patches * w_patches)
-            want_diag = not self.training
+        if not self.use_obs_head:
+            assert list(out_core.shape[-2:]) == list(
+                self.real_input_resolution
+            ), f"Output shape {out_core.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
+            return out_core
 
-            obs_diag = {}
+        # Current input state (de-padded) is the last frame in the provided history
+        x_curr = depad_tensor(data[:, -1:, ...], padding_info)  # [B,1,C,H,W]
 
-            # build ctx from the same skip tokens decoder2 uses
-            if self.use_obs_head_skip:
-                skip_token = skip[:, -1, :, :]  # [B, P, D]
-                skip_proj = self.skip_proj(skip_token)  # [B, P, D2]
-            else:
-                skip_proj = None
+        delta_core = self._tokens_to_output(x_core, padding_info, step)
 
-            if want_diag:
-                x_obs, obs_diag = self.obs_head(
-                    x_core,
-                    H=self.h_patches,
-                    W=self.w_patches,
-                    ctx_tokens=skip_proj,
-                    return_diag=True,
-                )
-            else:
-                x_obs = self.obs_head(
-                    x_core, H=self.h_patches, W=self.w_patches, ctx_tokens=skip_proj
-                )
+        # Core next state
+        x_core_next = x_curr + delta_core  # [B,1,C,H,W]
 
-            out_obs = self._tokens_to_output(
-                x_obs, padding_info, step, use_refine=False
-            )
-            return {"core": out_core, "obs": out_obs, "diag": obs_diag}
+        want_diag = not self.training
+        obs_diag = {}
 
-        # output = self.project_to_image(x)
-        # output_ref = self.refinement_head(output.squeeze(2))
-        # output = output + output_ref.unsqueeze(2)
+        # Optionally build context for obs head. For minimal change, pass None.
+        ctx = None
 
-        # if self.use_residual_adapter_head and self.use_high_pass_filter is False:
-        #    B, T, C, H, W = output.shape
-        #    output = output.view(B * T, C, H, W)
-        #    output = output + self.residual_alpha * self.residual_adapter_head(output)
-        #    output = output.view(B, T, C, H, W)
+        if self.use_obs_head_skip:
+            skip_token = skip[:, -1, :, :]  # [B, P, D]
+            ctx = self.skip_proj(skip_token)  # [B, P, D2]
 
-        # elif self.use_residual_adapter_head and self.use_high_pass_filter:
-        #    B, T, C, H, W = output.shape
-        #    output = output.view(B * T, C, H, W)
-        #    r = self.residual_adapter_head(output)
-        #    r_hp = self.high_pass_filter(r)
+        if want_diag:
+            x_obs_next, obs_diag = self.obs_head(x_core_next, ctx_tokens=ctx, return_diag=True)
+        else:
+            x_obs_next = self.obs_head(x_core_next, ctx_tokens=ctx)
 
-        #    step_id = self._adapter_step_id(step)
+        # Convert obs next STATE back to obs tendency so roll_forecast stays consistent
+        delta_obs = x_obs_next - x_curr  # [B,1,C,H,W]
 
-        #    alpha0 = 0.2 * torch.tanh(self.residual_alpha0_raw)  # in [-0.1, 0.1]
-        #    alpha1 = 0.05 * torch.tanh(self.residual_alpha1_raw)  # in [-0.02, 0.02]
+        assert list(delta_core.shape[-2:]) == list(self.real_input_resolution)
+        assert list(delta_obs.shape[-2:]) == list(self.real_input_resolution)
 
-        #    alpha = alpha0 if step_id == 0 else alpha1
-
-        #    output = output + alpha * r_hp
-        #    output = output.reshape(B, T, C, H, W)
-
-        # output = depad_tensor(output, padding_info)
-
-        output = out_core
-
-        assert list(output.shape[-2:]) == list(
-            self.real_input_resolution
-        ), f"Output shape {output.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
-        return output
+        return {"core": delta_core, "obs": delta_obs, "diag": obs_diag}
