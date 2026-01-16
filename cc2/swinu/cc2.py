@@ -218,12 +218,8 @@ class cc2model(nn.Module):
             ]
         )
 
-        expand = 2.0
-        ls_init = 1e-2
-
-        if config.use_deep_refinement_head:
-            expand = 4.0
-            ls_init = 5e-2
+        expand = 4.0
+        ls_init = 5e-2
 
         self.dwres_d2 = nn.ModuleList(
             [
@@ -264,19 +260,12 @@ class cc2model(nn.Module):
         self.use_gradient_checkpointing = config.use_gradient_checkpointing
         self.use_scheduled_sampling = config.use_scheduled_sampling
 
-        if config.use_deep_refinement_head:
-            self.refinement_head = MultiScaleRefinementHead(
-                in_channels=1,
-                out_channels=1,
-                base_channels=64,
-                dilations=(1, 2, 3, 1, 4),
-            )
-        else:
-            self.refinement_head = nn.Sequential(
-                nn.Conv2d(1, 32, 3, padding=1),
-                nn.GELU(),
-                nn.Conv2d(32, 1, 3, padding=1),
-            )
+        self.refinement_head = MultiScaleRefinementHead(
+            in_channels=1,
+            out_channels=1,
+            base_channels=64,
+            dilations=(1, 2, 3, 1, 4),
+        )
 
         self.autoregressive_mode = config.autoregressive_mode
 
@@ -594,7 +583,9 @@ class cc2model(nn.Module):
             ctx = self.skip_proj(skip_token)  # [B, P, D2]
 
         if want_diag:
-            x_obs_next, obs_diag = self.obs_head(x_core_next, ctx_tokens=ctx, return_diag=True)
+            x_obs_next, obs_diag = self.obs_head(
+                x_core_next, ctx_tokens=ctx, return_diag=True
+            )
         else:
             x_obs_next = self.obs_head(x_core_next, ctx_tokens=ctx)
 
