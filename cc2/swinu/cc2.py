@@ -11,6 +11,8 @@ from swinu.layers import (
     PatchEmbedLossless,
     DWConvResidual3D,
     MultiScaleRefinementHead,
+    MonthlyAffineCalibrator,
+    IdentityCalibrator,
     get_padded_size,
     pad_tensors,
     pad_tensor,
@@ -309,6 +311,12 @@ class cc2model(nn.Module):
                 ctx_channels=32,
                 ctx_token_dim=self.embed_dim * 2,
             )
+
+        self.use_logit_calibration = config.use_logit_calibration
+        if self.use_logit_calibration:
+            self.logit_calibrator = MonthlyAffineCalibrator()
+        else:
+            self.logit_calibrator = IdentityCalibrator()
 
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]

@@ -62,6 +62,7 @@ class cc2module(L.LightningModule):
         use_obs_head: bool = False,
         obs_head_base_channels: int = 64,
         use_obs_head_skip: bool = False,
+        use_logit_calibration: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -96,6 +97,7 @@ class cc2module(L.LightningModule):
                 "use_obs_head",
                 "use_obs_head_skip",
                 "obs_head_base_channels",
+                "use_logit_calibration",
             ]
         }
 
@@ -103,6 +105,7 @@ class cc2module(L.LightningModule):
 
         self.test_predictions = []
         self.test_truth = []
+        self.test_predictions_noo = []
         self.test_dates = []
 
         self.latest_val_tendencies = None
@@ -274,7 +277,7 @@ class cc2module(L.LightningModule):
         return self.model(*args, **kwargs)  # data, forcing, step)
 
     def training_step(self, batch, batch_idx):
-        data, forcing = batch
+        data, forcing, month_idx = batch
 
         loss, outs = self._roll_forecast(
             self.model,
@@ -288,6 +291,7 @@ class cc2module(L.LightningModule):
             ss_pred_min=self.ss_pred_min,
             ss_pred_max=self.ss_pred_max,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
+            month_idx=month_idx,
         )
 
         tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
@@ -323,7 +327,7 @@ class cc2module(L.LightningModule):
         }
 
     def validation_step(self, batch, batch_idx):
-        data, forcing = batch
+        data, forcing, month_idx = batch
 
         loss, outs = self._roll_forecast(
             self.model,
@@ -333,6 +337,7 @@ class cc2module(L.LightningModule):
             loss_fn=self._loss_fn,
             use_scheduled_sampling=False,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
+            month_idx=month_idx,
         )
 
         tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
@@ -365,41 +370,7 @@ class cc2module(L.LightningModule):
         }
 
     def test_step(self, batch, batch_idx):
-        data, forcing, dates = batch
-
-        _, outs = self._roll_forecast(
-            self,
-            data,
-            forcing,
-            self.hparams.rollout_length,  # Access from hparams
-            loss_fn=None,
-            use_scheduled_sampling=False,
-            use_rollout_weighting=self.hparams.use_rollout_weighting,
-        )
-
-        # Choose obs-space outputs if available, otherwise fall back to core
-        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
-        predictions = outs.get("predictions_obs", outs["predictions_core"])
-
-        # We want to include the analysis time also
-        analysis_time = data[0][:, -1, ...].unsqueeze(1)
-
-        predictions = torch.concatenate((analysis_time, predictions), dim=1)
-        truth = torch.concatenate((analysis_time, data[1]), dim=1)
-
-        self.test_predictions.append(predictions)
-        self.test_truth.append(truth)
-        self.test_dates.append(torch.concatenate((dates[0][:, -1:], dates[1]), dim=1))
-
-        return {
-            "tendencies": tendencies,
-            "predictions": predictions,
-            "source": data[0],
-            "truth": data[1],
-        }
-
-    def predict_step(self, batch, batch_idx):
-        data, forcing, dates = batch
+        data, forcing, month_idx, dates = batch
 
         _, outs = self._roll_forecast(
             self,
@@ -409,27 +380,39 @@ class cc2module(L.LightningModule):
             loss_fn=None,
             use_scheduled_sampling=False,
             use_rollout_weighting=False,
+            month_idx=month_idx,
         )
-
-        tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
-        predictions = outs.get("predictions_obs", outs["predictions_core"])
 
         # We want to include the analysis time also
         analysis_time = data[0][:, -1, ...].unsqueeze(1)
-
-        predictions = torch.concatenate((analysis_time, predictions), dim=1)
-
-        self.test_predictions.append(predictions)
         self.test_dates.append(torch.concatenate((dates[0][:, -1:], dates[1]), dim=1))
+        truth = torch.concatenate((analysis_time, data[1]), dim=1)
+        self.test_truth.append(truth)
 
-        return {
-            "tendencies": tendencies,
-            "predictions": predictions,
-            "source": data[0],
-            "truth": data[1],
-        }
+        if self.hparams.use_obs_head:
+            tendencies_core = outs["tendencies_core"]
+            predictions_core = outs["predictions_core"]
+            predictions_obs = outs["predictions_obs"]
+            predictions_core = torch.concatenate(
+                (analysis_time, predictions_core), dim=1
+            )
+            predictions_obs = torch.concatenate((analysis_time, predictions_obs), dim=1)
 
-    def _gather(self, predictions, truth, dates):
+            self.test_predictions.append(predictions_core)
+            self.test_predictions_noo.append(predictions_obs)
+
+        else:
+            tendencies = outs.get("tendencies_obs", outs["tendencies_core"])
+            predictions = outs.get("predictions_obs", outs["predictions_core"])
+            predictions = torch.concatenate((analysis_time, predictions), dim=1)
+            self.test_predictions.append(predictions)
+
+
+    def predict_step(self, batch, batch_idx):
+        self.test_step(batch, batch_idx)
+
+
+    def _gather(self, predictions, truth, dates, prediction_noo):
         # Gather across all DDP ranks
         predictions = self.all_gather(predictions)
 
@@ -451,7 +434,12 @@ class cc2module(L.LightningModule):
             truth = truth.reshape(-1, *truth.shape[2:])
             truth = truth[sort_idx]
 
-        return predictions, truth, dates
+        if len(predictions_noo):
+            predictions_noo = self.all_gather(predictions_noo)
+            predictions_noo = predictions_noo.reshape(-1, *predictions_noo.shape[2:])
+            predictions_noo = predictions_noo[sort_idx]
+
+        return predictions, truth, dates, predictions_noo
 
     def _write_results_on_test_predict_end(self):
         def _write(tensor, filename):
@@ -473,7 +461,7 @@ class cc2module(L.LightningModule):
             truth = torch.concatenate(self.test_truth)
 
         if self.trainer.world_size > 1:
-            predictions, truth, dates = self._gather(predictions, truth, dates)
+            predictions, truth, dates, predictions_noo = self._gather(predictions, truth, dates, predictions_noo)
 
         # Only rank 0 writes to avoid duplicate writes
         if self.trainer.is_global_zero:
@@ -483,6 +471,12 @@ class cc2module(L.LightningModule):
                 _write(truth, f"{self.test_output_directory}/truth.pt")
 
             _write(dates, f"{self.test_output_directory}/dates.pt")
+
+            if len(self.test_predictions_noo):
+                predictions_noo = torch.concatenate(self.test_predictions_noo)
+                _write(
+                    predictions_noo, f"{self.test_output_directory}/predictions_noo.pt"
+                )
 
     def on_test_end(self):
         self._write_results_on_test_predict_end()
