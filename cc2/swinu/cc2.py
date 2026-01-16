@@ -11,7 +11,6 @@ from swinu.layers import (
     PatchEmbedLossless,
     DWConvResidual3D,
     MultiScaleRefinementHead,
-    HighPassFilter2d,
     get_padded_size,
     pad_tensors,
     pad_tensor,
@@ -293,7 +292,6 @@ class cc2model(nn.Module):
         )
 
         self.use_residual_adapter_head = config.use_residual_adapter_head
-        self.use_high_pass_filter = config.use_high_pass_filter
 
         if self.use_residual_adapter_head:
             self.residual_alpha = nn.Parameter(torch.tensor(1e-2))
@@ -308,15 +306,6 @@ class cc2model(nn.Module):
 
             nn.init.zeros_(self.residual_adapter_head[-1].weight)
             nn.init.zeros_(self.residual_adapter_head[-1].bias)
-
-            if self.use_high_pass_filter:
-                self.high_pass_filter = HighPassFilter2d(kernel_size=7)
-                self.residual_alpha0_raw = nn.Parameter(
-                    torch.tensor(0.1, dtype=torch.float32)
-                )
-                self.residual_alpha1_raw = nn.Parameter(
-                    torch.tensor(0.5, dtype=torch.float32)
-                )
 
         self.use_obs_head = config.use_obs_head
         self.use_obs_head_skip = config.use_obs_head_skip
@@ -518,26 +507,11 @@ class cc2model(nn.Module):
             out_ref = self.refinement_head(out.squeeze(2))
             out = out + out_ref.unsqueeze(2)
 
-        if self.use_residual_adapter_head and not self.use_high_pass_filter:
+        if self.use_residual_adapter_head:
             B, T, C, H, W = out.shape
             out2 = out.view(B * T, C, H, W)
             out2 = out2 + self.residual_alpha * self.residual_adapter_head(out2)
             out = out2.view(B, T, C, H, W)
-        elif self.use_residual_adapter_head and self.use_high_pass_filter:
-            B, T, C, H, W = out.shape
-            out2 = out.view(B * T, C, H, W)
-            r = self.residual_adapter_head(out2)
-            r_hp = self.high_pass_filter(r)
-
-            step_id = self._adapter_step_id(step)
-
-            alpha0 = 0.2 * torch.tanh(self.residual_alpha0_raw)  # in [-0.1, 0.1]
-            alpha1 = 0.05 * torch.tanh(self.residual_alpha1_raw)  # in [-0.02, 0.02]
-
-            alpha = alpha0 if step_id == 0 else alpha1
-
-            out2 = out2 + alpha * r_hp
-            out = out2.reshape(B, T, C, H, W)
 
         out = depad_tensor(out, padding_info)
         return out
