@@ -52,7 +52,6 @@ class cc2module(L.LightningModule):
         use_scheduled_sampling: bool = False,
         ss_pred_min: float = 0.0,
         ss_pred_max: float = 1.0,
-        autoregressive_mode: bool = True,
         freeze_layers: list[str] = [],
         loss_fn: Callable | nn.Module | None = None,
         test_output_directory: str | None = None,
@@ -93,7 +92,6 @@ class cc2module(L.LightningModule):
                 "use_scheduled_sampling",
                 "ss_pred_min",
                 "ss_pred_max",
-                "autoregressive_mode",
                 "use_residual_adapter_head",
                 "use_obs_head",
                 "use_obs_head_skip",
@@ -119,7 +117,6 @@ class cc2module(L.LightningModule):
         self.use_statistics_from_checkpoint = use_statistics_from_checkpoint
         self.ss_pred_min = ss_pred_min
         self.ss_pred_max = ss_pred_max
-        self.autoregressive_mode = autoregressive_mode
         self.test_output_directory = test_output_directory
 
         self._loss_fn = loss_fn
@@ -206,11 +203,7 @@ class cc2module(L.LightningModule):
     def _build_model(self) -> None:
         if self.hparams.model_family == "pgu":
             from pgu.cc2 import cc2model
-
-            if self.hparams.autoregressive_mode:
-                from pgu.util import roll_forecast
-            else:
-                from pgu.util import roll_forecast_direct as roll_forecast
+            from pgu.util import roll_forecast
 
         elif self.hparams.model_family == "swinu":
             from swinu.cc2 import cc2model
