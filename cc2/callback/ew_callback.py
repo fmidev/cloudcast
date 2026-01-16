@@ -42,6 +42,27 @@ def _bias(y, x):
     return (y - x).mean().item()
 
 
+def _wasserstein_distance(
+    y_pred: torch.Tensor, y_true: torch.Tensor, num_bins: int = 100
+):
+    """PyTorch-native Wasserstein distance approximation"""
+    # Create CDFs
+    min_val = min(y_pred.min(), y_true.min())
+    max_val = max(y_pred.max(), y_true.max())
+
+    bins = torch.linspace(min_val, max_val, num_bins + 1, device=y_pred.device)
+
+    pred_cdf = torch.zeros(num_bins, device=y_pred.device)
+    true_cdf = torch.zeros(num_bins, device=y_pred.device)
+
+    for i in range(num_bins):
+        pred_cdf[i] = (y_pred <= bins[i + 1]).float().mean()
+        true_cdf[i] = (y_true <= bins[i + 1]).float().mean()
+
+    # Wasserstein = integral of |CDF1 - CDF2|
+    return torch.abs(pred_cdf - true_cdf).mean().item()
+
+
 def _radial_bins(Hf, Wf, device, n_bins=None):
     # For rfft grid: spatial size in FFT domain is [Hf, Wf], where Wf = W//2 + 1
     fy = fftfreq(Hf, d=1.0, device=device)  # [-0.5,0.5)
@@ -375,7 +396,8 @@ def _compute_metrics_pack(x_hist_btchw, y_pred_btchw, y_true_btchw, clip_high_k=
             psd_anom_list_10_30,
             ssim_list,
             psnr_list,
-        ) = ([], [], [], [], [], [], [], [], [], [], [], [], [], [])
+            wass_list,
+        ) = ([], [], [], [], [], [], [], [], [], [], [], [], [], [], [])
 
         for b in range(B):
             yp_b = yp[b]
@@ -407,6 +429,8 @@ def _compute_metrics_pack(x_hist_btchw, y_pred_btchw, y_true_btchw, clip_high_k=
             ssim_list.append(_ssim(yp_b, yt_b))
             psnr_list.append(_psnr(yp_b, yt_b))
 
+            wass_list.append(_wasserstein_distance(yp_b, yt_b))
+
         per_step[t] = {
             "mae": float(sum(mae_list) / len(mae_list)),
             "bias": float(sum(bias_list) / len(bias_list)),
@@ -428,6 +452,7 @@ def _compute_metrics_pack(x_hist_btchw, y_pred_btchw, y_true_btchw, clip_high_k=
             ),
             "ssim": float(sum(ssim_list) / len(ssim_list)),
             "psnr": float(sum(psnr_list) / len(psnr_list)),
+            "wass_distance": float(sum(wass_list) / len(wass_list)),
         }
 
     out = {}
