@@ -373,7 +373,7 @@ class cc2module(L.LightningModule):
         data, forcing, month_idx, dates = batch
 
         _, outs = self._roll_forecast(
-            self,
+            self.model,
             data,
             forcing,
             self.hparams.rollout_length,  # Access from hparams

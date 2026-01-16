@@ -166,7 +166,7 @@ def _build_input_state(
 def _maybe_calibrate_input(model, input_state, month_idx, do_calib: bool):
     if do_calib:
         assert month_idx is not None, "month_idx required when calibration is enabled"
-        return model.model.logit_calibrator(input_state, month_idx)
+        return model.logit_calibrator(input_state, month_idx)
     return input_state
 
 
