@@ -541,8 +541,8 @@ class cc2model(nn.Module):
 
         # Observation operator correction relative to the core-next state
         corr_obs = x_obs_next - x_core_next  # [B,1,C,H,W]
-        if diag:
-            diag["abs_corr_obs"] = corr_obs.abs().mean()
+        if obs_diag:
+            obs_diag["abs_corr_obs"] = corr_obs.abs().mean()
 
         # Convert to a tendency consistent with roll_forecast:
         delta_obs = delta_core + corr_obs
