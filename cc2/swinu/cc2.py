@@ -506,28 +506,14 @@ class cc2model(nn.Module):
         out = depad_tensor(out, padding_info)
         return out
 
-    def forward(self, data, forcing, step):
-        assert (
-            data.ndim == 5
-        ), "Input data tensor shape should be [B, T, C, H, W], is: {}".format(
-            data.shape
-        )
-
-        data, padding_info = pad_tensor(data, self.patch_size, 1)
-        forcing, _ = pad_tensor(forcing, self.patch_size, 1)
-
-        x, f_future = self.patch_embedding(data, forcing)
-        x, skip = self.encode(x)
-        x_core = self.decode(x, step, skip, f_future)
-
-        out_core = self._tokens_to_output(x_core, padding_info, step)
-
-        if not self.use_obs_head:
-            assert list(out_core.shape[-2:]) == list(
-                self.real_input_resolution
-            ), f"Output shape {out_core.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
-            return out_core
-
+    def forward_noo(
+        self,
+        data: torch.Tensor,
+        x_core: torch.Tensor,
+        skip: torch.Tensor,
+        padding_info: dict,
+        step: int,
+    ):
         # Current input state (de-padded) is the last frame in the provided history
         x_curr = depad_tensor(data[:, -1:, ...], padding_info)  # [B,1,C,H,W]
 
@@ -553,10 +539,40 @@ class cc2model(nn.Module):
         else:
             x_obs_next = self.obs_head(x_core_next, ctx_tokens=ctx)
 
-        # Convert obs next STATE back to obs tendency so roll_forecast stays consistent
-        delta_obs = x_obs_next - x_curr  # [B,1,C,H,W]
+        # Observation operator correction relative to the core-next state
+        corr_obs = x_obs_next - x_core_next  # [B,1,C,H,W]
+        if diag:
+            diag["abs_corr_obs"] = corr_obs.abs().mean()
+
+        # Convert to a tendency consistent with roll_forecast:
+        delta_obs = delta_core + corr_obs
 
         assert list(delta_core.shape[-2:]) == list(self.real_input_resolution)
         assert list(delta_obs.shape[-2:]) == list(self.real_input_resolution)
 
         return {"core": delta_core, "obs": delta_obs, "diag": obs_diag}
+
+    def forward(self, data, forcing, step):
+        assert (
+            data.ndim == 5
+        ), "Input data tensor shape should be [B, T, C, H, W], is: {}".format(
+            data.shape
+        )
+
+        data, padding_info = pad_tensor(data, self.patch_size, 1)
+        forcing, _ = pad_tensor(forcing, self.patch_size, 1)
+
+        x, f_future = self.patch_embedding(data, forcing)
+        x, skip = self.encode(x)
+        x_core = self.decode(x, step, skip, f_future)
+
+        out_core = self._tokens_to_output(x_core, padding_info, step)
+
+        if self.use_obs_head:
+            return self.forward_noo(data, x_core, skip, padding_info, step)
+
+        assert list(out_core.shape[-2:]) == list(
+            self.real_input_resolution
+        ), f"Output shape {out_core.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
+
+        return out_core
