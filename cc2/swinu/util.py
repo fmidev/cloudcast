@@ -364,6 +364,10 @@ def roll_forecast(
         next_pred_core = current_state + tendency_core
         next_pred_obs = current_state + tendency_obs
 
+        metrics[f"abs_delta_pred_obst_t{t+1}"] = torch.abs(next_pred_core - next_pred_obs).mean()
+        den = torch.abs(next_pred_core - current_state).mean().clamp_min(1e-6)
+        metrics[f"rel_abs_delta_obs_t{t+1}"] = torch.abs(next_pred_core - next_pred_obs).mean() / den
+
         # 3. Calculate loss
 
         step_loss = _compute_step_loss(
