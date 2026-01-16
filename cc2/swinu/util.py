@@ -128,6 +128,164 @@ def ste_clamp(x, use_ste=False):
         return x.clamp(0.0, 1.0)
 
 
+def _build_input_state(
+    previous_state,
+    current_state,
+    x,
+    y,
+    t,
+    use_scheduled_sampling: bool,
+    step: int | None,
+    max_step: int | None,
+    ss_pred_min: float,
+    ss_pred_max: float,
+):
+    metrics = {}
+    if use_scheduled_sampling:
+        assert step is not None and max_step is not None, "SS requires step/max_step"
+        input_state, p_pred, mask_prev, mask_curr = scheduled_sampling_inputs(
+            previous_state,
+            current_state,
+            x,
+            y,
+            t,
+            step,
+            max_step,
+            ss_pred_min=ss_pred_min,
+            ss_pred_max=ss_pred_max,
+        )
+        metrics["ss_p_pred"] = p_pred
+        metrics["ss_mask_prev"] = mask_prev
+        metrics["ss_mask_curr"] = mask_curr
+        return input_state, p_pred, metrics
+    else:
+        input_state = torch.cat([previous_state, current_state], dim=1)
+        return input_state, None, metrics
+
+
+def _maybe_calibrate_input(model, input_state, month_idx, do_calib: bool):
+    if do_calib:
+        assert month_idx is not None, "month_idx required when calibration is enabled"
+        return model.model.logit_calibrator(input_state, month_idx)
+    return input_state
+
+
+def _forward_and_unpack(model, input_state, step_forcing, t):
+    out = model(input_state, step_forcing, t)
+    metrics = {}
+    if isinstance(out, dict):
+        tendency_core = out["core"]
+        tendency_obs = out["obs"]
+        metrics.update(out.get("diag", {}))
+    else:
+        tendency_core = tendency_obs = out
+    return tendency_core, tendency_obs, metrics
+
+
+def _compute_step_loss(loss_fn, x, y, t, next_pred_obs, tendency_obs, step):
+    if loss_fn is None:
+        return None
+
+    y_true_full = y[:, t : t + 1, ...]
+    if t == 0:
+        y_true_delta = y_true_full - x[:, -1, ...].unsqueeze(1)
+    else:
+        y_true_delta = y_true_full - y[:, t - 1 : t, ...]
+
+    return loss_fn(
+        y_true_full=y_true_full,
+        y_pred_full=next_pred_obs,
+        y_true_delta=y_true_delta,
+        y_pred_delta=tendency_obs,
+        global_step=step,
+    )
+
+
+def _next_core_state(
+    model,
+    current_state,
+    next_pred_core,
+    y,
+    t,
+    training: bool,
+    use_scheduled_sampling: bool,
+    p_pred: float | None,
+    do_calib: bool,
+    month_idx: torch.Tensor | None,
+):
+    metrics = {}
+
+    if not training:
+        return ste_clamp(next_pred_core, False), metrics
+
+    if use_scheduled_sampling:
+        assert p_pred is not None
+        mask_next = torch.bernoulli(
+            p_pred * torch.ones_like(current_state[:, :1, :, :, :])
+        )
+        pred_core_clamped = ste_clamp(next_pred_core, True)
+
+        next_gt = y[:, t : t + 1, ...]
+        if do_calib:
+            assert month_idx is not None
+            next_gt = model.logit_calibrator(next_gt, month_idx)
+
+        next_state_core = mask_next * pred_core_clamped + (1 - mask_next) * next_gt
+        metrics["ss_mask_next"] = mask_next.float().mean()
+        return next_state_core, metrics
+
+    # training without SS feedback
+    return ste_clamp(next_pred_core, True), metrics
+
+
+def _materialize_obs(next_pred_obs, training: bool):
+    return (
+        ste_clamp(next_pred_obs, True) if training else ste_clamp(next_pred_obs, False)
+    )
+
+
+def _aggregate_losses(
+    all_losses: list,
+    use_rollout_weighting: bool,
+    step: int,
+    n_step: int,
+    max_step: int,
+    metrics: dict,
+):
+    if len(all_losses) == 0:
+        return None, metrics
+
+    # aggregate step losses
+    loss = {"loss": []}
+    for l in all_losses:
+        for k, v in l.items():
+            if k == "loss":
+                loss["loss"].append(v)
+            else:
+                try:
+                    loss[k].append(v)
+                except KeyError:
+                    loss[k] = [v]
+
+    if use_rollout_weighting and n_step > 1 and step is not None:
+        w = rollout_weights(step, max_step, n_step, loss["loss"][0].device)
+
+        loss["loss"] = torch.mean(w * torch.stack(loss["loss"]))
+        for i, _w in enumerate(w):
+            metrics[f"rollout_weight_{i+1}"] = _w.item()
+
+    else:
+        loss["loss"] = torch.mean(torch.stack(loss["loss"]))
+
+    for k, v in loss.items():
+        if k == "loss":
+            continue
+
+        loss[k] = torch.stack(loss[k])
+
+    return loss, metrics
+
+
 def roll_forecast(
     model: nn.Module,
     data: list[torch.Tensor],
@@ -140,6 +298,7 @@ def roll_forecast(
     ss_pred_min: float = 0.0,
     ss_pred_max: float = 1.0,
     use_rollout_weighting: bool = False,
+    month_idx: torch.Tensor | None = None,
 ) -> Dict[str, torch.Tensor]:
     # torch.Size([32, 2, 1, 128, 128]) torch.Size([32, 1, 1, 128, 128])
     x, y = data
@@ -168,94 +327,68 @@ def roll_forecast(
 
     metrics = {}
 
+    n_calib_steps = 2
+
     # Loop through each rollout step
     for t in range(n_step):
+        do_calib = t < n_calib_steps
         # Model always sees forcings two history times and one prediction time
         step_forcing = forcing[:, t : t + T + 1, ...]
-        if use_scheduled_sampling:
-            input_state, p_pred, mask_prev, mask_curr = scheduled_sampling_inputs(
-                previous_state,
-                current_state,
-                x,
-                y,
-                t,
-                step,
-                max_step,
-                ss_pred_min=ss_pred_min,
-                ss_pred_max=ss_pred_max,
-            )
 
-            metrics["ss_p_pred"] = p_pred
-            metrics["ss_mask_prev"] = mask_prev
-            metrics["ss_mask_curr"] = mask_curr
+        # 1. Assemble input state
 
-        else:
-            input_state = torch.cat([previous_state, current_state], dim=1)
+        input_state, p_pred, ss_metrics = _build_input_state(
+            previous_state,
+            current_state,
+            x,
+            y,
+            t,
+            use_scheduled_sampling,
+            step,
+            max_step,
+            ss_pred_min,
+            ss_pred_max,
+        )
 
-        tendency_out = model(input_state, step_forcing, t)
+        metrics.update(ss_metrics)
 
-        if isinstance(tendency_out, dict):
-            tendency_core = tendency_out["core"]  # used for AR update
-            tendency_obs = tendency_out["obs"]  # used for loss
-            metrics.update(tendency_out.get("diag", {}))
-        else:
-            tendency_core = tendency_out
-            tendency_obs = tendency_out
+        # 2. Forward and unpack
 
-        # Add the predicted tendency to get the next state
+        input_state = _maybe_calibrate_input(model, input_state, month_idx, do_calib)
+
+        tendency_core, tendency_obs, diag = _forward_and_unpack(
+            model, input_state, step_forcing, t
+        )
+        metrics.update(diag)
+
         next_pred_core = current_state + tendency_core
         next_pred_obs = current_state + tendency_obs
 
-        # Compute loss for this step
-        if loss_fn is not None:
-            y_true_full = y[:, t : t + 1, ...]
+        # 3. Calculate loss
 
-            # Calculate ground truth delta for this step
-            if t == 0:
-                # First step: y - last_x
-                y_true_delta = y_true_full - x[:, -1, ...].unsqueeze(1)
-            else:
-                # Second, third, ... step: y - y_prev
-                y_true_delta = y_true_full - y[:, t - 1 : t, ...]
+        step_loss = _compute_step_loss(
+            loss_fn, x, y, t, next_pred_obs, tendency_obs, step
+        )
+        if step_loss is not None:
+            all_losses.append(step_loss)
 
-            all_losses.append(
-                loss_fn(
-                    y_true_full=y_true_full,
-                    y_pred_full=next_pred_obs,
-                    y_true_delta=y_true_delta,
-                    y_pred_delta=tendency_obs,
-                    global_step=step,
-                )
-            )
+        # 4. Get next core state
 
-        if model.training:
-            if use_scheduled_sampling:
-                # Bernoulli sample per sample for whether to use predicted state
-                mask_next = torch.bernoulli(
-                    p_pred * torch.ones_like(current_state[:, :1, :, :, :])
-                )
+        next_state_core, fb_metrics = _next_core_state(
+            model,
+            current_state,
+            next_pred_core,
+            y,
+            t,
+            training=model.training,
+            use_scheduled_sampling=use_scheduled_sampling,
+            p_pred=p_pred,
+            do_calib=do_calib,
+            month_idx=month_idx,
+        )
+        metrics.update(fb_metrics)
 
-                pred_core_clamped = ste_clamp(next_pred_core, True)
-
-                next_gt = y[:, t : t + 1, ...]
-                next_state_core = (
-                    mask_next * pred_core_clamped + (1 - mask_next) * next_gt
-                )
-
-                metrics["ss_mask_next"] = mask_next.float().mean()
-            else:
-                # Training without SS
-                next_state_core = ste_clamp(next_pred_core, True)
-
-        else:
-            # eval/inference always use clamped prediction
-            next_state_core = ste_clamp(next_pred_core, False)
-
-        # Materialized obs prediction for saving/verification (never fed back)
-        if model.training:
-            next_state_obs = ste_clamp(next_pred_obs, True)
-        else:
-            next_state_obs = ste_clamp(next_pred_obs, False)
+        next_state_obs = _materialize_obs(next_pred_obs, training=model.training)
 
         # Store the prediction
         all_predictions_core.append(next_state_core.detach())
@@ -267,36 +400,9 @@ def roll_forecast(
         previous_state = current_state
         current_state = next_state_core
 
-    loss = None
-
-    if len(all_losses) > 0:
-        # aggregate step losses
-        loss = {"loss": []}
-        for l in all_losses:
-            for k, v in l.items():
-                if k == "loss":
-                    loss["loss"].append(v)
-                else:
-                    try:
-                        loss[k].append(v)
-                    except KeyError:
-                        loss[k] = [v]
-
-        if use_rollout_weighting and n_step > 1 and step is not None:
-            w = rollout_weights(step, max_step, n_step, loss["loss"][0].device)
-
-            loss["loss"] = torch.mean(w * torch.stack(loss["loss"]))
-            for i, _w in enumerate(w):
-                metrics[f"rollout_weight_{i+1}"] = _w.item()
-
-        else:
-            loss["loss"] = torch.mean(torch.stack(loss["loss"]))
-
-        for k, v in loss.items():
-            if k == "loss":
-                continue
-
-            loss[k] = torch.stack(loss[k])
+    loss, metrics = _aggregate_losses(
+        all_losses, use_rollout_weighting, step, n_step, max_step, metrics
+    )
 
     assert all_tendencies_core[0].ndim == 5
 
