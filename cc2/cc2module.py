@@ -63,6 +63,7 @@ class cc2module(L.LightningModule):
         obs_head_base_channels: int = 64,
         use_obs_head_skip: bool = False,
         use_logit_calibration: bool = False,
+        use_obs_deep_net: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -98,6 +99,7 @@ class cc2module(L.LightningModule):
                 "use_obs_head_skip",
                 "obs_head_base_channels",
                 "use_logit_calibration",
+                "use_obs_deep_net",
             ]
         }
 
@@ -407,10 +409,8 @@ class cc2module(L.LightningModule):
             predictions = torch.concatenate((analysis_time, predictions), dim=1)
             self.test_predictions.append(predictions)
 
-
     def predict_step(self, batch, batch_idx):
         self.test_step(batch, batch_idx)
-
 
     def _gather(self, predictions, truth, dates, prediction_noo):
         # Gather across all DDP ranks
@@ -461,7 +461,9 @@ class cc2module(L.LightningModule):
             truth = torch.concatenate(self.test_truth)
 
         if self.trainer.world_size > 1:
-            predictions, truth, dates, predictions_noo = self._gather(predictions, truth, dates, predictions_noo)
+            predictions, truth, dates, predictions_noo = self._gather(
+                predictions, truth, dates, predictions_noo
+            )
 
         # Only rank 0 writes to avoid duplicate writes
         if self.trainer.is_global_zero:

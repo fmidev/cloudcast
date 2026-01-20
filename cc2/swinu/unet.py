@@ -38,6 +38,7 @@ class ObsStateUNetResidual(nn.Module):
         ctx_token_dim: int | None = None,  # Dctx, if you will pass ctx_tokens
         ctx_detach: bool = True,
         use_gate: bool = True,
+        use_obs_deep_net: bool = False,
     ):
         super().__init__()
         self.base = base_channels
@@ -46,6 +47,7 @@ class ObsStateUNetResidual(nn.Module):
         self.ctx_token_dim = ctx_token_dim
         self.ctx_detach = ctx_detach
         self.use_gate = use_gate
+        self.use_obs_deep_net = use_obs_deep_net
 
         # residual scale (tanh bounded)
         self.alpha_bound = 0.1
@@ -90,6 +92,25 @@ class ObsStateUNetResidual(nn.Module):
         )
         self.d20 = ConvBlock(base_channels * 4, base_channels * 4, num_groups)
         self.d21 = ConvBlock(base_channels * 4, base_channels * 4, num_groups)
+
+        if self.use_obs_deep_net:
+            bott_ch = base_channels * 4
+            self.down3 = nn.Conv2d(
+                bott_ch,
+                bott_ch,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+            self.d30 = ConvBlock(bott_ch, bott_ch, num_groups)
+            self.d31 = ConvBlock(bott_ch, bott_ch, num_groups)
+
+            self.up2 = nn.Conv2d(bott_ch, bott_ch, kernel_size=1, bias=False)
+            self.u20 = ConvBlock(
+                bott_ch + bott_ch, bott_ch, num_groups
+            )  # concat with x2
+            self.u21 = ConvBlock(bott_ch, bott_ch, num_groups)
 
         # Decoder
         self.up1 = nn.Conv2d(
@@ -136,8 +157,12 @@ class ObsStateUNetResidual(nn.Module):
         x = x_state.reshape(B * T, C, H, W)
 
         # minimal padding so H,W divisible by 4 (2 downsamples)
-        pad_h = (4 - (H % 4)) % 4
-        pad_w = (4 - (W % 4)) % 4
+        divisor = 4
+        if self.use_obs_deep_net:
+            divisor = 8
+        pad_h = (divisor - (H % divisor)) % divisor
+        pad_w = (divisor - (W % divisor)) % divisor
+
         if pad_h or pad_w:
             x = F.pad(x, (0, pad_w, 0, pad_h))
         Hp, Wp = x.shape[-2], x.shape[-1]
@@ -190,7 +215,18 @@ class ObsStateUNetResidual(nn.Module):
         x2 = self.down2(x1)  # [BT, 4Cb, Hp/4, Wp/4]
         x2 = self.d21(self.d20(x2))
 
-        # Decoder
+        if self.use_obs_deep_net:
+            x3 = self.down3(x2)  # [BT, 4Cb, Hp/8, Wp/8]
+            x3 = self.d31(self.d30(x3))
+
+            u2 = F.interpolate(x3, scale_factor=2, mode="nearest")
+            u2 = self.up2(u2)
+            if u2.shape[-2:] != x2.shape[-2:]:
+                u2 = u2[..., : x2.shape[-2], : x2.shape[-1]]
+            u2 = torch.cat([u2, x2], dim=1)
+            u2 = self.u21(self.u20(u2))
+            x2 = u2
+
         u1 = F.interpolate(x2, scale_factor=2, mode="nearest")
         u1 = self.up1(u1)
         if u1.shape[-2:] != x1.shape[-2:]:

@@ -310,6 +310,7 @@ class cc2model(nn.Module):
                 num_groups=8,
                 ctx_channels=32,
                 ctx_token_dim=self.embed_dim * 2,
+                use_obs_deep_net=config.use_obs_deep_net
             )
 
         self.use_logit_calibration = config.use_logit_calibration
