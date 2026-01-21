@@ -114,11 +114,24 @@ def read_data_from_dir(file_path, truth_cache):
             truth_file, map_location=torch.device("cpu"), weights_only=True
         )
 
-    predictions = torch.load(
+    prediction_files = [
+        f"{file_path}/predictions_noo.pt",
         f"{file_path}/predictions.pt",
-        map_location=torch.device("cpu"),
-        weights_only=True,
-    )
+    ]
+
+    for file in prediction_files:
+        if os.path.exists(file) is False:
+            continue
+
+        predictions = torch.load(
+            file,
+            map_location=torch.device("cpu"),
+            weights_only=True,
+        )
+
+        if "noo.pt" in file:
+            print(f"Read NOO file {file}")
+        break
     dates = torch.load(
         f"{file_path}/dates.pt", map_location=torch.device("cpu"), weights_only=True
     )
@@ -271,7 +284,6 @@ def equalize_datasets(labels, all_truth, all_predictions, all_dates):
         return intersection(all_truth, all_predictions, all_dates)
 
     return all_truth, all_predictions, all_dates
-
 
 
 def prepare_data(args):
