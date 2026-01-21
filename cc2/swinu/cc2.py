@@ -285,22 +285,6 @@ class cc2model(nn.Module):
             stride=2,
         )
 
-        self.use_residual_adapter_head = config.use_residual_adapter_head
-
-        if self.use_residual_adapter_head:
-            self.residual_alpha = nn.Parameter(torch.tensor(1e-2))
-
-            self.residual_adapter_head = nn.Sequential(
-                nn.Conv2d(1, 128, kernel_size=3, padding=1),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(128, 128, kernel_size=3, padding=1),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(128, 1, kernel_size=3, padding=1),
-            )
-
-            nn.init.zeros_(self.residual_adapter_head[-1].weight)
-            nn.init.zeros_(self.residual_adapter_head[-1].bias)
-
         self.use_obs_head = config.use_obs_head
         self.use_obs_head_skip = config.use_obs_head_skip
 
@@ -310,7 +294,7 @@ class cc2model(nn.Module):
                 num_groups=8,
                 ctx_channels=32,
                 ctx_token_dim=self.embed_dim * 2,
-                use_obs_deep_net=config.use_obs_deep_net
+                use_obs_deep_net=config.use_obs_deep_net,
             )
 
         self.use_logit_calibration = config.use_logit_calibration
@@ -497,12 +481,6 @@ class cc2model(nn.Module):
         if use_refine:
             out_ref = self.refinement_head(out.squeeze(2))
             out = out + out_ref.unsqueeze(2)
-
-        if self.use_residual_adapter_head:
-            B, T, C, H, W = out.shape
-            out2 = out.view(B * T, C, H, W)
-            out2 = out2 + self.residual_alpha * self.residual_adapter_head(out2)
-            out = out2.view(B, T, C, H, W)
 
         out = depad_tensor(out, padding_info)
         return out
