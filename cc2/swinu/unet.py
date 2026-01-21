@@ -34,8 +34,8 @@ class ObsStateUNetResidual(nn.Module):
         self,
         base_channels: int = 64,
         num_groups: int = 8,
-        ctx_channels: int = 32,  # extra context image channels (optional)
-        ctx_token_dim: int | None = None,  # Dctx, if you will pass ctx_tokens
+        ctx_in_channels: int = 0,
+        ctx_feat_channels: int = 16,
         ctx_detach: bool = True,
         use_gate: bool = True,
         use_obs_deep_net: bool = False,
@@ -43,8 +43,8 @@ class ObsStateUNetResidual(nn.Module):
         super().__init__()
         self.base = base_channels
         self.num_groups = num_groups
-        self.ctx_channels = ctx_channels
-        self.ctx_token_dim = ctx_token_dim
+        self.ctx_in_channels = ctx_in_channels
+        self.ctx_feat_channels = ctx_feat_channels
         self.ctx_detach = ctx_detach
         self.use_gate = use_gate
         self.use_obs_deep_net = use_obs_deep_net
@@ -56,18 +56,23 @@ class ObsStateUNetResidual(nn.Module):
             torch.tensor(self.alpha_init / self.alpha_bound, dtype=torch.float32)
         )
 
-        # optional ctx compression (keeps concatenation small & consistent)
-        # If ctx_channels == 0, ctx is ignored.
-        self.ctx_1x1 = None
-        if ctx_channels > 0:
-            if self.ctx_token_dim is None:
-                raise ValueError("ctx_token_dim must be set when ctx_channels > 0")
-            self.ctx_1x1 = nn.Conv2d(
-                self.ctx_token_dim, self.ctx_channels, kernel_size=1, bias=False
+        ctx_cat_ch = 0
+
+        if ctx_in_channels > 0:
+            self.ctx_stem = nn.Sequential(
+                ConvBlock(self.ctx_in_channels, self.ctx_feat_channels, num_groups),
+                ConvBlock(self.ctx_feat_channels, self.ctx_feat_channels, num_groups),
             )
+            self.ctx_1x1 = nn.Conv2d(
+                self.ctx_feat_channels,
+                self.ctx_feat_channels,
+                kernel_size=1,
+                bias=False,
+            )
+            ctx_cat_ch = self.ctx_feat_channels
 
         # Encoder
-        in_ch = 1 + (ctx_channels if ctx_channels > 0 else 0)
+        in_ch = 1 + ctx_cat_ch
         self.in0 = ConvBlock(in_ch, base_channels, num_groups)
         self.in1 = ConvBlock(base_channels, base_channels, num_groups)
 
@@ -146,8 +151,8 @@ class ObsStateUNetResidual(nn.Module):
 
     def forward(
         self,
-        x_state: torch.Tensor,  # [B,T,C,H,W]
-        ctx_tokens: torch.Tensor | None = None,  # [B,T,Cctx,H,W] or None
+        x_state: torch.Tensor,
+        ctx_state: torch.Tensor | None = None,
         return_diag: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict]:
         assert x_state.ndim == 5, f"Expected [B,T,C,H,W], got {tuple(x_state.shape)}"
@@ -157,9 +162,8 @@ class ObsStateUNetResidual(nn.Module):
         x = x_state.reshape(B * T, C, H, W)
 
         # minimal padding so H,W divisible by 4 (2 downsamples)
-        divisor = 4
-        if self.use_obs_deep_net:
-            divisor = 8
+        divisor = 8 if self.use_obs_deep_net else 4
+
         pad_h = (divisor - (H % divisor)) % divisor
         pad_w = (divisor - (W % divisor)) % divisor
 
@@ -168,44 +172,28 @@ class ObsStateUNetResidual(nn.Module):
         Hp, Wp = x.shape[-2], x.shape[-1]
 
         # Context handling
-        if self.ctx_channels > 0:
-            if ctx_tokens is None:
-                ctx = torch.zeros(
-                    (B * T, self.ctx_channels, Hp, Wp), device=x.device, dtype=x.dtype
-                )
-            else:
-                assert (
-                    ctx_tokens.ndim == 3
-                ), f"ctx_tokens must be [B,P,Dctx], got {tuple(ctx_tokens.shape)}"
-                assert ctx_tokens.shape[0] == B, "ctx_tokens B mismatch"
-                assert (
-                    ctx_tokens.shape[1] == H * W
-                ), f"ctx_tokens P mismatch: got {ctx_tokens.shape[1]}, expected {H*W}"
-                assert (
-                    ctx_tokens.shape[2] == self.ctx_token_dim
-                ), f"ctx_tokens D mismatch: got {ctx_tokens.shape[2]}, expected {self.ctx_token_dim}"
-                ct = ctx_tokens.detach() if self.ctx_detach else ctx_tokens
+        ctx_feat = None
+        if self.ctx_in_channels > 0:
+            assert ctx_state is not None
 
-                # If T>1, reuse same ctx for each time slice
-                ct = (
-                    ct.unsqueeze(1)
-                    .expand(B, T, H * W, self.ctx_token_dim)
-                    .reshape(B * T, H * W, self.ctx_token_dim)
-                )
-                ct = (
-                    ct.transpose(1, 2)
-                    .contiguous()
-                    .view(B * T, self.ctx_token_dim, H, W)
-                )
+            assert (
+                ctx_state.ndim == 5
+            ), f"ctx_state must be [B,T,Cctx,H,W], got {ctx_state.shape}"
+            assert ctx_state.shape[0] == B and ctx_state.shape[1] == T
+            assert (
+                ctx_state.shape[2] == self.ctx_in_channels
+            ), f"ctx_state C mismatch: got {ctx_state.shape[2]}, expected {self.ctx_in_channels}"
 
-                if pad_h or pad_w:
-                    ct = F.pad(ct, (0, pad_w, 0, pad_h))
+            ct = ctx_state.detach() if self.ctx_detach else ctx_state
+            ct = ct.reshape(B * T, self.ctx_in_channels, H, W)
+            if pad_h or pad_w:
+                ct = F.pad(ct, (0, pad_w, 0, pad_h))
 
-                ctx = self.ctx_1x1(ct)  # [BT, ctx_channels, Hp, Wp]
+            ct = self.ctx_stem(ct)
+            ctx_feat = self.ctx_1x1(ct)
 
-            xin = torch.cat([x, ctx], dim=1)
+            xin = torch.cat([x, ctx_feat], dim=1)
         else:
-            ctx = None
             xin = x
 
         # Encoder
@@ -278,12 +266,10 @@ class ObsStateUNetResidual(nn.Module):
                             ),
                         }
                     )
-                if ctx is not None:
+                if ctx_feat is not None:
                     diag["ctx_rms"] = float(
-                        ctx[..., :H, :W].pow(2).mean().sqrt().detach().cpu()
+                        ctx_feat[..., :H, :W].pow(2).mean().sqrt().detach().cpu()
                     )
-                else:
-                    diag["ctx_rms"] = 0.0
             return y_state, diag
 
         return y_state
