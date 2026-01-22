@@ -292,8 +292,8 @@ class cc2model(nn.Module):
             self.obs_head = ObsStateUNetResidual(
                 base_channels=config.obs_head_base_channels,
                 num_groups=8,
-                ctx_channels=32,
-                ctx_token_dim=self.embed_dim * 2,
+                ctx_in_channels=1,
+                ctx_feat_channels=32,
                 use_obs_deep_net=config.use_obs_deep_net,
             )
 
