@@ -61,6 +61,7 @@ class cc2module(L.LightningModule):
         use_obs_head: bool = False,
         obs_head_base_channels: int = 64,
         use_obs_head_skip: bool = False,
+        obs_head_skip_dim: int = 1,
         use_logit_calibration: bool = False,
         use_obs_deep_net: bool = False,
     ):
@@ -95,6 +96,7 @@ class cc2module(L.LightningModule):
                 "ss_pred_max",
                 "use_obs_head",
                 "use_obs_head_skip",
+                "obs_head_skip_dim",
                 "obs_head_base_channels",
                 "use_logit_calibration",
                 "use_obs_deep_net",

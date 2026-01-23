@@ -287,12 +287,13 @@ class cc2model(nn.Module):
 
         self.use_obs_head = config.use_obs_head
         self.use_obs_head_skip = config.use_obs_head_skip
+        self.obs_head_skip_dim = config.obs_head_skip_dim
 
         if self.use_obs_head:
             self.obs_head = ObsStateUNetResidual(
                 base_channels=config.obs_head_base_channels,
                 num_groups=8,
-                ctx_in_channels=1,
+                ctx_in_channels=config.obs_head_skip_dim,
                 ctx_feat_channels=32,
                 use_obs_deep_net=config.use_obs_deep_net,
             )
@@ -508,7 +509,12 @@ class cc2model(nn.Module):
         ctx_state = None
 
         if self.use_obs_head_skip:
-            ctx_state = x_curr
+            assert self.obs_head_skip_dim in [1,3]
+            if self.obs_head_skip_dim == 1:
+                ctx_state = x_curr
+            elif self.obs_head_skip_dim == 3:
+                x_prev = depad_tensor(data[:, -2:-1, ...], padding_info)
+                ctx_state = torch.concatenate([x_curr, x_curr - x_prev, delta_core], dim=2)
 
         if want_diag:
             x_obs_next, obs_diag = self.obs_head(
