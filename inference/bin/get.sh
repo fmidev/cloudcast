@@ -20,7 +20,7 @@ jq --arg atimes "${prev_cc2_atime},${ANALYSIS_TIME}" \
 # Fetch MEPS
 
 h=$(date -ud "${ANALYSIS_TIME}z" +"%H")
-h=$(echo $h | sed 's/^0*//') # Remove leading zeros
+h=$(echo $h | sed 's/^0//') # Remove leading zeros
 
 if [ $(( $h % 3 )) -eq 0 ]; then
   h=3
