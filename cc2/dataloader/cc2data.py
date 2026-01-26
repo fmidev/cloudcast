@@ -63,55 +63,6 @@ def get_default_normalization_methods(custom_methods):
     return default_methods
 
 
-def gaussian_noise(x, sigma=0.05):
-    """
-    Injects random noise to break pixel-perfect memorization.
-    sigma: Standard deviation of noise (relative to normalized data).
-    """
-    if sigma <= 0:
-        return x
-    noise = torch.randn_like(x) * sigma
-    return x + noise
-
-
-def random_block_mask(tensors, mask_ratio=0.15, patch_size=4):
-    """
-    'Cutout': Zeros out a random rectangular block across a list of tensors.
-    Applies the SAME mask location to all tensors to maintain spatial consistency.
-    """
-    if mask_ratio <= 0:
-        return tensors
-
-    # We assume shape [..., H, W]
-    h, w = tensors[0].shape[-2:]
-
-    h_cut = max(1, int(h * np.sqrt(mask_ratio)))
-    w_cut = max(1, int(w * np.sqrt(mask_ratio)))
-
-    # If patch_size, snap to multiples
-    if patch_size is not None:
-        h_cut = max(patch_size, (h_cut // patch_size) * patch_size)
-        w_cut = max(patch_size, (w_cut // patch_size) * patch_size)
-
-    # Random top-left corner
-    y_off = int(torch.rand(1) * (h - h_cut + 1))
-    x_off = int(torch.rand(1) * (w - w_cut + 1))
-
-    # If patch_size, align offsets
-    if patch_size is not None:
-        y_off = (y_off // patch_size) * patch_size
-        x_off = (x_off // patch_size) * patch_size
-
-    processed_tensors = []
-    for t in tensors:
-        t_masked = t.clone()
-        # Zero out the block
-        t_masked[..., y_off : y_off + h_cut, x_off : x_off + w_cut] = 0.0
-        processed_tensors.append(t_masked)
-
-    return processed_tensors
-
-
 def gaussian_smooth(x, sigma=0.8, kernel_size=5):
     if kernel_size % 2 == 0:
         kernel_size = kernel_size + 1
@@ -475,24 +426,18 @@ class SplitWrapper:
         dataset,
         n_x,
         apply_smoothing: bool = False,
-        apply_noise: bool = False,
-        apply_masking: bool = False,
     ):
         self.dataset = dataset
         self.n_x = n_x
         self.apply_smoothing = apply_smoothing
-        self.apply_noise = apply_noise and (torch.rand(1).item() < 0.5)
-        self.apply_masking = apply_masking and (torch.rand(1).item() < 0.5)
 
         self.return_metadata = getattr(dataset, "return_metadata", False) or getattr(
             getattr(dataset, "dataset", None), "return_metadata", False
         )
 
         rank_zero_info(
-            "SplitWrapper: blur {}, noise {}, masking {}".format(
+            "SplitWrapper: blur {}".format(
                 "enabled" if self.apply_smoothing else "disabled",
-                "enabled" if self.apply_noise else "disabled",
-                "enabled" if self.apply_masking else "disabled",
             )
         )
 
@@ -505,17 +450,6 @@ class SplitWrapper:
         # Split into x and y
         data_x = data[: self.n_x]
         data_y = data[self.n_x :]
-
-        if self.apply_noise:
-            with torch.no_grad():
-                data_x = gaussian_noise(data_x, sigma=0.05)
-                forcing = gaussian_noise(forcing, sigma=0.05)
-
-        if self.apply_masking:
-            with torch.no_grad():
-                # We mask both x and forcing at the same location so the model
-                # has a consistent "blind spot" it must interpolate.
-                data_x, forcing = random_block_mask([data_x, forcing], mask_ratio=0.20)
 
         if self.apply_smoothing:
             with torch.no_grad():
@@ -562,8 +496,6 @@ class cc2DataModule(L.LightningDataModule):
         pin_memory: bool = True,
         normalization: dict[str, str] | None = None,
         apply_smoothing: bool = False,
-        apply_noise: bool = False,
-        apply_masking: bool = False,
         data_options: dict[str, str | int | list] = {},
     ):
         super().__init__()
@@ -731,14 +663,10 @@ class cc2DataModule(L.LightningDataModule):
             is_test_or_predict = stage == "test" or stage == "predict"
             dataset.dataset.return_metadata = is_test_or_predict
 
-        # Enable augmentation only if we are fitting (training) and shuffling
-        should_augment = stage == "fit" and shuffle is True
         wrapped_dataset = SplitWrapper(
             dataset=dataset,
             n_x=self.history_length,
             apply_smoothing=self.hparams.apply_smoothing,
-            apply_noise=(should_augment and self.hparams.apply_noise),
-            apply_masking=(should_augment and self.hparams.apply_masking),
         )
 
         return DataLoader(
