@@ -163,10 +163,9 @@ def _build_input_state(
         return input_state, None, metrics
 
 
-def _maybe_calibrate_input(model, input_state, month_idx, do_calib: bool):
+def _maybe_calibrate_input(model, input_state: torch.Tensor, do_calib: bool, month_idx: int | None = None):
     if do_calib:
-        assert month_idx is not None, "month_idx required when calibration is enabled"
-        return model.logit_calibrator(input_state, month_idx)
+        return model.preprocessor(x=input_state, month_idx=month_idx)
     return input_state
 
 
@@ -228,7 +227,7 @@ def _next_core_state(
         next_gt = y[:, t : t + 1, ...]
         if do_calib:
             assert month_idx is not None
-            next_gt = model.logit_calibrator(next_gt, month_idx)
+            next_gt = model.preprocessor(x=next_gt, month_idx=month_idx)
 
         next_state_core = mask_next * pred_core_clamped + (1 - mask_next) * next_gt
         metrics["ss_mask_next"] = mask_next.float().mean()
@@ -354,7 +353,7 @@ def roll_forecast(
 
         # 2. Forward and unpack
 
-        input_state = _maybe_calibrate_input(model, input_state, month_idx, do_calib)
+        input_state = _maybe_calibrate_input(model, input_state, do_calib, month_idx)
 
         tendency_core, tendency_obs, diag = _forward_and_unpack(
             model, input_state, step_forcing, t

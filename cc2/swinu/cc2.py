@@ -299,10 +299,15 @@ class cc2model(nn.Module):
             )
 
         self.use_logit_calibration = config.use_logit_calibration
+
         if self.use_logit_calibration:
-            self.logit_calibrator = MonthlyAffineCalibrator()
+            self.preprocessor = MonthlyAffineCalibrator()
+        elif config.preprocessor is not None:
+            self.preprocessor = config.preprocessor
         else:
-            self.logit_calibrator = IdentityCalibrator()
+            self.preprocessor = IdentityCalibrator()
+
+        print("Using preprocessor", self.preprocessor)
 
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]
@@ -509,12 +514,14 @@ class cc2model(nn.Module):
         ctx_state = None
 
         if self.use_obs_head_skip:
-            assert self.obs_head_skip_dim in [1,3]
+            assert self.obs_head_skip_dim in [1, 3]
             if self.obs_head_skip_dim == 1:
                 ctx_state = x_curr
             elif self.obs_head_skip_dim == 3:
                 x_prev = depad_tensor(data[:, -2:-1, ...], padding_info)
-                ctx_state = torch.concatenate([x_curr, x_curr - x_prev, delta_core], dim=2)
+                ctx_state = torch.concatenate(
+                    [x_curr, x_curr - x_prev, delta_core], dim=2
+                )
 
         if want_diag:
             x_obs_next, obs_diag = self.obs_head(

@@ -928,6 +928,7 @@ class MultiScaleRefinementHead(nn.Module):
         y = self.conv_out(y)
         return self.global_gamma * y
 
+
 class MonthlyAffineCalibrator(nn.Module):
     def __init__(self):
         super().__init__()
@@ -1010,7 +1011,9 @@ class MonthlyAffineCalibrator(nn.Module):
         self.register_buffer("cerra_std", cerra_std)
 
     @torch.no_grad()
-    def forward(self, x: torch.Tensor, month_idx: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, month_idx: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
         # x: [B,T,1,H,W]
         x = x.clamp(self.eps, 1.0 - self.eps)
         z = torch.log(x) - torch.log1p(-x)  # logit
@@ -1027,7 +1030,8 @@ class MonthlyAffineCalibrator(nn.Module):
         z_cal = a * z + b
         return torch.sigmoid(z_cal)
 
+
 class IdentityCalibrator(nn.Module):
     @torch.no_grad()
-    def forward(self, x: torch.Tensor, month_idx: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
         return x
