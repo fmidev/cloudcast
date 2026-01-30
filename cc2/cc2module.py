@@ -62,6 +62,7 @@ class cc2module(L.LightningModule):
         obs_head_base_channels: int = 64,
         use_obs_head_skip: bool = False,
         obs_head_skip_dim: int = 1,
+        obs_head_skip_ctx_feat: int = 32,
         use_logit_calibration: bool = False,
         use_obs_deep_net: bool = False,
         preprocessor: Callable | None = None,
@@ -101,6 +102,7 @@ class cc2module(L.LightningModule):
                 "obs_head_base_channels",
                 "use_logit_calibration",
                 "use_obs_deep_net",
+                "obs_head_skip_ctx_feat",
             ]
         }
 

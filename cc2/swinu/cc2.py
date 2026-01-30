@@ -294,7 +294,7 @@ class cc2model(nn.Module):
                 base_channels=config.obs_head_base_channels,
                 num_groups=8,
                 ctx_in_channels=config.obs_head_skip_dim,
-                ctx_feat_channels=32,
+                ctx_feat_channels=config.obs_head_skip_ctx_feat,
                 use_obs_deep_net=config.use_obs_deep_net,
             )
 

@@ -35,7 +35,7 @@ class ObsStateUNetResidual(nn.Module):
         base_channels: int = 64,
         num_groups: int = 8,
         ctx_in_channels: int = 0,
-        ctx_feat_channels: int = 16,
+        ctx_feat_channels: int = 32,
         ctx_detach: bool = True,
         use_gate: bool = True,
         use_obs_deep_net: bool = False,
