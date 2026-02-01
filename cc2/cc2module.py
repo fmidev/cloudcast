@@ -66,6 +66,7 @@ class cc2module(L.LightningModule):
         use_logit_calibration: bool = False,
         use_obs_deep_net: bool = False,
         preprocessor: Callable | None = None,
+        use_obs_head_dilation: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -103,6 +104,7 @@ class cc2module(L.LightningModule):
                 "use_logit_calibration",
                 "use_obs_deep_net",
                 "obs_head_skip_ctx_feat",
+                "use_obs_head_dilation",
             ]
         }
 

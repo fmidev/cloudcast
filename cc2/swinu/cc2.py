@@ -296,6 +296,7 @@ class cc2model(nn.Module):
                 ctx_in_channels=config.obs_head_skip_dim,
                 ctx_feat_channels=config.obs_head_skip_ctx_feat,
                 use_obs_deep_net=config.use_obs_deep_net,
+                use_obs_head_dilation=config.use_obs_head_dilation,
             )
 
         self.use_logit_calibration = config.use_logit_calibration

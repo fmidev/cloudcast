@@ -4,9 +4,16 @@ import torch.nn.functional as F
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, num_groups: int = 8):
+    def __init__(self, in_ch: int, out_ch: int, num_groups: int = 8, dilation: int = 1):
         super().__init__()
-        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False)
+        self.conv = nn.Conv2d(
+            in_ch,
+            out_ch,
+            kernel_size=3,
+            padding=dilation,
+            dilation=dilation,
+            bias=False,
+        )
         self.gn = nn.GroupNorm(num_groups=num_groups, num_channels=out_ch)
         self.act = nn.SiLU()
 
@@ -39,6 +46,7 @@ class ObsStateUNetResidual(nn.Module):
         ctx_detach: bool = True,
         use_gate: bool = True,
         use_obs_deep_net: bool = False,
+        use_obs_head_dilation: bool = False,
     ):
         super().__init__()
         self.base = base_channels
@@ -48,6 +56,7 @@ class ObsStateUNetResidual(nn.Module):
         self.ctx_detach = ctx_detach
         self.use_gate = use_gate
         self.use_obs_deep_net = use_obs_deep_net
+        self.use_obs_head_dilation = use_obs_head_dilation
 
         # residual scale (tanh bounded)
         self.alpha_bound = 0.1
@@ -110,6 +119,14 @@ class ObsStateUNetResidual(nn.Module):
             )
             self.d30 = ConvBlock(bott_ch, bott_ch, num_groups)
             self.d31 = ConvBlock(bott_ch, bott_ch, num_groups)
+
+            if self.use_obs_head_dilation:
+                self.dil0 = ConvBlock(bott_ch, bott_ch, num_groups, dilation=2)
+                self.dil1 = ConvBlock(bott_ch, bott_ch, num_groups, dilation=4)
+                self.dil2 = ConvBlock(bott_ch, bott_ch, num_groups, dilation=8)
+                self.dil_fuse = nn.Conv2d(
+                    bott_ch * 4, bott_ch, kernel_size=1, bias=False
+                )
 
             self.up2 = nn.Conv2d(bott_ch, bott_ch, kernel_size=1, bias=False)
             self.u20 = ConvBlock(
@@ -206,6 +223,13 @@ class ObsStateUNetResidual(nn.Module):
         if self.use_obs_deep_net:
             x3 = self.down3(x2)  # [BT, 4Cb, Hp/8, Wp/8]
             x3 = self.d31(self.d30(x3))
+
+            if self.use_obs_head_dilation:
+                a0 = x3
+                a1 = self.dil0(x3)
+                a2 = self.dil1(x3)
+                a3 = self.dil2(x3)
+                x3 = self.dil_fuse(torch.cat([a0, a1, a2, a3], dim=1))
 
             u2 = F.interpolate(x3, scale_factor=2, mode="nearest")
             u2 = self.up2(u2)
