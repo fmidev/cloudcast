@@ -435,11 +435,8 @@ class SplitWrapper:
             getattr(dataset, "dataset", None), "return_metadata", False
         )
 
-        rank_zero_info(
-            "SplitWrapper: blur {}".format(
-                "enabled" if self.apply_smoothing else "disabled",
-            )
-        )
+        if self.apply_smoothing:
+            rank_zero_info("SplitWrapper: blur enabled")
 
     def __getitem__(self, idx):
         if self.return_metadata:
