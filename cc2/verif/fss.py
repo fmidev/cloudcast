@@ -8,7 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 categories = ["Clear", "Partly cloudy", "Mostly cloudy", "Overcast"]
 
 
-def get_mask_sizes(n: int = 8) -> list[int]:
+def get_mask_sizes(n: int = 4) -> list[int]:
     mask_sizes = [2]
     for i in range(1, n):
         mask_sizes.append(mask_sizes[-1] + int(round(1.5**i)))
