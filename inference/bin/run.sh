@@ -23,7 +23,8 @@ dir=$(dirname $(dirname $(realpath $0)))
 CC2_DATA_PATH="${CC2_DATA_PATH:-$dir/data}"
 CC2_OUTPUT_PATH="${CC2_OUTPUT_PATH:-$dir/output}"
 
-export prev_atime=$(date -ud "${ANALYSIS_TIME}z 1 hours ago" +"%Y-%m-%d %H:00:00")
+prev_atime=$(date -ud "${ANALYSIS_TIME}z 1 hours ago" +"%Y-%m-%d %H:00:00")
+export prev_atime
 
 cd ../cc2
 
