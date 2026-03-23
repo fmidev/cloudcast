@@ -11,13 +11,11 @@ def change_metrics(
     all_truth: torch.Tensor,
     all_predictions: torch.Tensor,
     save_path: str,
-    tau: float = 0.02,  # threshold for "significant change"
+    tau: float = 0.05,  # threshold for "significant change"
 ):
     """
     Computes per-timestep change detection metrics:
       - precision, recall, f1 (binary change detection vs truth)
-      - tendency_corr (correlation of Δy_pred and Δy_true)
-      - stationarity_ratio (#changed_pred / #changed_true)
     Saves CSV to {save_path}/results/change_metrics.csv
     """
     results = []
@@ -47,21 +45,6 @@ def change_metrics(
             rec = tp / (tp + fn + 1e-8)
             f1 = 2 * prec * rec / (prec + rec + 1e-8)
 
-            # correlation of tendencies (flatten)
-            if dyt.numel() > 1:
-                corr_num = ((dyp - dyp.mean()) * (dyt - dyt.mean())).sum()
-                corr_den = (
-                    dyp.std(unbiased=False) * dyt.std(unbiased=False) * dyp.numel()
-                )
-                tendency_corr = (corr_num / (corr_den + 1e-8)).item()
-            else:
-                tendency_corr = float("nan")
-
-            # stationarity ratio
-            n_true_changes = changed_true.sum().item()
-            n_pred_changes = changed_pred.sum().item()
-            stationarity_ratio = n_pred_changes / (n_true_changes + 1e-8)
-
             results.append(
                 {
                     "model": run_name[i],
@@ -69,8 +52,6 @@ def change_metrics(
                     "precision": prec,
                     "recall": rec,
                     "f1": f1,
-                    "tendency_corr": tendency_corr,
-                    "stationarity_ratio": stationarity_ratio,
                 }
             )
 
@@ -125,67 +106,3 @@ def plot_change_prf_timeseries(df: pd.DataFrame, save_path="runs/verification"):
     print(f"Plot saved to {filename}")
     plt.close()
 
-
-def plot_change_corr_stationarity_timeseries(
-    df: pd.DataFrame,
-    save_path="runs/verification",
-):
-    """
-    Expects columns: model, timestep, tendency_corr, stationarity_ratio
-    Draws two families of lines:
-      - tendency_corr (target ~ 1.0 is best; 0 means uncorrelated)
-      - stationarity_ratio (target ~ 1.0; <1 too conservative, >1 too jittery)
-    """
-    required = {"model", "timestep", "tendency_corr", "stationarity_ratio"}
-    if df.empty or not required.issubset(df.columns):
-        print(
-            f"No change correlation/stationarity results to plot (need columns {required})."
-        )
-        return
-
-    num_timesteps = int(df["timestep"].max()) + 1
-
-    # Melt to long form
-    plot_df = df.melt(
-        id_vars=["model", "timestep"],
-        value_vars=["tendency_corr", "stationarity_ratio"],
-        var_name="metric",
-        value_name="value",
-    )
-    # nicer labels
-    plot_df["metric"] = plot_df["metric"].map(
-        {
-            "tendency_corr": "tendency_corr",
-            "stationarity_ratio": "stationarity_ratio",
-        }
-    )
-
-    plt.figure(figsize=(10, 6))
-    sns.lineplot(
-        data=plot_df,
-        x="timestep",
-        y="value",
-        hue="model",
-        style="metric",
-        markers=True,
-        dashes=True,
-    )
-
-    # Reference bands / lines
-    # For correlation: [-1,1], we aim for closer to 1; for stationarity ratio: aim ~1
-    plt.axhline(1.0, color="gray", linestyle="--", linewidth=1, alpha=0.8)
-    plt.fill_between(
-        [0, num_timesteps - 1], 0.9, 1.1, color="gray", alpha=0.06, label=None
-    )
-
-    plt.xlabel("Forecast Timestep Index")
-    plt.ylabel("Value")
-    plt.title("Change Dynamics: Tendency Correlation & Stationarity Ratio vs Lead Time")
-    plt.xticks(range(num_timesteps))
-    plt.legend(title="Model / Metric", bbox_to_anchor=(1.05, 1), loc="upper left")
-    plt.grid(True, axis="y", linestyle="--", alpha=0.7)
-    plt.tight_layout(rect=[0, 0, 0.85, 1])
-    filename = f"{save_path}/figures/change_corr_stationarity_timeseries.png"
-    plt.savefig(filename)
-    print(f"Plot saved to {filename}")
-    plt.close()

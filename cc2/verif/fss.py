@@ -8,12 +8,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 categories = ["Clear", "Partly cloudy", "Mostly cloudy", "Overcast"]
 
 
-def get_mask_sizes(n: int = 4) -> list[int]:
-    mask_sizes = [2]
-    for i in range(1, n):
-        mask_sizes.append(mask_sizes[-1] + int(round(1.5**i)))
-
-    return torch.tensor(mask_sizes)
+def get_mask_sizes() -> torch.Tensor:
+    # Representative scales at 5 km resolution:
+    # 25 km, 45 km, 70 km, 110 km
+    return torch.tensor([5, 9, 14, 22])
 
 
 def compute_fss_per_leadtime(
@@ -134,8 +132,6 @@ def fss(
 
     torch.save(results, f"{save_path}/results/fss_leadtime.pt")
 
-    m = 2  # mask index = 6px
-
     x = torch.arange(results[0].shape[2])
 
     df = []
@@ -181,11 +177,11 @@ def plot_fss_1d(
     num_masks = results[0].shape[1]
     num_leadtimes = results[0].shape[2]
 
-    mask_sizes = get_mask_sizes(num_masks)
+    mask_sizes = get_mask_sizes()
 
     x = torch.arange(num_leadtimes)
 
-    m = 2  # mask index = 6px
+    m = 1  # mask index = 9px
 
     fig, ax = plt.subplots(2, 2, figsize=(16, 12))
     ax = ax.flatten()
@@ -220,7 +216,7 @@ def plot_fss_2d(
 
     categories = ["Clear", "Partly cloudy", "Mostly cloudy", "Overcast"]
 
-    mask_sizes = get_mask_sizes(num_masks)
+    mask_sizes = get_mask_sizes()
 
     x = torch.arange(num_leadtimes)
     y = mask_sizes * dx

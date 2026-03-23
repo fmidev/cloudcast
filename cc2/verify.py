@@ -13,21 +13,12 @@ from verif.fss import fss, plot_fss
 from verif.error_spread import error_spread, plot_error_spread
 from verif.variance_ratio import variance_ratio, plot_variance_ratio
 from verif.highk_power_ratio import highk_power_ratio, plot_highk_power_ratio
-from verif.spectral_coherence import (
-    spectral_coherence_bands,
-    plot_spectral_coherence_bands,
-)
 from verif.change_metrics import (
     change_metrics,
-    # plot_change_prf_timeseries,
-    plot_change_corr_stationarity_timeseries,
+    plot_change_prf_timeseries,
 )
-from verif.composite_score import (
-    composite_score,
-    plot_composite_bars,
-    plot_component_contributions,
-)
-from verif.ssim import ssim, plot_ssim
+from verif.final_composite_score import compute_final_composite, plot_final_composite
+from verif.genesis_lysis import genesis_lysis, plot_genesis_lysis
 from verif.hist import hist, plot_hist
 
 
@@ -49,10 +40,9 @@ def get_args():
             "fss",
             "variance_ratio",
             "highk_power_ratio",
-            "spectral_coherence",
             "change_metrics",
+            "genesis_lysis",
             "hist",
-            "ssim",
         ],
         help="Score to produce",
     )
@@ -421,6 +411,7 @@ if __name__ == "__main__":
         all_truth, all_predictions, all_dates = prepare_data(args)
 
     all_results = []
+    results_by_score = {}
 
     labels = get_labels(args)
 
@@ -499,17 +490,6 @@ if __name__ == "__main__":
             print(results)
             plot_highk_power_ratio(results, args.save_path)
 
-        elif score == "spectral_coherence":
-            if args.plot_only:
-                results = pd.read_csv(f"{args.save_path}/results/{score}.csv")
-            else:
-                results = spectral_coherence_bands(
-                    labels, all_truth, all_predictions, args.save_path
-                )
-
-            print(results)
-            plot_spectral_coherence_bands(results, args.save_path)
-
         elif score == "change_metrics":
             if args.plot_only:
                 results = pd.read_csv(f"{args.save_path}/results/{score}.csv")
@@ -519,45 +499,38 @@ if __name__ == "__main__":
                 )
 
             print(results)
-            # plot_change_prf_timeseries(results, args.save_path)
-            plot_change_corr_stationarity_timeseries(results, args.save_path)
+            plot_change_prf_timeseries(results, args.save_path)
 
-        elif score == "ssim":
+        elif score == "genesis_lysis":
             if args.plot_only:
                 results = pd.read_csv(f"{args.save_path}/results/{score}.csv")
             else:
-                results = ssim(labels, all_truth, all_predictions, args.save_path)
-            plot_ssim(results, args.save_path)
+                results = genesis_lysis(
+                    labels, all_truth, all_predictions, args.save_path
+                )
+            plot_genesis_lysis(results, args.save_path)
             print(results)
 
         all_results.append(results)
+        results_by_score[score] = results
 
-    composite_score_metrics = [
-        "mae",
-        "fss",
-        "variance_ratio",
-        "highk_power_ratio",
-        "spectral_coherence",
-        "change_metrics",
-        "ssim",
-    ]
-
-    composite_score_values = {}
-    for s in composite_score_metrics:
-        if s not in args.score:
-            break
-
-        i = args.score.index(s)
-        composite_score_values[s] = all_results[i]
-
-    if len(composite_score_values.keys()) == len(composite_score_metrics):
-        composite_result = composite_score(labels, composite_score_values)
-        # plot_composite_bars(composite_result, save_path=args.save_path)
-        plot_component_contributions(composite_result, save_path=args.save_path)
-        print("Produced composite scores")
-        print(composite_result)
+    final_composite_metrics = ["mae", "fss", "genesis_lysis"]
+    if all(metric in results_by_score for metric in final_composite_metrics):
+        lead_weights = {1: 4, 2: 3, 3: 2, 4: 2, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 12: 1}
+        final_composite_result = compute_final_composite(
+            results_by_score["mae"],
+            results_by_score["fss"],
+            results_by_score["genesis_lysis"],
+            cfg=None,
+            lead_weights=lead_weights,
+        )
+        final_composite_result.to_csv(
+            f"{args.save_path}/results/final_composite_scores.csv", index=False
+        )
+        plot_final_composite(final_composite_result, f"{args.save_path}/figures")
+        print(final_composite_result)
     else:
-        print("Not producing composite score: some scores not calculated")
+        print("Not producing final composite score: mae, fss, and genesis_lysis are required")
 
     if args.plot_only is False:
         plot_stamps(labels, all_truth, all_predictions, all_dates, args.save_path)

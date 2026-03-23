@@ -11,14 +11,12 @@ from swinu.layers import (
     PatchEmbedLossless,
     DWConvResidual3D,
     MultiScaleRefinementHead,
-    MonthlyAffineCalibrator,
     IdentityCalibrator,
     get_padded_size,
     pad_tensors,
     pad_tensor,
     depad_tensor,
 )
-from swinu.unet import ObsStateUNetResidual
 from types import SimpleNamespace
 from torch.utils.checkpoint import checkpoint
 
@@ -42,6 +40,11 @@ class cc2model(nn.Module):
         self.num_forcings = len(config.forcing_params) + len(
             config.static_forcing_params
         )
+
+        self.use_flow_matching = getattr(config, "use_flow_matching", False)
+        if self.use_flow_matching:
+            # x_alpha and alpha_map are injected as extra future forcing channels
+            self.num_forcings += 2
 
         self.patch_embed = PatchEmbedLossless(
             input_resolution=input_resolution,
@@ -285,25 +288,7 @@ class cc2model(nn.Module):
             stride=2,
         )
 
-        self.use_obs_head = config.use_obs_head
-        self.use_obs_head_skip = config.use_obs_head_skip
-        self.obs_head_skip_dim = config.obs_head_skip_dim
-
-        if self.use_obs_head:
-            self.obs_head = ObsStateUNetResidual(
-                base_channels=config.obs_head_base_channels,
-                num_groups=8,
-                ctx_in_channels=config.obs_head_skip_dim,
-                ctx_feat_channels=config.obs_head_skip_ctx_feat,
-                use_obs_deep_net=config.use_obs_deep_net,
-                use_obs_head_dilation=config.use_obs_head_dilation,
-            )
-
-        self.use_logit_calibration = config.use_logit_calibration
-
-        if self.use_logit_calibration:
-            self.preprocessor = MonthlyAffineCalibrator()
-        elif config.preprocessor is not None:
+        if config.preprocessor is not None:
             self.preprocessor = config.preprocessor
         else:
             self.preprocessor = IdentityCalibrator()
@@ -467,15 +452,6 @@ class cc2model(nn.Module):
 
         return delta_pred2
 
-    def _adapter_step_id(self, step: int) -> int:
-        """
-        0 = first rollout step (teacher-forced / clean history)
-        1 = subsequent rollout steps (model-conditioned), when not using scheduled sampling
-        """
-        if (not self.use_scheduled_sampling) and (step > 0):
-            return 1
-        return 0
-
     def _tokens_to_output(
         self,
         x_tokens: torch.Tensor,
@@ -492,58 +468,6 @@ class cc2model(nn.Module):
         out = depad_tensor(out, padding_info)
         return out
 
-    def forward_noo(
-        self,
-        data: torch.Tensor,
-        x_core: torch.Tensor,
-        skip: torch.Tensor,
-        padding_info: dict,
-        step: int,
-    ):
-        # Current input state (de-padded) is the last frame in the provided history
-        x_curr = depad_tensor(data[:, -1:, ...], padding_info)  # [B,1,C,H,W]
-
-        delta_core = self._tokens_to_output(x_core, padding_info, step)
-
-        # Core next state
-        x_core_next = x_curr + delta_core  # [B,1,C,H,W]
-
-        want_diag = not self.training
-        obs_diag = {}
-
-        # Optionally build context for obs head. For minimal change, pass None.
-        ctx_state = None
-
-        if self.use_obs_head_skip:
-            assert self.obs_head_skip_dim in [1, 3]
-            if self.obs_head_skip_dim == 1:
-                ctx_state = x_curr
-            elif self.obs_head_skip_dim == 3:
-                x_prev = depad_tensor(data[:, -2:-1, ...], padding_info)
-                ctx_state = torch.concatenate(
-                    [x_curr, x_curr - x_prev, delta_core], dim=2
-                )
-
-        if want_diag:
-            x_obs_next, obs_diag = self.obs_head(
-                x_core_next, ctx_state=ctx_state, return_diag=True
-            )
-        else:
-            x_obs_next = self.obs_head(x_core_next, ctx_state=ctx_state)
-
-        # Observation operator correction relative to the core-next state
-        corr_obs = x_obs_next - x_core_next  # [B,1,C,H,W]
-        if obs_diag:
-            obs_diag["abs_corr_obs"] = corr_obs.abs().mean()
-
-        # Convert to a tendency consistent with roll_forecast:
-        delta_obs = delta_core + corr_obs
-
-        assert list(delta_core.shape[-2:]) == list(self.real_input_resolution)
-        assert list(delta_obs.shape[-2:]) == list(self.real_input_resolution)
-
-        return {"core": delta_core, "obs": delta_obs, "diag": obs_diag}
-
     def forward(self, data, forcing, step):
         assert (
             data.ndim == 5
@@ -556,15 +480,12 @@ class cc2model(nn.Module):
 
         x, f_future = self.patch_embedding(data, forcing)
         x, skip = self.encode(x)
-        x_core = self.decode(x, step, skip, f_future)
+        x = self.decode(x, step, skip, f_future)
 
-        out_core = self._tokens_to_output(x_core, padding_info, step)
+        out = self._tokens_to_output(x, padding_info, step)
 
-        if self.use_obs_head:
-            return self.forward_noo(data, x_core, skip, padding_info, step)
-
-        assert list(out_core.shape[-2:]) == list(
+        assert list(out.shape[-2:]) == list(
             self.real_input_resolution
-        ), f"Output shape {out_core.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
+        ), f"Output shape {out.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
 
-        return out_core
+        return out

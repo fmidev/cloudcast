@@ -412,12 +412,11 @@ class AnemoiDataset(Dataset):
 
         sequence_dates = self.dates[actual_idx : actual_idx + self.group_size]
         t0 = sequence_dates[self.history_length - 1]  # last history step time (x[-1])
-        month_idx = int(np.datetime64(t0, "M").astype(int) % 12 + 1)
 
         if self.return_metadata:
-            return data, forcing, month_idx, sequence_dates.astype(np.float64)
+            return data, forcing, sequence_dates.astype(np.float64)
 
-        return data, forcing, month_idx
+        return data, forcing
 
 
 class SplitWrapper:
@@ -440,9 +439,9 @@ class SplitWrapper:
 
     def __getitem__(self, idx):
         if self.return_metadata:
-            data, forcing, month_idx, sequence_dates = self.dataset[idx]
+            data, forcing, sequence_dates = self.dataset[idx]
         else:
-            data, forcing, month_idx = self.dataset[idx]
+            data, forcing = self.dataset[idx]
 
         # Split into x and y
         data_x = data[: self.n_x]
@@ -461,9 +460,9 @@ class SplitWrapper:
             dates_x = sequence_dates[: self.n_x]
             dates_y = sequence_dates[self.n_x :]
 
-            return [(data_x, data_y), forcing, month_idx, (dates_x, dates_y)]
+            return [(data_x, data_y), forcing, (dates_x, dates_y)]
 
-        return [(data_x, data_y), forcing, month_idx]
+        return [(data_x, data_y), forcing]
 
     def __len__(self):
         return len(self.dataset)

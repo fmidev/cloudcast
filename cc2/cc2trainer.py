@@ -119,7 +119,7 @@ def setup_mlflow_logger(trainer):
                 run_name=f"{run_name}/{run_number}",
                 save_dir=logger.save_dir,
                 log_model=logger._log_model,
-                checkpoint_path_prefix=logger._checkpoint_path_prefix,
+                # checkpoint_path_prefix=logger._checkpoint_path_prefix,
                 tags={"run_name": run_name, "run_number": run_number},
             )
             trainer.loggers[i] = new_logger
