@@ -8,6 +8,7 @@ zarr
 xarray
 scipy
 lightning==2.5.1
+pytorch-lightning==2.5.1
 dask
 anemoi-datasets
 rioxarray
