@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
 
 RUN apt -y update && DEBIAN_FRONTEND=noninteractive apt-get -y install git && apt -y clean all
 
