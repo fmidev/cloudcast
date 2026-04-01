@@ -1,0 +1,139 @@
+seed_everything: 42
+trainer:
+  accelerator: auto
+  strategy: auto
+  devices: 1
+  num_nodes: 1
+  precision: bf16-mixed
+  logger:
+  - class_path: lightning.pytorch.loggers.MLFlowLogger
+    init_args:
+      experiment_name: cc2_nwcsaf_flowmatching
+      save_dir: ./mlruns
+      log_model: false
+      prefix: ''
+  callbacks:
+  - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_loss
+      save_last: true
+      save_top_k: 2
+      mode: min
+  - class_path: lightning.pytorch.callbacks.ModelSummary
+    init_args:
+      max_depth: 2
+  - class_path: callback.callback.CleanupFailedRunCallback
+  - class_path: callback.ew_callback.EarlyWarningMetricsCallback
+    init_args:
+      fss_threshold: 0.5
+      fss_radius: 10
+      log_train: true
+      log_val: true
+  max_epochs: null
+  max_steps: 5000
+  limit_val_batches: 0.25
+  val_check_interval: 0.25
+  log_every_n_steps: 100
+  accumulate_grad_batches: 4
+  gradient_clip_val: 1.0
+  enable_model_summary: false
+
+model:
+  class_path: cc2module.cc2module
+  init_args:
+    history_length: 2
+    hidden_dim: 256
+    patch_size: 4
+    encoder1_depth: 16
+    encoder2_depth: 4
+    decoder1_depth: 4
+    decoder2_depth: 16
+    window_size: 6
+    window_size_deep: 10
+    num_heads: 8
+    mlp_ratio: 4.0
+    drop_rate: 0.0
+    attn_drop_rate: 0.0
+    drop_path_rate:
+    - 0.05
+    - 0.01
+    - 0.01
+    - 0.1
+    learning_rate: 5.0e-06
+    warmup_iterations: 300
+    weight_decay: 0.02
+    rollout_length: 1
+    branch_from_run: pizzicato-transfer/1
+    use_gradient_checkpointing: true
+    model_family: swinu
+    use_scheduled_sampling: false
+    freeze_layers: []
+    use_flow_matching: true
+    num_inference_steps: 4
+    flow_warm_start: true
+    loss_fn:
+      class_path: loss.mae.MAELoss
+      init_args:
+        use_full_state: true
+    use_rollout_weighting: false
+    use_statistics_from_checkpoint: true
+
+data:
+  data_path:
+  - /anemoi-data/meps-nwcsaf-475x535-2020-2025-v4.zarr
+  static_forcing_path: /anemoi-data/meps-const-v4.zarr
+  prognostic_params:
+  - tcc
+  forcing_params:
+  - insolation
+  - cos_julian_day
+  - sin_julian_day
+  - cos_local_time
+  - sin_local_time
+  - t_1000
+  - t_500
+  - t_700
+  - t_850
+  - t_925
+  - u_1000
+  - u_500
+  - u_700
+  - u_850
+  - u_925
+  - v_1000
+  - v_500
+  - v_700
+  - v_850
+  - v_925
+  - z_1000
+  - z_500
+  - z_700
+  - z_850
+  - z_925
+  - r_1000
+  - r_500
+  - r_700
+  - r_850
+  - r_925
+  static_forcing_params:
+  - z
+  - lsm
+  - cos_latitude
+  - sin_latitude
+  - cos_longitude
+  - sin_longitude
+  train_start: '2020-01-01'
+  train_end: '2024-01-01'
+  val_start: '2024-01-01'
+  val_end: '2025-01-01'
+  batch_size: 2
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 3
+  pin_memory: true
+  apply_smoothing: false
+  data_options: {}
+
+optimizer: null
+lr_scheduler: null
+ckpt_path: null
