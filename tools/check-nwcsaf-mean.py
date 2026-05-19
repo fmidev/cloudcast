@@ -6,6 +6,7 @@ import boto3
 import sys
 
 from datetime import datetime, timedelta
+from base.s3utils import get_s3_hostname
 
 s3client = None
 
@@ -198,7 +199,10 @@ def check(nowtime, plot=False):
         plt.show()
 
 
-urlbase = os.environ.get("CLOUDCAST_INPUT_DIR", "https://lake.fmi.fi/routines-data/cloudcast-source")
+urlbase = os.environ.get(
+    "CLOUDCAST_INPUT_DIR",
+    "https://{}/routines-data/cloudcast-source".format(get_s3_hostname()),
+)
 
 urlbase += "/nwcsaf"
 
