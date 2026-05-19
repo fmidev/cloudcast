@@ -101,7 +101,7 @@ These files contain the fixes mentioned earlier. Cloudcast reads the data from a
 
 Output of the network (the prediction) can be written either directly to s3, or to local directory. This is selected with option `--directory`.
 
-If using s3, make sure env variables `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_HOSTNAME` are set.
+If using s3, make sure env variables `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_HOSTNAME` are set. If `S3_HOSTNAME` is not set, default hostname `lake.fmi.fi` is used.
 
 If using local write, mount a volume from host to container.
 
