@@ -13,6 +13,11 @@ def _s3_endpoint_and_host():
     return "https://{}".format(hostname), hostname
 
 
+def get_s3_hostname():
+    _, hostname = _s3_endpoint_and_host()
+    return hostname
+
+
 def read_filenames_from_s3(
     start_time, stop_time, producer, param="effective-cloudiness"
 ):
