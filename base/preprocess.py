@@ -273,7 +273,12 @@ def create_sun_elevation_angle_data(img_size):
         import io
 
         sun_file = sun_file.replace("s3://", "")
-        sun_file = "https://lake.fmi.fi/{}".format(sun_file)
+        sun_file = "https://{}/{}".format(
+            os.environ.get("S3_HOSTNAME", "lake.fmi.fi").replace(
+                "https://", ""
+            ).replace("http://", ""),
+            sun_file,
+        )
         response = requests.get(sun_file)
         response.raise_for_status()
         ds = np.load(io.BytesIO(response.content))

@@ -198,7 +198,14 @@ def check(nowtime, plot=False):
         plt.show()
 
 
-urlbase = os.environ.get("CLOUDCAST_INPUT_DIR", "https://lake.fmi.fi/routines-data/cloudcast-source")
+urlbase = os.environ.get(
+    "CLOUDCAST_INPUT_DIR",
+    "https://{}/routines-data/cloudcast-source".format(
+        os.environ.get("S3_HOSTNAME", "lake.fmi.fi").replace("https://", "").replace(
+            "http://", ""
+        )
+    ),
+)
 
 urlbase += "/nwcsaf"
 
