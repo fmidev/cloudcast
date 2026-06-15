@@ -3,6 +3,25 @@ import torch
 from torch.fft import rfftfreq, fftfreq
 
 
+def device_if_fits(nbytes, target, headroom=4.0, reserve_frac=0.85):
+    """Pick ``target`` (GPU) when ``nbytes`` of input plus estimated intermediate
+    buffers fit in free GPU memory, otherwise fall back to CPU.
+
+    Verification tensors span a wide range — a few MB for a single case up to
+    tens of GB for the full year — and the large ones OOM if moved to GPU whole,
+    so the device choice is gated on size rather than fixed. ``headroom`` scales
+    the input size to cover temporaries created by pooling / FFT (FFT output is
+    complex, so callers should pass a larger headroom). Returns a torch.device.
+    """
+    if target is None or str(target) == "cpu" or not torch.cuda.is_available():
+        return torch.device("cpu")
+    try:
+        free, _ = torch.cuda.mem_get_info(target)
+    except Exception:
+        return torch.device("cpu")
+    return target if nbytes * headroom < free * reserve_frac else torch.device("cpu")
+
+
 def ensure_btchw(x: torch.Tensor) -> torch.Tensor:
     """
     Accept [B,T,C,H,W] or [T,C,H,W] or [B,C,H,W].

@@ -201,6 +201,22 @@ class PatchEmbedLossless(nn.Module):
 
         return x_tokens, f_future
 
+    def embed_future_frame(self, forcing_frame):
+        """Embed a single future-forcing frame into an f_future token.
+
+        Args:
+            forcing_frame: [B, Cf, H, W]  (single frame, already padded to patch grid)
+        Returns:
+            f_future token: [B, 1, P, embed_dim]
+        """
+        # forcing_frame: [B, Cf, H, W]
+        u_ff = self.unfold_force(forcing_frame).transpose(1, 2)  # [B, P, Cf*ps*ps]
+        tfut = self.proj_force(u_ff)                              # [B, P, d_force]
+        B = forcing_frame.shape[0]
+        zeros = torch.zeros(B, u_ff.shape[1], self.d_data, device=u_ff.device, dtype=u_ff.dtype)
+        f_future = torch.cat([zeros, tfut], dim=-1)              # [B, P, embed_dim]
+        return f_future.unsqueeze(1)                              # [B, 1, P, embed_dim]
+
 
 class ProjectToImageFold(nn.Module):
     def __init__(

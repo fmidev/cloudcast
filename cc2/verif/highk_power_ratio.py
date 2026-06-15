@@ -2,7 +2,12 @@
 import torch
 import pandas as pd
 from torch.fft import rfft2
-from verif.fft_utils import ensure_btchw, radial_bins_rfft, band_masks_from_wavelengths
+from verif.fft_utils import (
+    ensure_btchw,
+    radial_bins_rfft,
+    band_masks_from_wavelengths,
+    device_if_fits,
+)
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -33,8 +38,13 @@ def highk_power_ratio(
         B, T, C, H, W = y_pred.shape
 
         for t in range(T):
-            yp = y_pred[:, t].to(device)  # [B,C,H,W]
-            yt = y_true[:, t].to(device)
+            # Gate the GPU transfer on size (FFT output is complex → larger
+            # headroom); full-year slices stay on CPU, single cases use GPU.
+            sl = y_pred[:, t]
+            nbytes = 2 * sl.nelement() * sl.element_size()
+            dev = device_if_fits(nbytes, device, headroom=8.0)
+            yp = y_pred[:, t].to(dev)  # [B,C,H,W]
+            yt = y_true[:, t].to(dev)
 
             X0 = rfft2(yp[0], norm="ortho")
             Hf, Wf = X0.shape[-2], X0.shape[-1]

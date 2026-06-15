@@ -10,3 +10,8 @@ generated_run_name.txt
 next_run.txt
 lightning_logs
 mlruns
+logs
+.claude
+.letta
+tasks
+obs

@@ -38,44 +38,26 @@ def hist(
 
 def plot_hist(
     run_name: list[str],
-    results: pd.DataFrame,
+    results: list,
     save_path: str,
 ):
-    # results shape: num_models, steps, height, width
     num_models = len(results)
-    nrows = 1
-    ncols = num_models
+    fig, axes = plt.subplots(1, num_models, figsize=(num_models * 3, 3), sharey=True)
+    if num_models == 1:
+        axes = [axes]
 
-    fig_width = ncols * 2.5
-    fig_height = nrows * 2.5
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(fig_width, fig_height), sharex=True, sharey=True
-    )
+    fig.suptitle("TCC Histograms", fontsize=14)
 
-    fig.suptitle(f"Histograms", fontsize=16)
+    for c, (ax, entry) in enumerate(zip(axes, results)):
+        counts = entry["hist"]
+        ax.bar(range(len(counts)), counts / counts.sum(), width=1.0)
+        ax.set_title(entry["model"], fontsize=9)
+        ax.set_xlabel("TCC bin")
+        if c == 0:
+            ax.set_ylabel("Fraction")
 
-    axes = axes if axes.ndim == 2 else axes.reshape((nrows, ncols))
-
-    for r in range(nrows):
-        y_pred = results[r]
-        for c in range(ncols):
-            ax = axes[r, c]
-
-            ax.set_title(run_name[c], fontsize=10)
-
-            ax.set_xticks([])
-            ax.set_yticks([])
-
-            im = ax.hist(results[r], density=True)
-
-    # Add colorbar at the far right
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.012, 0.7])  # [left, bottom, width, height]
-    cbar = fig.colorbar(im, cax=cbar_ax)
-    cbar.set_label("MAE", fontsize=10)
-
-    plt.subplots_adjust(wspace=0.1, hspace=0.1, right=0.9)
-
-    filename = f"{save_path}/figures/mae2d.png"
+    plt.tight_layout()
+    filename = f"{save_path}/figures/hist.png"
     plt.savefig(filename)
     print(f"Plot saved to {filename}")
     plt.close()

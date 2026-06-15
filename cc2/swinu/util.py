@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import lightning.pytorch as pl
 from typing import Dict
 from torch.fft import rfftfreq, fftfreq
+from torch.utils.checkpoint import checkpoint
 
 
 def apply_hann_window(field: torch.Tensor, H: int, W: int):
@@ -163,12 +164,6 @@ def _build_input_state(
         return input_state, None, metrics
 
 
-def _maybe_calibrate_input(model, input_state: torch.Tensor, do_calib: bool):
-    if do_calib:
-        return model.preprocessor(x=input_state)
-    return input_state
-
-
 def _forward_and_unpack(model, input_state, step_forcing, t):
     out = model(input_state, step_forcing, t)
     return out, None, {}
@@ -202,7 +197,6 @@ def _next_state(
     training: bool,
     use_scheduled_sampling: bool,
     p_pred: float | None,
-    do_calib: bool,
 ):
     metrics = {}
 
@@ -217,8 +211,6 @@ def _next_state(
         pred_clamped = ste_clamp(next_pred, True)
 
         next_gt = y[:, t : t + 1, ...]
-
-        _maybe_calibrate_input(model, next_gt, do_calib)
 
         next_state = mask_next * pred_clamped + (1 - mask_next) * next_gt
         metrics["ss_mask_next"] = mask_next.float().mean()
@@ -312,11 +304,8 @@ def roll_forecast(
 
     metrics = {}
 
-    n_calib_steps = 2
-
     # Loop through each rollout step
     for t in range(n_step):
-        do_calib = t < n_calib_steps
         # Model always sees forcings two history times and one prediction time
         step_forcing = forcing[:, t : t + T + 1, ...]
 
@@ -339,8 +328,6 @@ def roll_forecast(
 
         # 2. Forward and unpack
 
-        input_state = _maybe_calibrate_input(model, input_state, do_calib)
-
         tendency, _, _ = _forward_and_unpack(model, input_state, step_forcing, t)
 
         next_pred = current_state + tendency
@@ -362,7 +349,6 @@ def roll_forecast(
             training=model.training,
             use_scheduled_sampling=use_scheduled_sampling,
             p_pred=p_pred,
-            do_calib=do_calib,
         )
         metrics.update(fb_metrics)
 
@@ -430,10 +416,7 @@ def flow_roll_forecast(
     all_predictions = []
     all_tendencies = []
 
-    n_calib_steps = 2
-
     for t in range(n_step):
-        do_calib = t < n_calib_steps
         # Clone once per temporal step; the flow channels are modified in-place each
         # denoising iteration — no further clones needed inside the loop.
         step_forcing = forcing[
@@ -441,7 +424,6 @@ def flow_roll_forecast(
         ].clone()  # [B, T+1, C_force+2, H, W]
 
         input_state = torch.cat([previous_state, current_state], dim=1)
-        input_state = _maybe_calibrate_input(model, input_state, do_calib)
 
         if flow_warm_start:
             # Smooth pass: flow channels are already zero from the pre-allocated tensor
@@ -509,3 +491,228 @@ def flow_roll_forecast(
     }
 
     return None, out
+
+
+def direct_flow_forecast(
+    model: nn.Module,
+    data: list,
+    forcing: torch.Tensor,
+    n_step: int,
+    num_inference_steps: int = 4,
+    flow_warm_start: bool = True,
+    warm_start_alpha: float = 0.4,
+    init_noise_sigma: float = 1.0,
+    eta: float = 0.0,
+    **_ignored,
+):
+    """
+    Direct (non-autoregressive) CFM inference.
+
+    Encode the analysis context ONCE (like ``direct_forecast``), then for each
+    lead run an INDEPENDENT K-step DDIM denoising loop (the refinement math of
+    ``flow_roll_forecast``). There is NO autoregressive loop: each lead is
+    decoded from the shared analysis encode, so the bias-accumulation path is
+    absent and CFM only supplies sharpness (bland-layer "Path 3" de-blur).
+
+    The flow anchor (x_alpha, alpha_map) is consumed ONLY by ``decode_lead``
+    (decoder-side future-forcing frame), not the encoder — so encode-once is
+    valid and each DDIM step re-runs only the (cheap) per-lead decode.
+
+    forcing : [B, T+n_step, C_force+2, H, W]; last 2 channels (x_alpha, alpha_map)
+              are 0 on entry and filled by the denoising loop.
+    Returns (None, {"tendencies", "predictions"}) — matches direct_forecast.
+    """
+    x, y = data
+    B, T, C_data, H, W = x.shape
+
+    assert (
+        forcing.shape[1] == n_step + T
+    ), "Forcing length {} insufficient for direct_flow_forecast n_step={}".format(
+        forcing.shape[1], n_step
+    )
+
+    analysis = x[:, -T:, ...]              # [B, T, C, H, W]
+    history_forcing = forcing[:, :T, ...]  # [B, T, Cf+2, H, W] (flow channels 0 in history)
+    analysis_curr = x[:, -1:, ...]         # [B, 1, C, H, W]
+
+    # ----- ENCODE ONCE -----
+    encoded, skip, padding_info = model.encode_context(analysis, history_forcing)
+
+    all_predictions = []
+    all_tendencies = []
+
+    for i in range(n_step):
+        # Per-lead future-forcing frame; clone so the flow channels can be written
+        # in-place each DDIM iteration without corrupting the shared forcing tensor.
+        future_forcing = forcing[:, T + i : T + i + 1, ...].clone()  # [B,1,Cf+2,H,W]
+
+        if flow_warm_start:
+            # Smooth pass: flow channels are 0 -> deterministic (mean) prediction,
+            # used as the in-distribution starting point for the DDIM chain.
+            with torch.no_grad():
+                tendency_warm = model.decode_lead(
+                    encoded, skip, padding_info, future_forcing, i
+                )
+            smooth_pred = analysis_curr + tendency_warm
+            alpha_init = warm_start_alpha
+            x_alpha = (
+                1.0 - warm_start_alpha
+            ) * smooth_pred.detach() + warm_start_alpha * torch.randn_like(smooth_pred)
+        else:
+            alpha_init = 1.0
+            x_alpha = init_noise_sigma * torch.randn_like(analysis_curr)
+
+        # DDIM schedule: alpha_init -> ~0 (matches flow_roll_forecast)
+        alphas = torch.linspace(
+            alpha_init, 0.05, num_inference_steps + 1, device=x.device
+        )
+
+        x1_hat = analysis_curr  # overwritten on first iteration
+        for k in range(num_inference_steps):
+            alpha = alphas[k]
+            alpha_next = alphas[k + 1]
+
+            # Write the flow anchor into this lead's future-forcing frame (in-place).
+            future_forcing[:, 0, -2, :, :] = x_alpha[:, 0, 0, :, :]
+            future_forcing[:, 0, -1, :, :] = float(alpha)
+
+            with torch.no_grad():
+                tendency = model.decode_lead(
+                    encoded, skip, padding_info, future_forcing, i
+                )
+
+            x1_hat = analysis_curr + tendency  # predicted clean state [B, 1, C, H, W]
+
+            # DDIM update: estimate noise, step to next alpha level
+            alpha_clamped = alpha.clamp(min=1e-6)
+            z_est = (x_alpha - (1.0 - alpha_clamped) * x1_hat) / alpha_clamped
+            x_alpha = (1.0 - alpha_next) * x1_hat + alpha_next * z_est
+            if eta > 0.0:
+                x_alpha = x_alpha + eta * torch.sqrt(alpha_next) * torch.randn_like(
+                    x_alpha
+                )
+
+        final_pred = x1_hat.clamp(0.0, 1.0)
+        all_predictions.append(final_pred.detach())
+        all_tendencies.append((final_pred - analysis_curr).detach())
+
+    return None, {
+        "tendencies": torch.cat(all_tendencies, dim=1),
+        "predictions": torch.cat(all_predictions, dim=1),
+    }
+
+
+def direct_forecast(
+    model: nn.Module,
+    data: list[torch.Tensor],
+    forcing: torch.Tensor,
+    n_step: int,
+    loss_fn: nn.Module | None,
+    step: int | None = None,
+    max_step: int | None = None,
+    use_rollout_weighting: bool = False,
+    **_ignored,
+) -> Dict[str, torch.Tensor]:
+    """
+    Direct (non-autoregressive) multi-lead forecast.
+
+    Encode the analysis context ONCE, then decode independently per lead by
+    injecting only that lead's future-forcing frame.  This is O(1) encoder
+    calls instead of O(n_step), which eliminates the OOM at n_step=12.
+
+    Temporal alignment follows MetNet-style: the encoder always sees the fixed
+    analysis frames and their concurrent forcing; each decoder call receives the
+    NWP forcing valid at the target lead time.  The old implementation slid the
+    forcing window per lead, which both redundantly re-encoded and misaligned
+    the history forcing with the analysis data.
+
+    Args:
+        model    : cc2model with direct_prediction=True (uses lead_embeddings)
+        data     : [x, y] where x is history [B, T, C, H, W]
+        forcing  : [B, T+n_step, C_force, H, W]
+        n_step   : number of independent leads to predict
+        loss_fn  : loss module or None
+        step     : global training step (for ramps / logging)
+        max_step : total training steps (for ramps)
+        use_rollout_weighting : passed to _aggregate_losses (no-op when False)
+        **_ignored : absorbs scheduled-sampling kwargs from the generic call site
+    """
+    x, y = data
+    B, T, C_data, H, W = x.shape
+
+    if loss_fn is not None:
+        assert y.shape[1] == n_step, "y does not match n_steps: {} vs {}".format(
+            y.shape[1], n_step
+        )
+
+    assert (
+        forcing.shape[1] == n_step + T
+    ), "Forcing length {} insufficient for direct_forecast n_step={}".format(
+        forcing.shape[1], n_step
+    )
+
+    # Fixed analysis context — shapes: [B, T, C, H, W] and [B, T, Cf, H, W]
+    analysis = x[:, -T:, ...]           # [B, T, C, H, W]
+    history_forcing = forcing[:, :T, ...]  # analysis-time forcing (T frames, fixed)
+    analysis_curr = x[:, -1:, ...]      # [B, 1, C, H, W]  — the "current" state
+
+    # ----- ENCODE ONCE -----
+    encoded, skip, padding_info = model.encode_context(analysis, history_forcing)
+
+    all_losses = []
+    all_predictions = []
+    all_tendencies = []
+    metrics = {}
+
+    for i in range(n_step):
+        # i = sequential frame/lead index; each lead is decoded independently from
+        # the shared encoded context and its own future-forcing frame.
+        future_forcing = forcing[:, T + i : T + i + 1, ...]  # [B, 1, Cf, H, W]
+
+        # ----- DECODE per lead (encoder graph reused; grads accumulate) -----
+        # OOM fix: outer-checkpoint each decode so only ONE lead's decode
+        # activations live during backward, not all n_step at once. The 12
+        # decodes otherwise hold their (already block-checkpointed) segments
+        # simultaneously for the combined backward -> memory scales ~n_step.
+        if model.training and getattr(model, "use_gradient_checkpointing", False):
+            tendency = checkpoint(
+                model.decode_lead,
+                encoded, skip, padding_info, future_forcing, i,
+                use_reentrant=False,
+            )  # [B, 1, C, H, W]
+        else:
+            tendency = model.decode_lead(
+                encoded, skip, padding_info, future_forcing, i
+            )  # [B, 1, C, H, W]
+
+        next_pred = analysis_curr + tendency  # always analysis-relative
+
+        # Loss: delta always relative to analysis state
+        if loss_fn is not None:
+            y_true_full = y[:, i : i + 1, ...]
+            y_true_delta = y_true_full - x[:, -1, ...].unsqueeze(1)
+            step_loss = loss_fn(
+                y_true_full=y_true_full,
+                y_pred_full=next_pred,
+                y_true_delta=y_true_delta,
+                y_pred_delta=tendency,
+                global_step=step,
+            )
+            all_losses.append(step_loss)
+
+        all_predictions.append(_materialize(next_pred, training=model.training).detach())
+        all_tendencies.append(tendency.detach())
+
+    loss, metrics = _aggregate_losses(
+        all_losses, use_rollout_weighting, step, n_step, max_step, metrics
+    )
+
+    assert all_tendencies[0].ndim == 5
+
+    if loss is not None:
+        loss.update(metrics)
+
+    return loss, {
+        "tendencies": torch.cat(all_tendencies, dim=1),
+        "predictions": torch.cat(all_predictions, dim=1),
+    }

@@ -46,6 +46,8 @@ class cc2model(nn.Module):
             # x_alpha and alpha_map are injected as extra future forcing channels
             self.num_forcings += 2
 
+        self.direct_prediction = getattr(config, "direct_prediction", False)
+
         self.patch_embed = PatchEmbedLossless(
             input_resolution=input_resolution,
             patch_size=self.patch_size,
@@ -251,9 +253,17 @@ class cc2model(nn.Module):
             undo_scale=False,
         )
 
-        # Step identification embeddings
-        self.step_id_embeddings = nn.Parameter(torch.randn(2, self.embed_dim * 2))
-        nn.init.normal_(self.step_id_embeddings, std=0.02)
+        # Step identification embeddings — autoregressive mode only. Direct
+        # prediction decodes each lead independently and never reads this (the
+        # AR branch of decode() is the sole consumer), so don't allocate the
+        # vestigial parameter there.
+        if not self.direct_prediction:
+            self.step_id_embeddings = nn.Parameter(torch.randn(2, self.embed_dim * 2))
+            nn.init.normal_(self.step_id_embeddings, std=0.02)
+
+        # Direct-prediction models use NO per-lead embedding: the (target-time)
+        # forcing carries the lead/clock signal (continuous-by-construction).
+        # Autoregressive models use step_id_embeddings (created above).
 
         # Initialize weights
         # self.apply(self._init_weights)
@@ -289,11 +299,10 @@ class cc2model(nn.Module):
         )
 
         if config.preprocessor is not None:
-            self.preprocessor = config.preprocessor
-        else:
-            self.preprocessor = IdentityCalibrator()
+            print("Preprocessor deprecated")
 
-        print("Using preprocessor", self.preprocessor)
+        self.preprocessor = IdentityCalibrator()
+
 
     def patch_embedding(self, x, forcing):
         x_tokens, f_future = self.patch_embed(x, forcing)  # [B, T, patches, embed_dim]
@@ -364,19 +373,23 @@ class cc2model(nn.Module):
         decoder_in = decoder_input.reshape(B, -1, D)
 
         # Determine step id (0 for first step using ground truth, 1 for subsequent steps)
-        step_id = 0
-        if not self.use_scheduled_sampling and step > 0:
-            step_id = 1
-        # Get appropriate step embedding
-        step_embedding = self.step_id_embeddings[step_id]  # [D]
+        # Determine step embedding: lead index (direct mode) or binary AR step
+        step_embedding = None
+        if not self.direct_prediction:
+            step_id = 0
+            if not self.use_scheduled_sampling and step > 0:
+                step_id = 1
+            step_embedding = self.step_id_embeddings[step_id]  # [embed_dim*2]
+        # direct_prediction: no per-lead embedding — lead signal comes from forcing.
 
         # Add step embedding to decoder input
         # For first token in each sequence (acts as a "step type" token)
         # We'll add it to the last P tokens which represent our current state
         decoder_in_with_id = decoder_in.clone()
-        decoder_in_with_id[:, -P:] = decoder_in[:, -P:] + step_embedding.unsqueeze(
-            0
-        ).unsqueeze(1)
+        if step_embedding is not None:
+            decoder_in_with_id[:, -P:] = decoder_in[:, -P:] + step_embedding.unsqueeze(
+                0
+            ).unsqueeze(1)
 
         if f_future is not None:
             # f_future: [B, 1, P, D_enc]  (from patch embed)
@@ -488,4 +501,40 @@ class cc2model(nn.Module):
             self.real_input_resolution
         ), f"Output shape {out.shape[-2:]} does not match real input resolution {self.real_input_resolution}"
 
+        return out
+
+    def encode_context(self, data, forcing_history):
+        """Encode analysis context once for use across all decode_lead calls.
+
+        Args:
+            data:            [B, T, C, H, W]  analysis (history) frames
+            forcing_history: [B, T, Cf, H, W] analysis-time forcing (T frames only)
+        Returns:
+            encoded:      [B, T, P, D*2]
+            skip:         [B, T, P, D]
+            padding_info: dict for depad_tensor
+        """
+        data, padding_info = pad_tensor(data, self.patch_size, 1)
+        forcing_history, _ = pad_tensor(forcing_history, self.patch_size, 1)
+        # Tf == T, so f_future will be None from patch_embedding
+        x_tokens, _ = self.patch_embedding(data, forcing_history)
+        encoded, skip = self.encode(x_tokens)
+        return encoded, skip, padding_info
+
+    def decode_lead(self, encoded, skip, padding_info, future_forcing, step):
+        """Decode a single lead from the pre-computed encoder context.
+
+        Args:
+            encoded:        [B, T, P, D*2]  output of encode_context
+            skip:           [B, T, P, D]    skip connection from encode_context
+            padding_info:   dict            from encode_context
+            future_forcing: [B, 1, Cf, H, W] forcing at the target lead time
+            step:           int              lead index 0..n_step-1
+        Returns:
+            tendency: [B, 1, C, H, W]
+        """
+        ff, _ = pad_tensor(future_forcing, self.patch_size, 1)  # [B, 1, Cf, Hp, Wp]
+        f_future = self.patch_embed.embed_future_frame(ff[:, 0])  # [B, 1, P, embed_dim]
+        x = self.decode(encoded, step, skip, f_future)
+        out = self._tokens_to_output(x, padding_info, step)
         return out

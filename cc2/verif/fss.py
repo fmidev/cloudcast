@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
+from verif.fft_utils import device_if_fits
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 categories = ["Clear", "Partly cloudy", "Mostly cloudy", "Overcast"]
@@ -112,8 +113,13 @@ def fss(
     results = []
 
     for idx, preds in enumerate(all_predictions):
-        truth = all_truth[idx].to(device)
-        preds = preds.to(device)
+        truth = all_truth[idx]
+        # Gate the GPU transfer on size: small tensors (single case) run far
+        # faster on GPU; full-year tensors are tens of GB and OOM, so use CPU.
+        nbytes = (truth.nelement() + preds.nelement()) * truth.element_size()
+        dev = device_if_fits(nbytes, device)
+        truth = truth.to(dev)
+        preds = preds.to(dev)
         r = compute_fss_per_leadtime(truth, preds, thresholds, mask_sizes)
         results.append(r)
 

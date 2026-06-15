@@ -20,6 +20,7 @@ from verif.change_metrics import (
 from verif.final_composite_score import compute_final_composite, plot_final_composite
 from verif.genesis_lysis import genesis_lysis, plot_genesis_lysis
 from verif.hist import hist, plot_hist
+from verif.bias import bias, plot_bias
 
 
 def get_args():
@@ -43,6 +44,7 @@ def get_args():
             "change_metrics",
             "genesis_lysis",
             "hist",
+            "bias",
         ],
         help="Score to produce",
     )
@@ -62,6 +64,20 @@ def get_args():
         type=int,
         default=0,
         help="Crop pixels from each side",
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit to first N samples (for quick testing)",
+    )
+    parser.add_argument(
+        "--season",
+        type=str,
+        default=None,
+        choices=["winter", "spring", "summer", "autumn"],
+        help="Filter samples to a meteorological season: "
+             "winter=DJF, spring=MAM, summer=JJA, autumn=SON",
     )
 
     args = parser.parse_args()
@@ -105,7 +121,6 @@ def read_data_from_dir(file_path, truth_cache):
         )
 
     prediction_files = [
-        f"{file_path}/predictions_noo.pt",
         f"{file_path}/predictions.pt",
     ]
 
@@ -119,9 +134,6 @@ def read_data_from_dir(file_path, truth_cache):
             weights_only=True,
         )
 
-        if "noo.pt" in file:
-            print(f"Read NOO file {file}")
-        break
     dates = torch.load(
         f"{file_path}/dates.pt", map_location=torch.device("cpu"), weights_only=True
     )
@@ -276,6 +288,33 @@ def equalize_datasets(labels, all_truth, all_predictions, all_dates):
     return all_truth, all_predictions, all_dates
 
 
+SEASON_MONTHS = {
+    "winter": {12, 1, 2},
+    "spring": {3, 4, 5},
+    "summer": {6, 7, 8},
+    "autumn": {9, 10, 11},
+}
+
+
+def filter_by_season(all_truth, all_predictions, all_dates, season):
+    months = SEASON_MONTHS[season]
+    result_truth, result_preds, result_dates = [], [], []
+    for truth, preds, dates in zip(all_truth, all_predictions, all_dates):
+        # dates[:,0] is the first valid_time in unix seconds for each sample
+        t0 = dates[:, 0].numpy().astype("int64")
+        mask = np.array(
+            [np.datetime64(int(ts), "s").astype("datetime64[M]").astype(int) % 12 + 1
+             in months for ts in t0]
+        )
+        idx = np.where(mask)[0]
+        result_truth.append(truth[idx])
+        result_preds.append(preds[idx])
+        result_dates.append(dates[idx])
+    n = result_preds[0].shape[0]
+    print(f"Season '{season}': {n} samples retained")
+    return result_truth, result_preds, result_dates
+
+
 def prepare_data(args):
     all_truth, all_predictions, all_dates = [], [], []
     truth_cache = {}
@@ -313,6 +352,15 @@ def prepare_data(args):
         print(f"Cropping with c={c}")
         all_truth = [x[:, :, :, c:-c, c:-c] for x in all_truth]
         all_predictions = [x[:, :, :, c:-c, c:-c] for x in all_predictions]
+
+    if args.season is not None:
+        all_truth, all_predictions, all_dates = filter_by_season(
+            all_truth, all_predictions, all_dates, args.season
+        )
+        # Redirect outputs to a season subdirectory
+        args.save_path = os.path.join(args.save_path, args.season)
+        os.makedirs(f"{args.save_path}/figures", exist_ok=True)
+        os.makedirs(f"{args.save_path}/results", exist_ok=True)
 
     return all_truth, all_predictions, all_dates
 
@@ -467,6 +515,14 @@ if __name__ == "__main__":
                 results = hist(labels, all_truth, all_predictions, args.save_path)
 
             plot_hist(labels, results, args.save_path)
+
+        elif score == "bias":
+            if args.plot_only:
+                results = pd.read_csv(f"{args.save_path}/results/bias.csv")
+            else:
+                results = bias(labels, all_truth, all_predictions, args.save_path)
+            print(results)
+            plot_bias(results, args.save_path)
 
         elif score == "variance_ratio":
             if args.plot_only:

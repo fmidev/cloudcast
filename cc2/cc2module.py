@@ -65,6 +65,7 @@ class cc2module(L.LightningModule):
         warm_start_alpha: float = 0.4,
         flow_init_noise_sigma: float = 1.0,
         flow_eta: float = 0.0,
+        direct_prediction: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -96,6 +97,7 @@ class cc2module(L.LightningModule):
                 "ss_pred_min",
                 "ss_pred_max",
                 "use_flow_matching",
+                "direct_prediction",
             ]
         }
 
@@ -106,7 +108,6 @@ class cc2module(L.LightningModule):
 
         self.test_predictions = []
         self.test_truth = []
-        self.test_predictions_noo = []
         self.test_dates = []
 
         self.latest_val_tendencies = None
@@ -147,6 +148,35 @@ class cc2module(L.LightningModule):
         self._build_model()
 
         self.model_configured = True
+
+    def on_load_checkpoint(self, checkpoint) -> None:
+        """Tolerate embedding params this model variant no longer creates.
+
+        ``step_id_embeddings`` is AR-only (direct-prediction models omit it), so
+        an AR checkpoint may carry a key this variant omits. Drop only that
+        orphaned key from the incoming state_dict so strict loading still catches
+        genuinely-missing weights. NOTE: lead-embedding checkpoints (e.g.
+        noisy-buck, bland-layer) are NOT silently accepted — the lead-embedding
+        code was removed, so their ``model.lead_embeddings`` key now fails strict
+        load loudly. Load those from the ``paper-v1`` git tag. This fixes weight loading
+        (test / branch / weights-only), NOT full optimizer-state resume — a run
+        whose optimizer state references a now-removed param cannot be resumed
+        with --ckpt_path under the new code; branch (init_weights_from_ckpt) or
+        resume on the old code instead.
+        """
+        sd = checkpoint.get("state_dict") if isinstance(checkpoint, dict) else None
+        if not sd or not getattr(self, "model", None):
+            return
+        own = set(self.state_dict().keys())
+        optional = ("model.step_id_embeddings",)
+        dropped = [k for k in list(sd.keys()) if k in optional and k not in own]
+        for k in dropped:
+            sd.pop(k)
+        if dropped:
+            rank_zero_info(
+                f"on_load_checkpoint: dropped orphaned key(s) {dropped} "
+                "not present in this model variant"
+            )
 
     def _store_trainable_module_names(self) -> None:
         trainable_modules = set()
@@ -241,10 +271,13 @@ class cc2module(L.LightningModule):
 
         elif self.hparams.model_family == "swinu":
             from swinu.cc2 import cc2model
-            from swinu.util import roll_forecast
+            from swinu.util import roll_forecast, direct_forecast
 
         self.model_class = self.hparams.model_family
-        self._roll_forecast = roll_forecast
+        if self.hparams.direct_prediction:
+            self._roll_forecast = direct_forecast
+        else:
+            self._roll_forecast = roll_forecast
 
         self.model = cc2model(config=self.model_kwargs)
 
@@ -254,7 +287,7 @@ class cc2module(L.LightningModule):
             self.run_number = int(os.environ.get("CC2_RUN_NUMBER", -1))
             self.run_dir = os.environ["CC2_RUN_DIR"]
 
-        if self.hparams.branch_from_run:
+        if self.trainer.state.stage == "train" and self.hparams.branch_from_run:
             if "/" in self.hparams.branch_from_run:
                 branch_run_dir = "runs/{}".format(self.hparams.branch_from_run)
             else:
@@ -412,6 +445,8 @@ class cc2module(L.LightningModule):
             loss_fn=self._loss_fn,
             use_scheduled_sampling=False,
             use_rollout_weighting=self.hparams.use_rollout_weighting,
+            step=self.global_step,
+            max_step=getattr(self, "max_steps", None) or self.trainer.max_steps or 1,
         )
 
         tendencies = outs["tendencies"]
@@ -446,7 +481,31 @@ class cc2module(L.LightningModule):
     def test_step(self, batch, batch_idx):
         data, forcing, dates = batch
 
-        if self.hparams.use_flow_matching:
+        if self.hparams.use_flow_matching and self.hparams.direct_prediction:
+            # CFM on the direct-prediction path: encode-once + per-lead independent
+            # DDIM (no AR loop). See swinu.util.direct_flow_forecast / bland-layer Path 3.
+            from swinu.util import direct_flow_forecast
+
+            n_step = self.hparams.rollout_length
+            # Pre-allocate the 2 extra flow channels (filled during denoising)
+            B, T_total, C_force, H, W = forcing.shape
+            extra = torch.zeros(
+                B, T_total, 2, H, W, device=forcing.device, dtype=forcing.dtype
+            )
+            flow_forcing = torch.cat([forcing, extra], dim=2)
+
+            _, outs = direct_flow_forecast(
+                self.model,
+                data,
+                flow_forcing,
+                n_step,
+                num_inference_steps=self.hparams.num_inference_steps,
+                flow_warm_start=self.hparams.flow_warm_start,
+                warm_start_alpha=self.hparams.warm_start_alpha,
+                init_noise_sigma=self.hparams.flow_init_noise_sigma,
+                eta=self.hparams.flow_eta,
+            )
+        elif self.hparams.use_flow_matching:
             from swinu.util import flow_roll_forecast
 
             # Pre-allocate the 2 extra flow channels (filled during denoising)
@@ -467,6 +526,16 @@ class cc2module(L.LightningModule):
                 init_noise_sigma=self.hparams.flow_init_noise_sigma,
                 eta=self.hparams.flow_eta,
             )
+        elif self.hparams.direct_prediction:
+            n_step = self.hparams.rollout_length
+            _, outs = self._roll_forecast(
+                self.model,
+                data,
+                forcing,
+                n_step,
+                loss_fn=None,
+                use_rollout_weighting=False,
+            )
         else:
             _, outs = self._roll_forecast(
                 self.model,
@@ -480,19 +549,21 @@ class cc2module(L.LightningModule):
 
         # We want to include the analysis time also
         analysis_time = data[0][:, -1, ...].unsqueeze(1)
-        self.test_dates.append(torch.concatenate((dates[0][:, -1:], dates[1]), dim=1))
+        self.test_dates.append(
+            torch.concatenate((dates[0][:, -1:], dates[1]), dim=1).cpu()
+        )
         truth = torch.concatenate((analysis_time, data[1]), dim=1)
-        self.test_truth.append(truth)
+        self.test_truth.append(truth.cpu())
 
         tendencies = outs["tendencies"]
         predictions = outs["predictions"]
         predictions = torch.concatenate((analysis_time, predictions), dim=1)
-        self.test_predictions.append(predictions)
+        self.test_predictions.append(predictions.cpu())
 
     def predict_step(self, batch, batch_idx):
         self.test_step(batch, batch_idx)
 
-    def _gather(self, predictions, truth, dates, prediction_noo):
+    def _gather(self, predictions, truth, dates):
         # Gather across all DDP ranks
         predictions = self.all_gather(predictions)
 
@@ -514,12 +585,7 @@ class cc2module(L.LightningModule):
             truth = truth.reshape(-1, *truth.shape[2:])
             truth = truth[sort_idx]
 
-        if len(predictions_noo):
-            predictions_noo = self.all_gather(predictions_noo)
-            predictions_noo = predictions_noo.reshape(-1, *predictions_noo.shape[2:])
-            predictions_noo = predictions_noo[sort_idx]
-
-        return predictions, truth, dates, predictions_noo
+        return predictions, truth, dates
 
     def _write_results_on_test_predict_end(self):
         def _write(tensor, filename):
@@ -541,9 +607,7 @@ class cc2module(L.LightningModule):
             truth = torch.concatenate(self.test_truth)
 
         if self.trainer.world_size > 1:
-            predictions, truth, dates, predictions_noo = self._gather(
-                predictions, truth, dates, predictions_noo
-            )
+            predictions, truth, dates = self._gather(predictions, truth, dates)
 
         # Only rank 0 writes to avoid duplicate writes
         if self.trainer.is_global_zero:
@@ -553,12 +617,6 @@ class cc2module(L.LightningModule):
                 _write(truth, f"{self.test_output_directory}/truth.pt")
 
             _write(dates, f"{self.test_output_directory}/dates.pt")
-
-            if len(self.test_predictions_noo):
-                predictions_noo = torch.concatenate(self.test_predictions_noo)
-                _write(
-                    predictions_noo, f"{self.test_output_directory}/predictions_noo.pt"
-                )
 
     def on_test_end(self):
         self._write_results_on_test_predict_end()
