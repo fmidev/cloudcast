@@ -131,9 +131,17 @@ def _load_stats(ckpt_path):
     if not ckpt_path:
         return None
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    return ckpt.get("data_statistics") or ckpt.get("hyper_parameters", {}).get(
+    stats = ckpt.get("data_statistics") or ckpt.get("hyper_parameters", {}).get(
         "data_statistics"
     )
+    if not stats:
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path} has no data_statistics but "
+            "model.use_statistics_from_checkpoint=true. Fix checkpoint "
+            "or set model.use_statistics_from_checkpoint=false "
+            "to use dataset statistics intentionally."
+        )
+    return stats
 
 
 class cc2trainer(LightningCLI):
@@ -212,9 +220,10 @@ class cc2trainer(LightningCLI):
 
 torch.set_float32_matmul_precision("high")
 
-cli = cc2trainer(
-    model_class=None,  # read from yaml
-    datamodule_class=cc2DataModule,
-    save_config_callback=CustomSaveConfigCallback,
-    save_config_kwargs={"overwrite": True, "multifile": False},
-)
+if __name__ == "__main__":
+    cli = cc2trainer(
+        model_class=None,  # read from yaml
+        datamodule_class=cc2DataModule,
+        save_config_callback=CustomSaveConfigCallback,
+        save_config_kwargs={"overwrite": True, "multifile": False},
+    )
