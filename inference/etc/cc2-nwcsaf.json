@@ -9,9 +9,8 @@
   "allowed_missing_values": "0",
   "use_cache_for_reads": false,
   "file_type": "grib2",
-
   "processqueue": [
-  {
+    {
       "use_cache_for_reads": false,
       "allowed_missing_values": 550,
       "leveltype": "height",
@@ -21,11 +20,12 @@
           "name": "transformer",
           "source_param": "NWCSAF_EFFCLD-0TO1",
           "target_param": "NWCSAF_EFFCLD-0TO1",
-	  "change_missing_value_to": 0.5,
-	  "grib2_discipline": 0,
-	  "grib2_parameter_category": 6,
-	  "grib2_parameter_number": 32,
-	  "extra_file_metadata": "latitudeOfSouthernPoleInDegrees=-90"
+          "change_missing_value_to": 0.5,
+          "grib2_discipline": 0,
+          "grib2_parameter_category": 6,
+          "grib2_parameter_number": 32,
+          "extra_file_metadata": "latitudeOfSouthernPoleInDegrees=-90",
+          "interpolation": "nearest point"
         }
       ]
     }
