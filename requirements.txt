@@ -7,7 +7,7 @@ randomname
 zarr
 xarray
 scipy
-lightning==2.5.4
+lightning>=2.6.0
 dask
 anemoi-datasets
 rioxarray
