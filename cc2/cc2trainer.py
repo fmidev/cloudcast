@@ -169,6 +169,13 @@ def _load_stats(ckpt_path):
 
 
 class cc2trainer(LightningCLI):
+    def _parse_ckpt_path(self):
+        # Lightning >= 2.6 overlays the checkpoint's saved hyper_parameters on top
+        # of the parsed config whenever --ckpt_path is given, so every --model.*
+        # value from config.yaml or the command line is silently replaced
+        # by the value stored at training time.
+        return
+
     def _inject_statistics(self, stage: str):
         if self.model.use_statistics_from_checkpoint:
             self.datamodule.inject_statistics(_load_stats(self._stage_ckpt(stage)))

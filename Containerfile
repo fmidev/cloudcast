@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
 RUN apt -y update && DEBIAN_FRONTEND=noninteractive apt-get -y install git && apt -y clean all
 
 WORKDIR /
-
+RUN ls
 RUN git clone --branch cc2 https://github.com/fmidev/cloudcast.git
 
 WORKDIR /cloudcast
