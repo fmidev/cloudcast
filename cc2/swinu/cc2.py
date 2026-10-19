@@ -178,7 +178,8 @@ class cc2model(nn.Module):
                     shift_size=0 if i % 2 == 0 else config.window_size_deep // 2,
                     H=self.h_patches // 2,
                     W=self.w_patches // 2,
-                    T=config.history_length,
+                    # decoder1 only ever processes the last (motion-aware) slice
+                    T=1,
                 )
                 for i in range(config.decoder1_depth)
             ]
@@ -189,7 +190,7 @@ class cc2model(nn.Module):
                 DWConvResidual3D(
                     self.embed_dim * 2,
                     (h1, w1),
-                    time_dim=config.history_length,
+                    time_dim=1,
                     expand=expand,
                     dilation=_get_dilation("dec1", i),
                     ls_init=ls_init,
@@ -361,16 +362,14 @@ class cc2model(nn.Module):
 
     def decode(self, encoded, step, skip, f_future=None):
         B, T, P, D = encoded.shape
-        outputs = []
 
-        # Initial input is the encoded sequence
-        decoder_input = encoded
+        # Only the last time slice feeds the decoder: the encoder's temporal
+        # mixing (DWConvResidual3D) has already folded earlier history into it,
+        # and everything downstream only ever read the last slice.
+        enc_last = encoded[:, -1, :, :]  # [B, P, D]
 
-        # Keep track of the latest state
-        latest_state = encoded[:, -1:, :, :]  # Just the last time step
-
-        encoded_flat = encoded.reshape(B, -1, D)
-        decoder_in = decoder_input.reshape(B, -1, D)
+        encoded_flat = enc_last
+        decoder_in = enc_last
 
         # Determine step id (0 for first step using ground truth, 1 for subsequent steps)
         # Determine step embedding: lead index (direct mode) or binary AR step
@@ -432,8 +431,8 @@ class cc2model(nn.Module):
         delta_pred1 = x[:, -P:].reshape(B, 1, P, D)
 
         new_H, new_W = self.input_resolution_halved
-        new_H = new_H // 2  # 2 = num_times
-        new_W = new_W // 2  # 2 = num_times
+        new_H = new_H // 2  # 2 = PatchMerge downsampling factor
+        new_W = new_W // 2  # 2 = PatchMerge downsampling factor
 
         with torch.amp.autocast("cuda", enabled=False):
             upsampled_delta, P_new, D_new = self.upsample(

@@ -37,6 +37,25 @@ class CustomSaveConfigCallback(SaveConfigCallback):
         config_dict = namespace_to_dict_recursive(self.config)
         conf = OmegaConf.create(config_dict)
         rank_zero_info(OmegaConf.to_yaml(conf))
-        path = os.getcwd()
-        self.config_filename = f"{path}/{os.environ['CC2_RUN_DIR']}/config.yaml"
-        super().setup(trainer, pl_module, stage)
+
+        # Write straight into the run directory rather than deferring to
+        # SaveConfigCallback.setup, which resolves trainer.log_dir and asserts
+        # it is not None. With a remote MLflow tracking server the logger has
+        # no local save_dir, so trainer.log_dir is None and that assert fires.
+        run_dir = os.path.join(os.getcwd(), os.environ["CC2_RUN_DIR"])
+        config_path = os.path.join(run_dir, "config.yaml")
+
+        if trainer.is_global_zero:
+            os.makedirs(run_dir, exist_ok=True)
+            self.parser.save(
+                self.config,
+                config_path,
+                skip_none=False,
+                overwrite=self.overwrite,
+                multifile=self.multifile,
+            )
+            rank_zero_info(f"Saved config to {config_path}")
+            self.save_config(trainer, pl_module, stage)
+            self.already_saved = True
+
+        self.already_saved = trainer.strategy.broadcast(self.already_saved)

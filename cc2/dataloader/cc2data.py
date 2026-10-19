@@ -302,9 +302,12 @@ class AnemoiDataset(Dataset):
             dtype=dtype,
         )
         # Create a single method tensor for indexing for all combined parameters
+        method_codes = {"none": 0, "minmax": 1, "standard": 2}
         methods_all = [self.normalization_methods[k] for k in self.all_combined_params]
+        unknown = [m for m in methods_all if m not in method_codes]
+        assert not unknown, f"Unknown normalization method(s): {unknown}"
         self.method_tensor = torch.tensor(
-            [0 if m == "none" else 1 if m == "minmax" else 2 for m in methods_all],
+            [method_codes[m] for m in methods_all],
             dtype=torch.long,
         ).view(1, self.total_channels, 1, 1)
 

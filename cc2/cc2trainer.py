@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import numpy as np
 import torch
 import os
 import randomname
@@ -15,6 +16,21 @@ from common.util import get_next_run_number, get_rank
 from lightning.pytorch.utilities.rank_zero import rank_zero_info
 from lightning.pytorch.loggers import MLFlowLogger
 from common.sc_callback import CustomSaveConfigCallback
+
+# LightningCLI loads --ckpt_path with weights_only=True, and our checkpoints
+# carry numpy objects (data_statistics from on_save_checkpoint) that the default
+# allowlist rejects. Guarded so an older numpy (no _core / dtypes) or torch
+# (no add_safe_globals) falls back to the old behaviour instead of failing at
+# import -- this module is also the entry point for the inference scripts.
+try:
+    from numpy._core import multiarray as _ma  # numpy >= 2
+except ImportError:  # numpy 1.x
+    from numpy.core import multiarray as _ma
+_safe_globals = [_ma._reconstruct, np.ndarray, np.dtype, _ma.scalar]
+if hasattr(np, "dtypes"):
+    _safe_globals.append(np.dtypes.Float64DType)
+if hasattr(torch.serialization, "add_safe_globals"):
+    torch.serialization.add_safe_globals(_safe_globals)
 
 
 def get_coordination_info_identifier() -> str:
@@ -114,9 +130,14 @@ def setup_mlflow_logger(trainer):
 
     for i, logger in enumerate(trainer.loggers):
         if isinstance(logger, L.pytorch.loggers.mlflow.MLFlowLogger):
+            # Carry tracking_uri over explicitly. MLFlowLogger.save_dir is None
+            # for a remote (http) tracking server, so rebuilding from save_dir
+            # alone silently drops the server and logs nowhere.
+            tracking_uri = logger._tracking_uri
             new_logger = pl.loggers.MLFlowLogger(
                 experiment_name=logger._experiment_name,
                 run_name=f"{run_name}/{run_number}",
+                tracking_uri=tracking_uri,
                 save_dir=logger.save_dir,
                 log_model=logger._log_model,
                 # checkpoint_path_prefix=logger._checkpoint_path_prefix,
@@ -124,7 +145,10 @@ def setup_mlflow_logger(trainer):
             )
             trainer.loggers[i] = new_logger
 
-            rank_zero_info(f"MLFlowLogger run_name set to: {run_name}")
+            rank_zero_info(
+                f"MLFlowLogger run_name set to: {run_name}, "
+                f"tracking_uri: {tracking_uri}"
+            )
 
 
 def _load_stats(ckpt_path):
@@ -148,6 +172,17 @@ class cc2trainer(LightningCLI):
     def _inject_statistics(self, stage: str):
         if self.model.use_statistics_from_checkpoint:
             self.datamodule.inject_statistics(_load_stats(self._stage_ckpt(stage)))
+        elif stage != "fit" and not os.environ.get("CC2_ALLOW_DATASET_STATS"):
+            # use_statistics_from_checkpoint=false is only meaningful for a trunk
+            # `fit`, where there is no parent checkpoint and the statistics are
+            # computed from the training data.
+            raise RuntimeError(
+                f"{stage}: use_statistics_from_checkpoint=false would normalise the "
+                "inputs with the dataset's own statistics, not the statistics the "
+                "checkpoint was trained with. Pass "
+                "--model.use_statistics_from_checkpoint=true, or set "
+                "CC2_ALLOW_DATASET_STATS=1"
+            )
 
     def before_instantiate_classes(self):
         super().before_instantiate_classes()

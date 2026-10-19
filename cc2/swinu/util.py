@@ -385,8 +385,6 @@ def flow_roll_forecast(
     forcing: torch.Tensor,
     n_step: int,
     num_inference_steps: int = 4,
-    flow_warm_start: bool = True,
-    warm_start_alpha: float = 0.4,
     init_noise_sigma: float = 1.0,
     eta: float = 0.0,
 ) -> Dict[str, torch.Tensor]:
@@ -402,9 +400,6 @@ def flow_roll_forecast(
         forcing             : [B, T+n_step, C_force+2, H, W]  (last 2 channels = 0)
         n_step              : number of autoregressive rollout steps
         num_inference_steps : K denoising iterations per temporal step
-        flow_warm_start     : if True, start from smooth pred at warm_start_alpha
-                              instead of pure noise at alpha=1.0
-        warm_start_alpha    : noise level used as starting point for warm-start
         init_noise_sigma    : scale factor for initial Gaussian noise
     """
     x, y = data
@@ -425,25 +420,8 @@ def flow_roll_forecast(
 
         input_state = torch.cat([previous_state, current_state], dim=1)
 
-        if flow_warm_start:
-            # Smooth pass: flow channels are already zero from the pre-allocated tensor
-            with torch.no_grad():
-                tendency_warm, _, _ = _forward_and_unpack(
-                    model, input_state, step_forcing, t
-                )
-
-            smooth_pred = current_state + tendency_warm  # [B, 1, C, H, W]
-            alpha_init = warm_start_alpha
-            # Mix smooth prediction with noise at warm_start_alpha, matching the
-            # training distribution: x_alpha = (1-a)*clean + a*noise at alpha=a.
-            # Using the smooth prediction as a proxy for clean, then adding the
-            # correct amount of noise puts x_alpha in-distribution for the model.
-            x_alpha = (
-                1.0 - warm_start_alpha
-            ) * smooth_pred.detach() + warm_start_alpha * torch.randn_like(smooth_pred)
-        else:
-            alpha_init = 1.0
-            x_alpha = init_noise_sigma * torch.randn_like(current_state)
+        alpha_init = 1.0
+        x_alpha = init_noise_sigma * torch.randn_like(current_state)
 
         # DDIM denoising loop: iterate from alpha_init down to near 0
         alphas = torch.linspace(
@@ -499,10 +477,9 @@ def direct_flow_forecast(
     forcing: torch.Tensor,
     n_step: int,
     num_inference_steps: int = 4,
-    flow_warm_start: bool = True,
-    warm_start_alpha: float = 0.4,
     init_noise_sigma: float = 1.0,
     eta: float = 0.0,
+    noise_rho: float | None = None,
     **_ignored,
 ):
     """
@@ -541,26 +518,27 @@ def direct_flow_forecast(
     all_predictions = []
     all_tendencies = []
 
+    # EXPERIMENT 2026-10-17, opt-in (CC2_FLOW_NOISE_RHO=<rho>, read in cc2module.test_step):
+    # correlate the initial and per-step DDIM noise between consecutive leads,
+    # noise(i) = rho * noise(i-1) + sqrt(1 - rho^2) * fresh (rho per lead step; 1 = one
+    # shared field, 0 = independent). Per-lead marginals stay N(0, 1). Remove this block,
+    # the `noise_rho` parameter, the two `cur` uses below and the env read if not adopted.
+    cur = None
+
     for i in range(n_step):
         # Per-lead future-forcing frame; clone so the flow channels can be written
         # in-place each DDIM iteration without corrupting the shared forcing tensor.
         future_forcing = forcing[:, T + i : T + i + 1, ...].clone()  # [B,1,Cf+2,H,W]
 
-        if flow_warm_start:
-            # Smooth pass: flow channels are 0 -> deterministic (mean) prediction,
-            # used as the in-distribution starting point for the DDIM chain.
-            with torch.no_grad():
-                tendency_warm = model.decode_lead(
-                    encoded, skip, padding_info, future_forcing, i
-                )
-            smooth_pred = analysis_curr + tendency_warm
-            alpha_init = warm_start_alpha
-            x_alpha = (
-                1.0 - warm_start_alpha
-            ) * smooth_pred.detach() + warm_start_alpha * torch.randn_like(smooth_pred)
-        else:
-            alpha_init = 1.0
-            x_alpha = init_noise_sigma * torch.randn_like(analysis_curr)
+        alpha_init = 1.0
+        if noise_rho is not None:
+            fresh = [torch.randn_like(analysis_curr) for _ in range(num_inference_steps + 1)]
+            cur = fresh if cur is None else [
+                noise_rho * c + (1.0 - noise_rho**2) ** 0.5 * f for c, f in zip(cur, fresh)
+            ]
+        x_alpha = init_noise_sigma * (
+            cur[0] if cur is not None else torch.randn_like(analysis_curr)
+        )
 
         # DDIM schedule: alpha_init -> ~0 (matches flow_roll_forecast)
         alphas = torch.linspace(
@@ -588,8 +566,8 @@ def direct_flow_forecast(
             z_est = (x_alpha - (1.0 - alpha_clamped) * x1_hat) / alpha_clamped
             x_alpha = (1.0 - alpha_next) * x1_hat + alpha_next * z_est
             if eta > 0.0:
-                x_alpha = x_alpha + eta * torch.sqrt(alpha_next) * torch.randn_like(
-                    x_alpha
+                x_alpha = x_alpha + eta * torch.sqrt(alpha_next) * (
+                    cur[k + 1] if cur is not None else torch.randn_like(x_alpha)
                 )
 
         final_pred = x1_hat.clamp(0.0, 1.0)

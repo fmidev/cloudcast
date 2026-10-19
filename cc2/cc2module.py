@@ -61,8 +61,6 @@ class cc2module(L.LightningModule):
         preprocessor: Callable | None = None,
         use_flow_matching: bool = False,
         num_inference_steps: int = 4,
-        flow_warm_start: bool = True,
-        warm_start_alpha: float = 0.4,
         flow_init_noise_sigma: float = 1.0,
         flow_eta: float = 0.0,
         direct_prediction: bool = False,
@@ -339,11 +337,44 @@ class cc2module(L.LightningModule):
             self.max_steps = self.trainer.estimated_stepping_batches
 
         assert self.max_steps > 0, "Trainer must be configured with max_steps"
+        self._init_flow_generators_train()
+
+    # Flow-matching noise (alpha, z) is drawn from dedicated generators, not the
+    # global RNG. With the global RNG every DDP rank, seeded identically by
+    # seed_everything, drew the SAME alpha and z each step (one noise level per
+    # optimizer step instead of one per sample), and Lightning does not checkpoint
+    # RNG state, so a resume replayed the first segment's draws. Both generators
+    # are rebuilt from (seed, rank, step), so nothing extra needs checkpointing.
+    # All seeds stay below 2**32: the CPU generator keeps only the low 32 bits, so a
+    # larger offset silently aliased the val stream onto the train stream.
+    _FLOW_RANK_STRIDE = 1_000_003  # > any max_steps, so (rank, step) seeds never collide
+    _FLOW_VAL_OFFSET = 2**31  # > max train seed (~1e6 x 128 ranks); val seeds < 2**32
+
+    def _init_flow_generators_train(self) -> None:
+        # global_step is already restored on resume, so a resumed run continues
+        # with fresh draws instead of replaying the first segment's.
+        self._flow_train_gen = torch.Generator(device=self.device)
+        self._flow_train_gen.manual_seed(
+            torch.initial_seed()
+            + self._FLOW_RANK_STRIDE * self.global_rank
+            + self.global_step
+        )
+
+    def _init_flow_generators_val(self) -> None:
+        # Reset at every validation: each val sample gets the same alpha and z at
+        # every validation and across resumes (the val loader is not shuffled), so
+        # val_loss changes reflect the model only.
+        self._flow_val_gen = torch.Generator(device=self.device)
+        self._flow_val_gen.manual_seed(
+            torch.initial_seed()
+            + self._FLOW_VAL_OFFSET
+            + self._FLOW_RANK_STRIDE * self.global_rank
+        )
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)  # data, forcing, step)
 
-    def _build_flow_forcing(self, forcing, y):
+    def _build_flow_forcing(self, forcing, y, generator=None):
         """
         Corrupt the clean targets and inject as extra forcing channels for flow matching.
 
@@ -358,11 +389,13 @@ class cc2module(L.LightningModule):
         T = T_total - n_step
 
         # Sample one alpha per sample in the batch ~ Uniform(0, 1)
-        alpha = torch.rand(B, device=forcing.device)  # [B]
+        alpha = torch.rand(B, device=forcing.device, generator=generator)  # [B]
 
         # Corrupt target: x_alpha = (1-alpha)*y + alpha*z
         alpha_5d = alpha.view(B, 1, 1, 1, 1)
-        z = torch.randn_like(y)
+        z = torch.randn(
+            y.shape, device=y.device, dtype=y.dtype, generator=generator
+        )
         x_alpha = (1.0 - alpha_5d) * y + alpha_5d * z  # [B, n_step, C_data, H, W]
 
         # Allocate extended forcing (history slots have zero flow channels)
@@ -382,7 +415,9 @@ class cc2module(L.LightningModule):
 
         if self.hparams.use_flow_matching:
             _, y = data
-            forcing = self._build_flow_forcing(forcing, y)
+            forcing = self._build_flow_forcing(
+                forcing, y, generator=self._flow_train_gen
+            )
 
         loss, outs = self._roll_forecast(
             self.model,
@@ -430,12 +465,25 @@ class cc2module(L.LightningModule):
             "loss_components": loss,
         }
 
+    def on_validation_epoch_start(self):
+        self._val_loss_sum = torch.zeros((), device=self.device)
+        self._val_loss_n = torch.zeros((), device=self.device)
+        self._init_flow_generators_val()
+
+    def on_validation_epoch_end(self):
+        # Workaround for not using sync_dist=True
+        t = torch.stack([self._val_loss_sum, self._val_loss_n])
+        t = self.trainer.strategy.reduce(t, reduce_op="sum")
+        self.log("val_loss", t[0] / t[1].clamp_min(1.0), sync_dist=False)
+
     def validation_step(self, batch, batch_idx):
         data, forcing = batch
 
         if self.hparams.use_flow_matching:
             _, y = data
-            forcing = self._build_flow_forcing(forcing, y)
+            forcing = self._build_flow_forcing(
+                forcing, y, generator=self._flow_val_gen
+            )
 
         loss, outs = self._roll_forecast(
             self.model,
@@ -452,7 +500,11 @@ class cc2module(L.LightningModule):
         tendencies = outs["tendencies"]
         predictions = outs["predictions"]
 
-        self.log("val_loss", loss["loss"], sync_dist=False)
+        # val_loss is NOT logged per rank here; it is accumulated and reduced
+        # over all ranks once per epoch in on_validation_epoch_end.
+        b = predictions.shape[0]
+        self._val_loss_sum += loss["loss"].detach().float() * b
+        self._val_loss_n += b
 
         for k, v in loss.items():
             if isinstance(v, torch.Tensor):
@@ -500,10 +552,14 @@ class cc2module(L.LightningModule):
                 flow_forcing,
                 n_step,
                 num_inference_steps=self.hparams.num_inference_steps,
-                flow_warm_start=self.hparams.flow_warm_start,
-                warm_start_alpha=self.hparams.warm_start_alpha,
                 init_noise_sigma=self.hparams.flow_init_noise_sigma,
                 eta=self.hparams.flow_eta,
+                # EXPERIMENT, see direct_flow_forecast; remove with it if not adopted
+                noise_rho=(
+                    float(os.environ["CC2_FLOW_NOISE_RHO"])
+                    if "CC2_FLOW_NOISE_RHO" in os.environ
+                    else None
+                ),
             )
         elif self.hparams.use_flow_matching:
             from swinu.util import flow_roll_forecast
@@ -521,8 +577,6 @@ class cc2module(L.LightningModule):
                 flow_forcing,
                 self.hparams.rollout_length,
                 num_inference_steps=self.hparams.num_inference_steps,
-                flow_warm_start=self.hparams.flow_warm_start,
-                warm_start_alpha=self.hparams.warm_start_alpha,
                 init_noise_sigma=self.hparams.flow_init_noise_sigma,
                 eta=self.hparams.flow_eta,
             )
